@@ -9,9 +9,10 @@ interface AssetTableProps {
   assets: Asset[];
   onEdit: (asset: Asset) => void;
   onDelete: (asset: Asset) => void;
+  onView: (asset: Asset) => void;
 }
 
-export function AssetTable({ assets, onEdit, onDelete }: AssetTableProps) {
+export function AssetTable({ assets, onEdit, onDelete, onView }: AssetTableProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -38,14 +39,14 @@ export function AssetTable({ assets, onEdit, onDelete }: AssetTableProps) {
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {assets.map((asset) => (
-              <tr key={asset.id} className="hover:bg-slate-50">
+              <tr key={asset.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onView(asset)}>
                 <td className="px-4 py-3 font-medium text-slate-900">{asset.asset_name}</td>
                 <td className="px-4 py-3 text-slate-600">{asset.asset_type}</td>
                 <td className="px-4 py-3 text-slate-600">{asset.institution ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-900">${asset.current_value.toLocaleString()}</td>
                 <td className="px-4 py-3 text-slate-600">{asset.owner ?? "—"}</td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
                     <Button variant="ghost" size="icon" onClick={() => onEdit(asset)}>
                       <Pencil className="h-4 w-4" />
                     </Button>

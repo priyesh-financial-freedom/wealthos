@@ -1,4 +1,4 @@
-import { ArrowRightLeft, BarChart3, CreditCard, FileText, LayoutDashboard, PiggyBank, Receipt, ReceiptText, Settings, ShieldCheck, Sparkles, Target, TrendingUp, Wallet } from "lucide-react";
+import { ArrowRightLeft, BarChart3, CreditCard, FileText, Landmark, LayoutDashboard, PiggyBank, Receipt, ReceiptText, Settings, ShieldCheck, Sparkles, Target, TrendingUp, Wallet } from "lucide-react";
 
 import { SidebarItem } from "@/components/layout/SidebarItem";
 
@@ -14,6 +14,7 @@ interface SidebarProps {
 
 const iconMap = {
   LayoutDashboard,
+  Landmark,
   Wallet,
   CreditCard,
   TrendingUp,

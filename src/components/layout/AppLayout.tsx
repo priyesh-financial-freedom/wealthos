@@ -15,9 +15,13 @@ interface AppLayoutProps {
 
 const sidebarItems = [
   { href: "/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
+  { href: "/balance-sheet", label: "Balance Sheet", icon: "Scale" },
+  { href: "/bank-accounts", label: "Bank Accounts", icon: "Landmark" },
+  { href: "/accounts", label: "Accounts", icon: "Wallet" },
   { href: "/assets", label: "Assets", icon: "Wallet" },
   { href: "/liabilities", label: "Liabilities", icon: "CreditCard" },
   { href: "/investments", label: "Investments", icon: "TrendingUp" },
+  { href: "/history", label: "History", icon: "ArrowRightLeft" },
   { href: "/income", label: "Income", icon: "Receipt" },
   { href: "/expenses", label: "Expenses", icon: "ReceiptText" },
   { href: "/goals", label: "Goals", icon: "Target" },

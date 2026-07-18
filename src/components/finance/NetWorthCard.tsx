@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Landmark, Wallet2 } from "lucide-react";
 
 interface NetWorthCardProps {
@@ -5,17 +6,18 @@ interface NetWorthCardProps {
   value: string;
   subtitle: string;
   tone?: "default" | "positive" | "warning";
+  href?: string;
 }
 
-export function NetWorthCard({ title, value, subtitle, tone = "default" }: NetWorthCardProps) {
+export function NetWorthCard({ title, value, subtitle, tone = "default", href }: NetWorthCardProps) {
   const toneClasses = {
     default: "border-slate-200 bg-white text-slate-900",
     positive: "border-emerald-200 bg-emerald-50 text-emerald-900",
     warning: "border-amber-200 bg-amber-50 text-amber-900",
   };
 
-  return (
-    <div className={`rounded-2xl border p-5 shadow-sm ${toneClasses[tone]}`}>
+  const content = (
+    <div className={`rounded-2xl border p-5 shadow-sm transition-transform hover:-translate-y-0.5 ${toneClasses[tone]}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-600">{title}</p>
@@ -28,4 +30,10 @@ export function NetWorthCard({ title, value, subtitle, tone = "default" }: NetWo
       <p className="mt-4 text-sm text-slate-600">{subtitle}</p>
     </div>
   );
+
+  if (!href) {
+    return content;
+  }
+
+  return <Link href={href} className="block">{content}</Link>;
 }

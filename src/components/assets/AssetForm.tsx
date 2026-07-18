@@ -27,7 +27,7 @@ type AssetFormState = {
 };
 
 export function AssetForm({ initialData, onSubmit, onCancel, submitting }: AssetFormProps) {
-  const [formValues, setFormValues] = useState<AssetFormState>({
+  const [formValues, setFormValues] = useState<AssetFormState>(() => ({
     asset_type: initialData?.asset_type ?? "cash",
     asset_name: initialData?.asset_name ?? "",
     institution: initialData?.institution ?? "",
@@ -36,7 +36,7 @@ export function AssetForm({ initialData, onSubmit, onCancel, submitting }: Asset
     purchase_date: initialData?.purchase_date ?? "",
     owner: initialData?.owner ?? "",
     notes: initialData?.notes ?? "",
-  });
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function validate(values: AssetFormState) {

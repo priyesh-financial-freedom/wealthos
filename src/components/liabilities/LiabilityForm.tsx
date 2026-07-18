@@ -70,6 +70,12 @@ export function LiabilityForm({ initialData, onSubmit, onCancel, submitting }: L
     if (formValues.emi && Number(formValues.emi) < 0) {
       nextErrors.emi = "EMI must be positive";
     }
+    if (formValues.due_day && (Number(formValues.due_day) < 1 || Number(formValues.due_day) > 31)) {
+      nextErrors.due_day = "Due day must be between 1 and 31";
+    }
+    if (formValues.start_date && formValues.end_date && new Date(formValues.end_date) < new Date(formValues.start_date)) {
+      nextErrors.end_date = "End date must be after start date";
+    }
     return nextErrors;
   }, [formValues]);
 
@@ -180,6 +186,7 @@ export function LiabilityForm({ initialData, onSubmit, onCancel, submitting }: L
         <div className="space-y-2">
           <Label htmlFor="due_day">Due day</Label>
           <Input id="due_day" type="number" min="1" max="31" value={formValues.due_day} onChange={(event) => updateField("due_day", event.target.value)} />
+          {errors.due_day ? <p className="text-sm text-rose-600">{errors.due_day}</p> : null}
         </div>
       </div>
 

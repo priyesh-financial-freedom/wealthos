@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils";
+import type { LiabilityType } from "@/types/liability";
 
 interface LiabilityTypeBadgeProps {
-  type: string;
+  type: LiabilityType;
 }
 
-const badgeStyles: Record<string, string> = {
+const badgeStyles: Record<LiabilityType, string> = {
   "Home Loan": "bg-slate-100 text-slate-700",
   "Car Loan": "bg-blue-100 text-blue-700",
   "Personal Loan": "bg-amber-100 text-amber-700",
