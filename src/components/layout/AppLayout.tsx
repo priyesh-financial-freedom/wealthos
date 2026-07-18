@@ -19,6 +19,9 @@ const sidebarItems = [
   { href: "/bank-accounts", label: "Bank Accounts", icon: "Landmark" },
   { href: "/accounts", label: "Accounts", icon: "Wallet" },
   { href: "/assets", label: "Assets", icon: "Wallet" },
+  { href: "/fixed-deposits", label: "Fixed Deposits", icon: "CircleDollarSign" },
+  { href: "/gold", label: "Gold", icon: "Medal" },
+  { href: "/silver", label: "Silver", icon: "Coins" },
   { href: "/liabilities", label: "Liabilities", icon: "CreditCard" },
   { href: "/investments", label: "Investments", icon: "TrendingUp" },
   { href: "/history", label: "History", icon: "ArrowRightLeft" },
@@ -30,6 +33,7 @@ const sidebarItems = [
   { href: "/documents", label: "Documents", icon: "FileText" },
   { href: "/reports", label: "Reports", icon: "BarChart3" },
   { href: "/ai", label: "AI Advisor", icon: "Sparkles" },
+  { href: "/import-data", label: "Import Data", icon: "Upload" },
   { href: "/settings", label: "Settings", icon: "Settings" },
 ];
 
@@ -43,7 +47,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex min-h-screen">
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200 bg-white/95 backdrop-blur xl:flex xl:flex-col",
+            "fixed inset-y-0 left-0 z-30 hidden h-screen overflow-hidden border-r border-slate-200 bg-white/95 backdrop-blur xl:flex xl:flex-col",
             collapsed ? "w-24" : "w-72",
           )}
         >
@@ -75,8 +79,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
 
       <div className={cn("fixed inset-0 z-40 bg-slate-950/40 xl:hidden", mobileOpen ? "block" : "hidden")} onClick={() => setMobileOpen(false)} />
-      <div className={cn("fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-200 bg-white p-4 xl:hidden", mobileOpen ? "block" : "hidden")}>
-        <div className="flex items-center justify-between px-2 py-2">
+      <div className={cn("fixed inset-y-0 left-0 z-50 h-screen w-72 flex-col overflow-hidden border-r border-slate-200 bg-white xl:hidden", mobileOpen ? "flex" : "hidden")}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white">
               W

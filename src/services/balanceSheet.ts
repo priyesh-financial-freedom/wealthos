@@ -4,11 +4,17 @@ import { getInvestments } from "@/services/investments";
 import { getLiabilities } from "@/services/liabilities";
 import { getBankAccounts } from "@/services/bankAccounts";
 import { getRetirementAccounts } from "@/services/retirement";
+import { getFixedDeposits } from "@/services/fixedDeposits";
+import { getGoldHoldings } from "@/services/goldHoldings";
+import { getSilverHoldings } from "@/services/silverHoldings";
 import type { Asset } from "@/types/asset";
 import type { BankAccount } from "@/types/bankAccount";
+import type { FixedDeposit } from "@/types/fixedDeposit";
+import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment, InvestmentCategory } from "@/types/investment";
 import type { Liability, LiabilityType } from "@/types/liability";
 import type { RetirementAccount } from "@/types/retirementAccount";
+import type { SilverHolding } from "@/types/silverHolding";
 
 export interface BalanceSheetSection {
   label: string;
@@ -50,6 +56,9 @@ export interface BalanceSheetData {
   investments: Investment[];
   bankAccounts: BankAccount[];
   retirementAccounts: RetirementAccount[];
+  fixedDeposits: FixedDeposit[];
+  goldHoldings: GoldHolding[];
+  silverHoldings: SilverHolding[];
   summary: BalanceSheetSummary;
 }
 
@@ -62,7 +71,14 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + Number(value ?? 0), 0);
 }
 
-function calculateInvestmentBreakdown(assets: Asset[], investments: Investment[], retirementAccounts: RetirementAccount[]) {
+function calculateInvestmentBreakdown(
+  assets: Asset[],
+  investments: Investment[],
+  retirementAccounts: RetirementAccount[],
+  fixedDeposits: FixedDeposit[],
+  goldHoldings: GoldHolding[],
+  silverHoldings: SilverHolding[],
+) {
   const assetInvestmentValue = sum(
     assets.filter((asset) => asset.asset_type === "investment").map((asset) => Number(asset.current_value ?? 0)),
   );
@@ -86,8 +102,10 @@ function calculateInvestmentBreakdown(assets: Asset[], investments: Investment[]
     {
       investments: assetInvestmentValue,
       retirement: sum(retirementAccounts.map((account) => Number(account.current_value ?? 0))),
-      fixedDeposits: 0,
-      goldAndSilver: 0,
+      fixedDeposits: sum(fixedDeposits.map((account) => Number(account.current_value ?? 0))),
+      goldAndSilver:
+        sum(goldHoldings.map((holding) => Number(holding.current_value ?? 0))) +
+        sum(silverHoldings.map((holding) => Number(holding.current_value ?? 0))),
     },
   );
 
@@ -117,6 +135,9 @@ export function buildBalanceSheetSummary(
   investments: Investment[],
   bankAccounts: BankAccount[],
   retirementAccounts: RetirementAccount[],
+  fixedDeposits: FixedDeposit[],
+  goldHoldings: GoldHolding[],
+  silverHoldings: SilverHolding[],
 ): BalanceSheetSummary {
   const cashAndBank =
     sum(assets.filter((asset) => cashAssetTypes.has(asset.asset_type)).map((asset) => Number(asset.current_value ?? 0))) +
@@ -130,7 +151,14 @@ export function buildBalanceSheetSummary(
       .map((asset) => Number(asset.current_value ?? 0)),
   );
 
-  const investmentBreakdown = calculateInvestmentBreakdown(assets, investments, retirementAccounts);
+  const investmentBreakdown = calculateInvestmentBreakdown(
+    assets,
+    investments,
+    retirementAccounts,
+    fixedDeposits,
+    goldHoldings,
+    silverHoldings,
+  );
 
   const initialLiabilityTotals: BalanceSheetCategoryTotals = {
     cashAndBank,
@@ -199,14 +227,14 @@ export function buildBalanceSheetSummary(
     {
       label: "Fixed Deposits",
       value: categoryTotals.fixedDeposits,
-      href: "/investments",
-      description: "Fixed income deposits from the investment book.",
+      href: "/fixed-deposits",
+      description: "FD and RD values across dedicated deposits and investment-linked fixed deposits.",
     },
     {
       label: "Gold & Silver",
       value: categoryTotals.goldAndSilver,
-      href: "/investments",
-      description: "Precious metals and sovereign gold holdings.",
+      href: "/gold",
+      description: "Precious metal holdings including gold, silver, and sovereign gold bonds.",
     },
     {
       label: "Real Estate",
@@ -303,12 +331,15 @@ export function buildBalanceSheetSummary(
 }
 
 export async function getBalanceSheetData(): Promise<BalanceSheetData> {
-  const [assets, liabilities, investments, bankAccounts, retirementAccounts] = await Promise.all([
+  const [assets, liabilities, investments, bankAccounts, retirementAccounts, fixedDeposits, goldHoldings, silverHoldings] = await Promise.all([
     getAssets(),
     getLiabilities(),
     getInvestments(),
     getBankAccounts().catch(() => []),
     getRetirementAccounts().catch(() => []),
+    getFixedDeposits().catch(() => []),
+    getGoldHoldings().catch(() => []),
+    getSilverHoldings().catch(() => []),
   ]);
 
   return {
@@ -317,7 +348,19 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
     investments,
     bankAccounts,
     retirementAccounts,
-    summary: buildBalanceSheetSummary(assets, liabilities, investments, bankAccounts, retirementAccounts),
+    fixedDeposits,
+    goldHoldings,
+    silverHoldings,
+    summary: buildBalanceSheetSummary(
+      assets,
+      liabilities,
+      investments,
+      bankAccounts,
+      retirementAccounts,
+      fixedDeposits,
+      goldHoldings,
+      silverHoldings,
+    ),
   };
 }
 
