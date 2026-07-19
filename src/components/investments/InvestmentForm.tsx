@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { Investment, InvestmentInsert } from "@/types/investment";
+import type { InvestmentMode, InvestmentOptionType } from "@/types/investment";
 
 interface InvestmentFormProps {
   initialData?: Investment | null;
@@ -18,6 +19,15 @@ interface InvestmentFormProps {
 type InvestmentFormState = {
   investment_name: string;
   category: InvestmentInsert["category"];
+  owner: string;
+  nominee: string;
+  folio_number: string;
+  amfi_scheme_code: string;
+  sip_amount: number | string;
+  sip_date: number | string;
+  investment_mode: InvestmentMode | "";
+  option_type: InvestmentOptionType | "";
+  broker_platform: string;
   units: number | string;
   nav_price: number | string;
   cost_basis: number | string;
@@ -48,6 +58,15 @@ const categories: InvestmentInsert["category"][] = [
 const defaultState = (initialData?: Investment | null): InvestmentFormState => ({
   investment_name: initialData?.investment_name ?? "",
   category: initialData?.category ?? "Mutual Funds",
+  owner: initialData?.owner ?? "",
+  nominee: initialData?.nominee ?? "",
+  folio_number: initialData?.folio_number ?? "",
+  amfi_scheme_code: initialData?.amfi_scheme_code ?? "",
+  sip_amount: initialData?.sip_amount ?? "",
+  sip_date: initialData?.sip_date ?? "",
+  investment_mode: initialData?.investment_mode ?? "",
+  option_type: initialData?.option_type ?? "",
+  broker_platform: initialData?.broker_platform ?? "",
   units: initialData?.units ?? 0,
   nav_price: initialData?.nav_price ?? 0,
   cost_basis: initialData?.cost_basis ?? 0,
@@ -85,6 +104,15 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting }: 
     if (Number(values.cost_basis) < 0) {
       nextErrors.cost_basis = "Cost basis must be positive";
     }
+    if (values.sip_amount !== "" && Number(values.sip_amount) < 0) {
+      nextErrors.sip_amount = "SIP amount must be zero or higher";
+    }
+    if (values.sip_date !== "") {
+      const sipDate = Number(values.sip_date);
+      if (!Number.isInteger(sipDate) || sipDate < 1 || sipDate > 31) {
+        nextErrors.sip_date = "SIP date must be between 1 and 31";
+      }
+    }
     return nextErrors;
   }
 
@@ -100,6 +128,15 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting }: 
     await onSubmit({
       investment_name: formValues.investment_name,
       category: formValues.category,
+      owner: formValues.owner || null,
+      nominee: formValues.nominee || null,
+      folio_number: formValues.folio_number || null,
+      amfi_scheme_code: formValues.amfi_scheme_code || null,
+      sip_amount: formValues.sip_amount === "" ? null : Number(formValues.sip_amount),
+      sip_date: formValues.sip_date === "" ? null : Number(formValues.sip_date),
+      investment_mode: formValues.investment_mode || null,
+      option_type: formValues.option_type || null,
+      broker_platform: formValues.broker_platform || null,
       units: Number(formValues.units),
       nav_price: Number(formValues.nav_price),
       cost_basis: Number(formValues.cost_basis),
@@ -147,6 +184,49 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting }: 
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="owner">Owner</Label>
+          <Input id="owner" value={formValues.owner} onChange={(event) => updateField("owner", event.target.value)} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="nominee">Nominee</Label>
+          <Input id="nominee" value={formValues.nominee} onChange={(event) => updateField("nominee", event.target.value)} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="folio_number">Folio number</Label>
+          <Input id="folio_number" value={formValues.folio_number} onChange={(event) => updateField("folio_number", event.target.value)} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="amfi_scheme_code">AMFI scheme code</Label>
+          <Input id="amfi_scheme_code" value={formValues.amfi_scheme_code} onChange={(event) => updateField("amfi_scheme_code", event.target.value)} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="investment_mode">Investment mode</Label>
+          <select id="investment_mode" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.investment_mode} onChange={(event) => updateField("investment_mode", event.target.value as InvestmentFormState["investment_mode"])}>
+            <option value="">Select mode</option>
+            <option value="Direct">Direct</option>
+            <option value="Regular">Regular</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="option_type">Option type</Label>
+          <select id="option_type" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.option_type} onChange={(event) => updateField("option_type", event.target.value as InvestmentFormState["option_type"])}>
+            <option value="">Select option</option>
+            <option value="Growth">Growth</option>
+            <option value="IDCW">IDCW</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="broker_platform">Broker platform</Label>
+          <Input id="broker_platform" value={formValues.broker_platform} onChange={(event) => updateField("broker_platform", event.target.value)} />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="units">Units</Label>
           <Input id="units" type="number" step="0.0001" value={formValues.units} onChange={(event) => updateField("units", event.target.value)} />
           {errors.units ? <p className="text-sm text-rose-600">{errors.units}</p> : null}
@@ -162,6 +242,18 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting }: 
           <Label htmlFor="cost_basis">Cost basis</Label>
           <Input id="cost_basis" type="number" step="0.01" value={formValues.cost_basis} onChange={(event) => updateField("cost_basis", event.target.value)} />
           {errors.cost_basis ? <p className="text-sm text-rose-600">{errors.cost_basis}</p> : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sip_amount">SIP amount</Label>
+          <Input id="sip_amount" type="number" step="0.01" value={formValues.sip_amount} onChange={(event) => updateField("sip_amount", event.target.value)} />
+          {errors.sip_amount ? <p className="text-sm text-rose-600">{errors.sip_amount}</p> : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sip_date">SIP date</Label>
+          <Input id="sip_date" type="number" min={1} max={31} value={formValues.sip_date} onChange={(event) => updateField("sip_date", event.target.value)} />
+          {errors.sip_date ? <p className="text-sm text-rose-600">{errors.sip_date}</p> : null}
         </div>
 
         <div className="space-y-2">

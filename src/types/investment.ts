@@ -15,6 +15,8 @@ export type InvestmentCategory =
 
 export type InvestmentRegion = "Domestic" | "International";
 export type InvestmentExposure = "equity" | "debt";
+export type InvestmentMode = "Direct" | "Regular";
+export type InvestmentOptionType = "Growth" | "IDCW";
 
 export interface Investment {
   id: string;
@@ -29,6 +31,15 @@ export interface Investment {
   amc: string | null;
   region: InvestmentRegion;
   purchase_date: string | null;
+  owner: string | null;
+  folio_number: string | null;
+  amfi_scheme_code: string | null;
+  sip_amount: number | null;
+  sip_date: number | null;
+  investment_mode: InvestmentMode | null;
+  option_type: InvestmentOptionType | null;
+  broker_platform: string | null;
+  nominee: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -50,6 +61,15 @@ export interface InvestmentInsert {
   amc?: string | null;
   region?: InvestmentRegion;
   purchase_date?: string | null;
+  owner?: string | null;
+  folio_number?: string | null;
+  amfi_scheme_code?: string | null;
+  sip_amount?: number | null;
+  sip_date?: number | null;
+  investment_mode?: InvestmentMode | null;
+  option_type?: InvestmentOptionType | null;
+  broker_platform?: string | null;
+  nominee?: string | null;
   notes?: string | null;
 }
 

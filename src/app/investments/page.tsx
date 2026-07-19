@@ -82,7 +82,7 @@ export default function InvestmentsPage() {
   const filteredInvestments = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const filtered = investments.filter((investment) => {
-      const matchesQuery = !normalized || `${investment.investment_name} ${investment.category} ${investment.sector ?? ""} ${investment.amc ?? ""}`.toLowerCase().includes(normalized);
+      const matchesQuery = !normalized || `${investment.investment_name} ${investment.category} ${investment.sector ?? ""} ${investment.amc ?? ""} ${investment.owner ?? ""} ${investment.folio_number ?? ""} ${investment.amfi_scheme_code ?? ""} ${investment.broker_platform ?? ""} ${investment.nominee ?? ""}`.toLowerCase().includes(normalized);
       const matchesCategory = categoryFilter === "all" || investment.category === categoryFilter;
       const matchesRegion = regionFilter === "all" || investment.region === regionFilter;
       return matchesQuery && matchesCategory && matchesRegion;
@@ -265,11 +265,11 @@ export default function InvestmentsPage() {
             </div>
           </div>
 
-          {loading ? <LoadingSpinner label="Loading investments..." /> : filteredInvestments.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center"><h4 className="text-base font-semibold text-slate-900">No investments yet</h4><p className="mt-2 text-sm text-slate-600">Add your first holding to unlock allocation, return, and diversification insights.</p></div> : <InvestmentTable investments={filteredInvestments} onView={(investment) => setSelectedInvestment(investment)} onEdit={(investment) => { setEditingInvestment(investment); setDialogOpen(true); }} onDelete={(investment) => setDeleteTarget(investment)} />}
+          {loading ? <LoadingSpinner label="Loading investments..." /> : filteredInvestments.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center"><h4 className="text-base font-semibold text-slate-900">No investments yet</h4><p className="mt-2 text-sm text-slate-600">Add your first holding to unlock allocation, return, and diversification insights.</p></div> : <InvestmentTable investments={filteredInvestments} totalPortfolioValue={summary.totalInvestmentValue} onView={(investment) => setSelectedInvestment(investment)} onEdit={(investment) => { setEditingInvestment(investment); setDialogOpen(true); }} onDelete={(investment) => setDeleteTarget(investment)} />}
         </DashboardCard>
       </PageContainer>
 
-      <InvestmentDetailsDialog investment={selectedInvestment} open={Boolean(selectedInvestment)} onOpenChange={(open) => { if (!open) setSelectedInvestment(null); }} />
+      <InvestmentDetailsDialog investment={selectedInvestment} totalPortfolioValue={summary.totalInvestmentValue} open={Boolean(selectedInvestment)} onOpenChange={(open) => { if (!open) setSelectedInvestment(null); }} />
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setEditingInvestment(null); }}>
         <DialogContent className="max-w-3xl">

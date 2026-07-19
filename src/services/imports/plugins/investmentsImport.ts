@@ -1,7 +1,7 @@
 import { createInvestment, getInvestments, updateInvestment } from "@/services/investments";
 import type { ImportIssue, ImportModulePlugin, ImportValidationResult, ImportValidatedRecord } from "@/services/imports/types";
 import { buildNormalizedRow, isUuid, issue, parseDate, parseNumber, parseString, pickValue } from "@/services/imports/utils";
-import type { InvestmentCategory, InvestmentInsert, InvestmentRegion } from "@/types/investment";
+import type { InvestmentCategory, InvestmentInsert, InvestmentMode, InvestmentOptionType, InvestmentRegion } from "@/types/investment";
 
 const categories: InvestmentCategory[] = [
   "Mutual Funds",
@@ -20,6 +20,8 @@ const categories: InvestmentCategory[] = [
 ];
 
 const regions: InvestmentRegion[] = ["Domestic", "International"];
+const investmentModes: InvestmentMode[] = ["Direct", "Regular"];
+const optionTypes: InvestmentOptionType[] = ["Growth", "IDCW"];
 
 interface InvestmentImportPayload {
   id?: string;
@@ -42,6 +44,24 @@ function parseRegion(value: string | null) {
 
   const normalized = value.toLowerCase();
   return regions.find((item) => item.toLowerCase() === normalized) ?? null;
+}
+
+function parseInvestmentMode(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.toLowerCase();
+  return investmentModes.find((item) => item.toLowerCase() === normalized) ?? null;
+}
+
+function parseOptionType(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.toLowerCase();
+  return optionTypes.find((item) => item.toLowerCase() === normalized) ?? null;
 }
 
 export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload> = {
@@ -67,6 +87,14 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
       const region = parseRegion(parseString(pickValue(row, ["region"])));
       const purchaseDateRaw = pickValue(row, ["purchase_date", "purchase date"]);
       const purchaseDate = purchaseDateRaw === undefined ? null : parseDate(purchaseDateRaw);
+      const sipAmountRaw = pickValue(row, ["sip_amount", "sip amount"]);
+      const sipAmount = sipAmountRaw === undefined ? null : parseNumber(sipAmountRaw);
+      const sipDateRaw = pickValue(row, ["sip_date", "sip date"]);
+      const sipDate = sipDateRaw === undefined ? null : parseNumber(sipDateRaw);
+      const investmentModeRaw = parseString(pickValue(row, ["investment_mode", "investment mode"]));
+      const investmentMode = parseInvestmentMode(investmentModeRaw);
+      const optionTypeRaw = parseString(pickValue(row, ["option_type", "option type"]));
+      const optionType = parseOptionType(optionTypeRaw);
 
       if (id && !isUuid(id)) {
         issues.push(issue({ sheetName, rowNumber, field: "id", message: "ID must be a valid UUID." }));
@@ -100,6 +128,22 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
         issues.push(issue({ sheetName, rowNumber, field: "purchase_date", message: "Purchase date is invalid." }));
       }
 
+      if (sipAmountRaw !== undefined && sipAmount === null) {
+        issues.push(issue({ sheetName, rowNumber, field: "sip_amount", message: "SIP amount must be a valid number." }));
+      }
+
+      if (sipDateRaw !== undefined && (sipDate === null || !Number.isInteger(sipDate) || sipDate < 1 || sipDate > 31)) {
+        issues.push(issue({ sheetName, rowNumber, field: "sip_date", message: "SIP date must be an integer between 1 and 31." }));
+      }
+
+      if (investmentModeRaw && !investmentMode) {
+        issues.push(issue({ sheetName, rowNumber, field: "investment_mode", message: "Investment mode must be Direct or Regular." }));
+      }
+
+      if (optionTypeRaw && !optionType) {
+        issues.push(issue({ sheetName, rowNumber, field: "option_type", message: "Option type must be Growth or IDCW." }));
+      }
+
       const hasErrors = issues.some((item) => item.sheetName === sheetName && item.rowNumber === rowNumber && item.severity === "error");
       if (hasErrors || !investmentName || !category || units === null || navPrice === null || costBasis === null || !region) {
         return;
@@ -126,6 +170,15 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
         amc: parseString(pickValue(row, ["amc"])),
         region,
         purchase_date: purchaseDate,
+        owner: parseString(pickValue(row, ["owner"])),
+        folio_number: parseString(pickValue(row, ["folio_number", "folio number"])),
+        amfi_scheme_code: parseString(pickValue(row, ["amfi_scheme_code", "amfi scheme code"])),
+        sip_amount: sipAmount,
+        sip_date: sipDate,
+        investment_mode: investmentMode,
+        option_type: optionType,
+        broker_platform: parseString(pickValue(row, ["broker_platform", "broker platform"])),
+        nominee: parseString(pickValue(row, ["nominee"])),
         notes: parseString(pickValue(row, ["notes"])),
       };
 
