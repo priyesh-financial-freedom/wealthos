@@ -6,5 +6,5 @@ interface PageContainerProps {
 }
 
 export function PageContainer({ children, className }: PageContainerProps) {
-  return <div className={cn("mx-auto flex w-full max-w-7xl flex-col gap-6", className)}>{children}</div>;
+  return <div className={cn("flex w-full min-w-0 flex-col gap-6 lg:gap-8", className)}>{children}</div>;
 }

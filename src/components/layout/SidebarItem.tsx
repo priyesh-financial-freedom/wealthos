@@ -9,9 +9,10 @@ interface SidebarItemProps {
   icon: LucideIcon;
   active: boolean;
   collapsed: boolean;
+  nested?: boolean;
 }
 
-export function SidebarItem({ href, label, icon: Icon, active, collapsed }: SidebarItemProps) {
+export function SidebarItem({ href, label, icon: Icon, active, collapsed, nested = false }: SidebarItemProps) {
   return (
     <Link
       href={href}
@@ -20,10 +21,11 @@ export function SidebarItem({ href, label, icon: Icon, active, collapsed }: Side
         active
           ? "bg-slate-900 text-white shadow-sm"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+        nested && "py-2 text-[13px] font-medium",
         collapsed && "justify-center px-2",
       )}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className={cn("h-4 w-4 shrink-0", nested && "h-3.5 w-3.5")} />
       {!collapsed ? <span>{label}</span> : null}
     </Link>
   );

@@ -569,6 +569,27 @@ begin
     where user_id = v_user_id;
   end if;
 
+  if to_regclass('public.ppf_accounts') is not null then
+    select v_retirement_total + coalesce(sum(current_balance), 0)
+      into v_retirement_total
+    from public.ppf_accounts
+    where user_id = v_user_id;
+  end if;
+
+  if to_regclass('public.epf_accounts') is not null then
+    select v_retirement_total + coalesce(sum(current_balance), 0)
+      into v_retirement_total
+    from public.epf_accounts
+    where user_id = v_user_id;
+  end if;
+
+  if to_regclass('public.nps_accounts') is not null then
+    select v_retirement_total + coalesce(sum(current_balance), 0)
+      into v_retirement_total
+    from public.nps_accounts
+    where user_id = v_user_id;
+  end if;
+
   select coalesce(sum(current_value), 0)
     into v_real_estate_total
   from public.monthly_asset_snapshots

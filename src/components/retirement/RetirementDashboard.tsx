@@ -1,7 +1,7 @@
 "use client";
 
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowUpRight, Coins, Landmark, Layers3, PiggyBank, TrendingUp, WalletCards } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Landmark, Layers3, PiggyBank, WalletCards } from "lucide-react";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import type { RetirementDashboardModel } from "@/types/retirementAccount";
@@ -11,18 +11,10 @@ interface RetirementDashboardProps {
   emptyState: boolean;
 }
 
-const COLORS = ["#f59e0b", "#0f172a", "#15803d"];
+const COLORS = ["#f59e0b", "#0f172a", "#15803d", "#2563eb", "#a855f7", "#db2777"];
 
 function formatMoney(value: number) {
-  return `$${value.toLocaleString()}`;
-}
-
-function formatPercent(value: number | null) {
-  if (value === null) {
-    return "—";
-  }
-
-  return `${(value * 100).toFixed(1)}%`;
+  return `₹${value.toLocaleString("en-IN")}`;
 }
 
 export function RetirementDashboard({ model, emptyState }: RetirementDashboardProps) {
@@ -37,10 +29,10 @@ export function RetirementDashboard({ model, emptyState }: RetirementDashboardPr
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              { label: "Total Corpus", value: "$0" },
-              { label: "Monthly Contribution", value: "$0" },
-              { label: "Annual Growth", value: "—" },
-              { label: "Allocation", value: "0%" },
+              { label: "Total Retirement Assets", value: "₹0" },
+              { label: "PPF Balance", value: "₹0" },
+              { label: "EPF Balance", value: "₹0" },
+              { label: "NPS Balance", value: "₹0" },
             ].map((item) => (
               <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
                 <p className="text-sm text-slate-300">{item.label}</p>
@@ -55,45 +47,31 @@ export function RetirementDashboard({ model, emptyState }: RetirementDashboardPr
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
-        <MetricCard title="Total Retirement Corpus" value={formatMoney(model.totalCorpus)} subtitle="Combined EPF, PPF, and NPS" icon={WalletCards} tone="dark" />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard title="Total Retirement Assets" value={formatMoney(model.totalRetirementAssets)} subtitle="Combined EPF, PPF, and NPS" icon={WalletCards} tone="dark" />
         <MetricCard title="EPF Balance" value={formatMoney(model.balancesByType.EPF)} subtitle="Provident fund position" icon={Landmark} />
         <MetricCard title="PPF Balance" value={formatMoney(model.balancesByType.PPF)} subtitle="Public provident corpus" icon={PiggyBank} />
         <MetricCard title="NPS Balance" value={formatMoney(model.balancesByType.NPS)} subtitle="National pension exposure" icon={Layers3} />
-        <MetricCard title="Monthly Contribution" value={formatMoney(model.monthlyContribution)} subtitle="Latest monthly contribution run-rate" icon={Coins} tone="positive" />
-        <MetricCard title="Annual Growth" value={formatPercent(model.annualGrowthPercent)} subtitle={formatMoney(model.annualGrowthAmount)} icon={TrendingUp} tone="positive" />
-        <MetricCard title="Retirement Allocation %" value={formatPercent(model.retirementAllocationPercent)} subtitle="Share of total tracked net worth" icon={ArrowUpRight} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <DashboardCard>
           <div className="mb-4 space-y-1">
-            <h3 className="text-base font-semibold text-slate-900">Retirement Growth</h3>
-            <p className="text-sm text-slate-600">Total retirement corpus, contributions, and interest across the latest 12 months</p>
+            <h3 className="text-base font-semibold text-slate-900">Owner Allocation</h3>
+            <p className="text-sm text-slate-600">Retirement balances split by owner</p>
           </div>
-          {model.trend.length === 0 ? (
-            <EmptyChartState label="Add monthly retirement snapshots to unlock the compounding curve." />
+          {model.ownerAllocation.length === 0 ? (
+            <EmptyChartState label="Add retirement accounts to view owner allocation." />
           ) : (
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={model.trend}>
-                  <defs>
-                    <linearGradient id="ret-total" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0f172a" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#0f172a" stopOpacity={0.04} />
-                    </linearGradient>
-                    <linearGradient id="ret-contribution" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.22} />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.03} />
-                    </linearGradient>
-                  </defs>
+                <BarChart data={model.ownerAllocation}>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                   <Tooltip formatter={(value) => formatMoney(Number(value ?? 0))} />
-                  <Area type="monotone" dataKey="total" stroke="#0f172a" fill="url(#ret-total)" strokeWidth={2.6} />
-                  <Area type="monotone" dataKey="contribution" stroke="#f59e0b" fill="url(#ret-contribution)" strokeWidth={2} />
-                </AreaChart>
+                  <Bar dataKey="value" fill="#0f172a" radius={[10, 10, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -101,18 +79,18 @@ export function RetirementDashboard({ model, emptyState }: RetirementDashboardPr
 
         <DashboardCard>
           <div className="mb-4 space-y-1">
-            <h3 className="text-base font-semibold text-slate-900">EPF vs PPF vs NPS Allocation</h3>
-            <p className="text-sm text-slate-600">Current split of retirement capital by retirement account type</p>
+            <h3 className="text-base font-semibold text-slate-900">Account Type Allocation</h3>
+            <p className="text-sm text-slate-600">Current split across PPF, EPF, and NPS</p>
           </div>
-          {model.allocation.length === 0 ? (
+          {model.accountTypeAllocation.length === 0 ? (
             <EmptyChartState label="No retirement accounts added yet." />
           ) : (
             <div className="grid gap-4">
               <div className="h-60 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={model.allocation} dataKey="value" nameKey="name" innerRadius={56} outerRadius={92} paddingAngle={3}>
-                      {model.allocation.map((entry, index) => (
+                    <Pie data={model.accountTypeAllocation} dataKey="value" nameKey="name" innerRadius={56} outerRadius={92} paddingAngle={3}>
+                      {model.accountTypeAllocation.map((entry, index) => (
                         <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -121,7 +99,7 @@ export function RetirementDashboard({ model, emptyState }: RetirementDashboardPr
                 </ResponsiveContainer>
               </div>
               <div className="space-y-2">
-                {model.allocation.map((item, index) => (
+                {model.accountTypeAllocation.map((item, index) => (
                   <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                     <div className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
@@ -131,52 +109,6 @@ export function RetirementDashboard({ model, emptyState }: RetirementDashboardPr
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-        </DashboardCard>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <DashboardCard>
-          <div className="mb-4 space-y-1">
-            <h3 className="text-base font-semibold text-slate-900">Contribution History</h3>
-            <p className="text-sm text-slate-600">Monthly inflow into retirement assets</p>
-          </div>
-          {model.contributionHistory.length === 0 ? (
-            <EmptyChartState label="Contribution history appears here after monthly snapshots are added." />
-          ) : (
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={model.contributionHistory}>
-                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <Tooltip formatter={(value) => formatMoney(Number(value ?? 0))} />
-                  <Bar dataKey="contribution" radius={[10, 10, 0, 0]} fill="#f59e0b" barSize={22} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </DashboardCard>
-
-        <DashboardCard>
-          <div className="mb-4 space-y-1">
-            <h3 className="text-base font-semibold text-slate-900">Yearly Growth</h3>
-            <p className="text-sm text-slate-600">Annual corpus expansion based on monthly snapshot closes</p>
-          </div>
-          {model.yearlyGrowth.length === 0 ? (
-            <EmptyChartState label="Yearly growth will populate after the first monthly close cycle." />
-          ) : (
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={model.yearlyGrowth}>
-                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-                  <XAxis dataKey="year" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <Tooltip formatter={(value) => formatMoney(Number(value ?? 0))} />
-                  <Bar dataKey="growth" radius={[10, 10, 0, 0]} fill="#0f172a" barSize={28} />
-                </BarChart>
-              </ResponsiveContainer>
             </div>
           )}
         </DashboardCard>

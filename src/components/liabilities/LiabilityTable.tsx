@@ -48,8 +48,8 @@ export function LiabilityTable({ liabilities, onView, onEdit, onDelete }: Liabil
                 <td className="px-4 py-3 font-medium text-slate-900">{liability.account_name}</td>
                 <td className="px-4 py-3"><LiabilityTypeBadge type={liability.liability_type} /></td>
                 <td className="px-4 py-3 text-slate-600">{liability.lender}</td>
-                <td className="px-4 py-3 text-slate-900">${Number(liability.outstanding_amount).toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-900">{liability.emi ? `$${Number(liability.emi).toLocaleString()}` : "—"}</td>
+                <td className="px-4 py-3 text-slate-900">₹{Number(liability.outstanding_amount).toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-900">{liability.emi ? `₹${Number(liability.emi).toLocaleString("en-IN")}` : "—"}</td>
                 <td className="px-4 py-3 text-slate-900">{liability.interest_rate ? `${Number(liability.interest_rate).toFixed(1)}%` : "—"}</td>
                 <td className="px-4 py-3 text-slate-700">{liability.status}</td>
                 <td className="px-4 py-3 text-right">

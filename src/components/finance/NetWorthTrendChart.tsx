@@ -27,7 +27,7 @@ export function NetWorthTrendChart({ data }: NetWorthTrendChartProps) {
             <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
             <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
             <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-            <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+            <Tooltip formatter={(value) => `₹${Number(value ?? 0).toLocaleString("en-IN")}`} />
             <Area type="monotone" dataKey="value" stroke="#0f172a" fill="url(#netWorthFill)" strokeWidth={2.5} />
           </AreaChart>
         </ResponsiveContainer>

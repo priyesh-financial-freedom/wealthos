@@ -4,6 +4,7 @@ import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContaine
 import { Activity, ArrowDownCircle, ArrowUpCircle, CircleDollarSign, Droplets } from "lucide-react";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
+import { formatCurrency, formatRatio, truncateLabel } from "@/lib/formatters";
 import type { BankAccountsDashboardModel } from "@/types/bankAccount";
 
 interface BankAccountsDashboardProps {
@@ -12,18 +13,6 @@ interface BankAccountsDashboardProps {
 }
 
 const COLORS = ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1"];
-
-function formatCurrency(value: number) {
-  return `$${value.toLocaleString()}`;
-}
-
-function formatRatio(value: number | null) {
-  if (value === null) {
-    return "—";
-  }
-
-  return `${value.toFixed(2)}x`;
-}
 
 export function BankAccountsDashboard({ model, emptyState }: BankAccountsDashboardProps) {
   if (emptyState) {
@@ -37,9 +26,9 @@ export function BankAccountsDashboard({ model, emptyState }: BankAccountsDashboa
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              { label: "Total Cash", value: "$0" },
-              { label: "Monthly Inflow", value: "$0" },
-              { label: "Monthly Outflow", value: "$0" },
+              { label: "Total Cash", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
+              { label: "Monthly Inflow", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
+              { label: "Monthly Outflow", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
               { label: "Liquidity Ratio", value: "—" },
             ].map((item) => (
               <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
@@ -56,11 +45,11 @@ export function BankAccountsDashboard({ model, emptyState }: BankAccountsDashboa
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <MetricCard title="Total Cash" value={formatCurrency(model.totalCash)} subtitle="Current liquid position" icon={CircleDollarSign} tone="positive" />
-        <MetricCard title="Monthly Inflow" value={formatCurrency(model.monthlyInflow)} subtitle="Total deposits in latest month" icon={ArrowUpCircle} tone="positive" />
-        <MetricCard title="Monthly Outflow" value={formatCurrency(model.monthlyOutflow)} subtitle="Total withdrawals in latest month" icon={ArrowDownCircle} tone="warning" />
+        <MetricCard title="Total Cash" value={formatCurrency(model.totalCash, { maximumFractionDigits: 0 })} subtitle="Current liquid position" icon={CircleDollarSign} tone="positive" />
+        <MetricCard title="Monthly Inflow" value={formatCurrency(model.monthlyInflow, { maximumFractionDigits: 0 })} subtitle="Total deposits in latest month" icon={ArrowUpCircle} tone="positive" />
+        <MetricCard title="Monthly Outflow" value={formatCurrency(model.monthlyOutflow, { maximumFractionDigits: 0 })} subtitle="Total withdrawals in latest month" icon={ArrowDownCircle} tone="warning" />
         <MetricCard title="Liquidity Ratio" value={formatRatio(model.liquidityRatio)} subtitle="Cash / total liabilities" icon={Droplets} tone={model.liquidityRatio && model.liquidityRatio >= 1 ? "positive" : "default"} />
-        <MetricCard title="Interest Earned" value={formatCurrency(model.latestInterestEarned)} subtitle="Latest month estimated interest" icon={Activity} tone="default" />
+        <MetricCard title="Interest Earned" value={formatCurrency(model.latestInterestEarned, { maximumFractionDigits: 0 })} subtitle="Latest month estimated interest" icon={Activity} tone="default" />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -92,9 +81,9 @@ export function BankAccountsDashboard({ model, emptyState }: BankAccountsDashboa
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => truncateLabel(String(value), 10)} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
                   <Area type="monotone" dataKey="totalCash" stroke="#0f172a" fill="url(#cashTotal)" strokeWidth={2.5} />
                   <Area type="monotone" dataKey="inflow" stroke="#059669" fill="url(#cashInflow)" strokeWidth={2.2} />
                   <Area type="monotone" dataKey="outflow" stroke="#be123c" fill="url(#cashOutflow)" strokeWidth={2.2} />
@@ -121,7 +110,7 @@ export function BankAccountsDashboard({ model, emptyState }: BankAccountsDashboa
                         <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -133,7 +122,7 @@ export function BankAccountsDashboard({ model, emptyState }: BankAccountsDashboa
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                       <span className="font-medium text-slate-700">{item.name}</span>
                     </div>
-                    <span className="font-semibold text-slate-900">${item.value.toLocaleString()}</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(item.value, { maximumFractionDigits: 0 })}</span>
                   </div>
                 ))}
               </div>

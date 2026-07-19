@@ -49,11 +49,11 @@ export function AssetDetailsDialog({ asset, open, onOpenChange }: AssetDetailsDi
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Current value</p>
-            <p className="mt-1 text-base font-semibold text-slate-900">${asset.current_value.toLocaleString()}</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">₹{asset.current_value.toLocaleString("en-IN")}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Purchase value</p>
-            <p className="mt-1 text-base font-semibold text-slate-900">{asset.purchase_value ? `$${asset.purchase_value.toLocaleString()}` : "—"}</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{asset.purchase_value ? `₹${asset.purchase_value.toLocaleString("en-IN")}` : "—"}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Purchase date</p>

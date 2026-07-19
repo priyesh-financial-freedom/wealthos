@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ExecutiveDashboard } from "@/components/dashboard/ExecutiveDashboard";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ContentContainer } from "@/components/layout/ContentContainer";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { formatCurrency } from "@/lib/formatters";
 import {
   buildExecutiveInsights,
   buildFinancialHealthScore,
@@ -16,7 +19,7 @@ import {
 import { buildInvestmentInsights, buildInvestmentSummary, getTopInvestments, getRecentInvestments } from "@/services/investments";
 import { buildMonthlyHistoryModel, getMonthlyHistory } from "@/services/monthlySnapshots";
 import { buildBalanceSheetTrendFallback, getBalanceSheetData, type BalanceSheetSummary } from "@/services/balanceSheet";
-import { buildRetirementDashboardModel, buildRetirementExecutiveSummary, getMonthlyRetirementSnapshots } from "@/services/retirement";
+import { buildRetirementDashboardModel, buildRetirementExecutiveSummary } from "@/services/retirement";
 import { getUniversalDashboardSummary } from "@/services/universalAccounts";
 import type { Asset } from "@/types/asset";
 import type { Liability } from "@/types/liability";
@@ -41,18 +44,13 @@ export default function DashboardPage() {
 
     async function loadDashboard() {
       try {
-        const [balanceSheetData, history, retirementSnapshots, universal] = await Promise.all([
+        const [balanceSheetData, history, universal] = await Promise.all([
           getBalanceSheetData(),
           getMonthlyHistory(),
-          getMonthlyRetirementSnapshots().catch(() => []),
           getUniversalDashboardSummary().catch(() => null),
         ]);
         if (isMounted) {
-          const retirementModel = buildRetirementDashboardModel(
-            balanceSheetData.retirementAccounts,
-            retirementSnapshots,
-            balanceSheetData.summary.netWorth - balanceSheetData.summary.categoryTotals.retirement,
-          );
+          const retirementModel = buildRetirementDashboardModel(balanceSheetData.retirementAccounts);
 
           setAssets(balanceSheetData.assets);
           setLiabilities(balanceSheetData.liabilities);
@@ -143,7 +141,7 @@ export default function DashboardPage() {
         ? [
             {
               title: "Universal account engine synced",
-              detail: `Universal portfolio tracks $${universalSummary.totalCurrentValue.toLocaleString()} across ${universalSummary.allocation.length} account types.`,
+              detail: `Universal portfolio tracks ${formatCurrency(universalSummary.totalCurrentValue, { maximumFractionDigits: 0 })} across ${universalSummary.allocation.length} account types.`,
               tone: "neutral" as const,
             },
           ]
@@ -159,24 +157,24 @@ export default function DashboardPage() {
         ? [
             {
               title: `${historyModel.latest.monthLabel} close completed`,
-              detail: `Net worth closed at $${historyModel.latest.snapshot.net_worth.toLocaleString()} after the latest monthly snapshot.`,
+              detail: `Net worth closed at ${formatCurrency(historyModel.latest.snapshot.net_worth, { maximumFractionDigits: 0 })} after the latest monthly snapshot.`,
               time: formatRelativeTime(historyModel.latest.snapshot.closed_at),
             },
           ]
         : []),
       ...recentAssets.map((asset) => ({
         title: asset.asset_name,
-        detail: `${asset.asset_type.replaceAll("_", " ")} • $${asset.current_value.toLocaleString()}`,
+        detail: `${asset.asset_type.replaceAll("_", " ")} • ${formatCurrency(asset.current_value, { maximumFractionDigits: 0 })}`,
         time: formatRelativeTime(asset.created_at),
       })),
       ...recentInvestments.map((investment) => ({
         title: investment.investment_name,
-        detail: `${investment.category} • $${investment.current_value.toLocaleString()}`,
+        detail: `${investment.category} • ${formatCurrency(investment.current_value, { maximumFractionDigits: 0 })}`,
         time: formatRelativeTime(investment.created_at),
       })),
       ...recentLiabilities.map((liability) => ({
         title: liability.account_name,
-        detail: `${liability.liability_type} • $${liability.outstanding_amount.toLocaleString()}`,
+        detail: `${liability.liability_type} • ${formatCurrency(liability.outstanding_amount, { maximumFractionDigits: 0 })}`,
         time: formatRelativeTime(liability.created_at),
       })),
     ].slice(0, 8),
@@ -188,6 +186,7 @@ export default function DashboardPage() {
   return (
     <AppLayout>
       <PageContainer>
+        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Executive Dashboard" }]} />
         <PageHeader
           title="Executive Dashboard"
           description="A premium command center for wealth, debt, concentration, and liquidity."
@@ -195,19 +194,21 @@ export default function DashboardPage() {
 
         {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
-        <ExecutiveDashboard
-          loading={loading}
-          emptyState={!hasFinancialData && !hasUniversalData}
-          summary={activeSummary ?? { totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, debtRatio: 0, monthlyEmi: 0, cashHoldings: 0, cashRatio: 0, assetAllocation: [], liabilityAllocation: [], largestAsset: null, largestLiability: null }}
-          trendData={trendData}
-          health={health}
-          topAssets={topAssets}
-          topInvestments={topInvestments}
-          insights={insights}
-          activityItems={activityItems}
-          historyModel={historyModel}
-          retirementSummary={retirementSummary}
-        />
+        <ContentContainer className="border-none bg-transparent p-0 shadow-none">
+          <ExecutiveDashboard
+            loading={loading}
+            emptyState={!hasFinancialData && !hasUniversalData}
+            summary={activeSummary ?? { totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, debtRatio: 0, monthlyEmi: 0, cashHoldings: 0, cashRatio: 0, assetAllocation: [], liabilityAllocation: [], largestAsset: null, largestLiability: null }}
+            trendData={trendData}
+            health={health}
+            topAssets={topAssets}
+            topInvestments={topInvestments}
+            insights={insights}
+            activityItems={activityItems}
+            historyModel={historyModel}
+            retirementSummary={retirementSummary}
+          />
+        </ContentContainer>
       </PageContainer>
     </AppLayout>
   );

@@ -42,7 +42,7 @@ const defaultState = (initialData?: UniversalAccount | null): UniversalAccountFo
   nominee: initialData?.nominee ?? "",
   opening_value: initialData?.opening_value ?? 0,
   current_value: initialData?.current_value ?? 0,
-  currency: initialData?.currency ?? "USD",
+  currency: initialData?.currency ?? "INR",
   purchase_date: initialData?.purchase_date ?? "",
   interest_rate: initialData?.interest_rate ?? "",
   maturity_date: initialData?.maturity_date ?? "",

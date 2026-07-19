@@ -32,6 +32,8 @@ import {
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/feedback";
+import { formatCurrency, truncateLabel } from "@/lib/formatters";
+import { calculateTotalAssetBase } from "@/services/finance";
 import type { Asset } from "@/types/asset";
 import type { Investment } from "@/types/investment";
 import type {
@@ -162,9 +164,9 @@ const TrendChartCard = memo(function TrendChartCard({ data }: { data: DashboardT
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => truncateLabel(String(value), 10)} />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+              <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
               <Area type="monotone" dataKey="netWorth" stroke="#0f172a" fill={`url(#${gradientId}-networth)`} strokeWidth={2.5} />
               <Area type="monotone" dataKey="investments" stroke="#0f766e" fill={`url(#${gradientId}-investments)`} strokeWidth={2} />
             </AreaChart>
@@ -204,9 +206,9 @@ const GrowthChartCard = memo(function GrowthChartCard({ data }: { data: MonthlyH
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={growthData}>
               <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} height={50} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} height={50} tickFormatter={(value) => truncateLabel(String(value), 10)} />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+              <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
               <Bar dataKey="growth" radius={[8, 8, 0, 0]} fill="#0f172a" barSize={18} />
             </BarChart>
           </ResponsiveContainer>
@@ -254,7 +256,7 @@ const AllocationChartCard = memo(function AllocationChartCard({
                     <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+                <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -265,7 +267,7 @@ const AllocationChartCard = memo(function AllocationChartCard({
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                   <span className="font-medium text-slate-700">{item.name}</span>
                 </div>
-                <span className="font-semibold text-slate-900">${item.value.toLocaleString()}</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(item.value, { maximumFractionDigits: 0 })}</span>
               </div>
             ))}
           </div>
@@ -364,7 +366,7 @@ const HoldingListCard = memo(function HoldingListCard({
                   <p className="text-sm font-medium text-slate-900">{holding.name}</p>
                   <p className="mt-1 text-xs text-slate-500">{holding.detail}</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-900">${holding.value.toLocaleString()}</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCurrency(holding.value, { maximumFractionDigits: 0 })}</p>
               </div>
             </div>
           ))}
@@ -373,10 +375,6 @@ const HoldingListCard = memo(function HoldingListCard({
     </DashboardCard>
   );
 });
-
-function formatMoney(value: number) {
-  return `$${value.toLocaleString()}`;
-}
 
 export const ExecutiveDashboard = memo(function ExecutiveDashboard({
   loading,
@@ -396,6 +394,7 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
   }
 
   const latestClose = historyModel.latest;
+  const totalAssetBase = calculateTotalAssetBase(summary);
 
   return (
     <div className="space-y-8">
@@ -420,11 +419,11 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {[
-                { label: "Net Worth", value: "$0" },
-                { label: "Assets", value: "$0" },
-                { label: "Investments", value: "$0" },
-                { label: "Liabilities", value: "$0" },
-                { label: "Cash", value: "$0" },
+                { label: "Net Worth", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
+                { label: "Assets", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
+                { label: "Investments", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
+                { label: "Liabilities", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
+                { label: "Cash", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
                 { label: "Health Score", value: "0/100" },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
@@ -438,11 +437,11 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
       ) : (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <MetricCard title="Net Worth" value={formatMoney(summary.netWorth)} detail="Assets plus investments minus liabilities" icon={Wallet2} tone={summary.netWorth >= 0 ? "positive" : "warning"} />
-            <MetricCard title="Assets" value={formatMoney(summary.totalAssets)} detail="Current value of balance sheet assets" icon={CircleDollarSign} />
-            <MetricCard title="Investments" value={formatMoney(summary.totalInvestments)} detail="Market value of the portfolio" icon={TrendingUp} tone={summary.totalInvestments > 0 ? "positive" : "default"} />
-            <MetricCard title="Liabilities" value={formatMoney(summary.totalLiabilities)} detail="Outstanding debt obligations" icon={Banknote} tone={summary.totalLiabilities > summary.totalAssets * 0.5 ? "warning" : "default"} />
-            <MetricCard title="Cash" value={formatMoney(summary.cashHoldings)} detail="Liquid balances and cash equivalents" icon={PiggyBank} tone={summary.cashRatio >= 0.1 ? "positive" : "warning"} />
+            <MetricCard title="Net Worth" value={formatCurrency(summary.netWorth, { maximumFractionDigits: 0 })} detail="Total assets minus liabilities" icon={Wallet2} tone={summary.netWorth >= 0 ? "positive" : "warning"} />
+            <MetricCard title="Assets" value={formatCurrency(totalAssetBase, { maximumFractionDigits: 0 })} detail="Bank, investments, fixed deposits, metals, retirement, and real estate" icon={CircleDollarSign} />
+            <MetricCard title="Investments" value={formatCurrency(summary.totalInvestments, { maximumFractionDigits: 0 })} detail="Market value of the portfolio" icon={TrendingUp} tone={summary.totalInvestments > 0 ? "positive" : "default"} />
+            <MetricCard title="Liabilities" value={formatCurrency(summary.totalLiabilities, { maximumFractionDigits: 0 })} detail="Outstanding debt obligations" icon={Banknote} tone={summary.totalLiabilities > totalAssetBase * 0.5 ? "warning" : "default"} />
+            <MetricCard title="Cash" value={formatCurrency(summary.cashHoldings, { maximumFractionDigits: 0 })} detail="Liquid balances and cash equivalents" icon={PiggyBank} tone={summary.cashRatio >= 0.1 ? "positive" : "warning"} />
           </section>
 
           <section className="grid gap-4 xl:grid-cols-2">
@@ -450,7 +449,7 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium text-amber-200/80">Retirement Corpus</p>
-                  <p className="mt-3 text-3xl font-semibold tracking-tight">{formatMoney(retirementSummary?.totalCorpus ?? 0)}</p>
+                  <p className="mt-3 text-3xl font-semibold tracking-tight">{formatCurrency(retirementSummary?.totalRetirementAssets ?? 0, { maximumFractionDigits: 0 })}</p>
                   <p className="mt-3 max-w-md text-sm text-slate-300">Dedicated EPF, PPF, and NPS holdings tracked outside the legacy modules.</p>
                 </div>
                 <PiggyBank className="h-5 w-5 text-slate-300" />
@@ -460,16 +459,14 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
             <DashboardCard>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-500">Retirement % of Total Net Worth</p>
+                  <p className="text-sm font-medium text-slate-500">Retirement Coverage</p>
                   <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
-                    {retirementSummary?.retirementAllocationPercent !== undefined
-                      ? `${(retirementSummary.retirementAllocationPercent * 100).toFixed(1)}%`
+                    {retirementSummary?.totalRetirementAssets && summary.netWorth > 0
+                      ? `${((retirementSummary.totalRetirementAssets / summary.netWorth) * 100).toFixed(1)}%`
                       : "0.0%"}
                   </p>
                   <p className="mt-3 text-sm text-slate-600">
-                    {retirementSummary?.annualGrowthPercent !== null && retirementSummary?.annualGrowthPercent !== undefined
-                      ? `Annual retirement growth is ${(retirementSummary.annualGrowthPercent * 100).toFixed(1)}%.`
-                      : "Annual retirement growth will appear after monthly close history accumulates."}
+                    Retirement module now tracks balances with standardized recurring contribution schedules across PPF, EPF, and NPS.
                   </p>
                 </div>
                 <ShieldCheck className="h-5 w-5 text-slate-400" />
@@ -514,7 +511,7 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
                   <p className="text-sm text-slate-300">Latest snapshot</p>
                   <p className="mt-2 text-xl font-semibold">{latestClose.monthLabel}</p>
-                  <p className="mt-2 text-sm text-slate-300">Net worth ${latestClose.snapshot.net_worth.toLocaleString()} with month-over-month growth of ${latestClose.snapshot.growth_from_previous_month.toLocaleString()}.</p>
+                  <p className="mt-2 text-sm text-slate-300">Net worth {formatCurrency(latestClose.snapshot.net_worth, { maximumFractionDigits: 0 })} with month-over-month growth of {formatCurrency(latestClose.snapshot.growth_from_previous_month, { maximumFractionDigits: 0 })}.</p>
                 </div>
               ) : null}
             </DashboardCard>

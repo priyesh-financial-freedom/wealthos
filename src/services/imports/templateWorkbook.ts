@@ -95,29 +95,31 @@ const importTemplateSheets: ImportTemplateSheetDefinition[] = [
     sheetName: "Stock Holdings",
     headers: [
       "Investment Name",
+      "Owner",
       "Category",
       "Units",
-      "NAV Price",
-      "Cost Basis",
-      "Region",
-      "Purchase Date",
-      "Today Gain Loss",
+      "Average Purchase Price",
+      "Current Price",
+      "Broker",
       "Sector",
-      "AMC",
+      "Exchange",
+      "ISIN",
+      "Purchase Date",
       "Notes",
       "ID",
     ],
     sampleRow: [
       "TCS",
+      "Priyesh",
       "Stocks",
       24,
+      3604.17,
       4120,
-      86500,
-      "Domestic",
-      "2023-11-02",
-      450,
+      "Zerodha",
       "IT",
-      "Direct",
+      "NSE",
+      "INE467B01029",
+      "2023-11-02",
       "Long-term core equity",
       null,
     ],
@@ -125,31 +127,117 @@ const importTemplateSheets: ImportTemplateSheetDefinition[] = [
   {
     sheetName: "PPF Accounts",
     headers: [
-      "Account Type",
+      "Owner",
       "Institution",
+      "Current Balance",
+      "Contribution Frequency",
+      "Contribution Amount",
+      "Contribution Day",
+      "Contribution Month",
       "Account Number",
-      "Holder Name",
-      "Current Value",
       "Opening Date",
-      "Monthly Contribution",
-      "Annual Contribution",
       "Interest Rate",
+      "Maturity Date",
       "Nominee",
       "Notes",
       "ID",
     ],
     sampleRow: [
-      "PPF",
-      "State Bank of India",
-      "PPF123456",
       "Priyesh",
+      "State Bank of India",
       545000,
-      "2018-05-01",
-      null,
+      "Annual",
       150000,
+      5,
+      "April",
+      "PPF123456",
+      "2018-05-01",
       7.1,
+      "2033-05-01",
       "Spouse",
       "PPF long-term corpus",
+      null,
+    ],
+  },
+  {
+    sheetName: "EPF Accounts",
+    headers: [
+      "Owner",
+      "Institution",
+      "Current Balance",
+      "Contribution Frequency",
+      "Contribution Amount",
+      "Contribution Day",
+      "Account Number",
+      "Opening Date",
+      "Interest Rate",
+      "Employer",
+      "UAN",
+      "Employee Contribution",
+      "Employer Contribution",
+      "Nominee",
+      "Notes",
+      "ID",
+    ],
+    sampleRow: [
+      "Priyesh",
+      "EPFO",
+      1245000,
+      "Monthly",
+      18000,
+      30,
+      "EPF-001",
+      "2016-08-01",
+      8.25,
+      "Acme Technologies",
+      "100200300400",
+      9000,
+      9000,
+      "Spouse",
+      "Payroll-linked EPF account",
+      null,
+    ],
+  },
+  {
+    sheetName: "NPS Accounts",
+    headers: [
+      "Owner",
+      "Institution",
+      "Current Balance",
+      "Contribution Frequency",
+      "Contribution Amount",
+      "Contribution Day",
+      "Account Number",
+      "Opening Date",
+      "Interest Rate",
+      "PRAN",
+      "POP",
+      "Equity %",
+      "Corporate Debt %",
+      "Government Securities %",
+      "Alternative Assets %",
+      "Nominee",
+      "Notes",
+      "ID",
+    ],
+    sampleRow: [
+      "Priyesh",
+      "NPS Trust",
+      820000,
+      "Monthly",
+      10000,
+      10,
+      "NPS-001",
+      "2019-04-10",
+      null,
+      "123456789012",
+      "eNPS",
+      70,
+      15,
+      10,
+      5,
+      "Spouse",
+      "Active NPS Tier-I",
       null,
     ],
   },
@@ -166,6 +254,10 @@ const importTemplateSheets: ImportTemplateSheetDefinition[] = [
       "Start Date",
       "End Date",
       "Due Day",
+      "Due Date",
+      "Tenure Months",
+      "Credit Limit",
+      "Sanction Limit",
       "Status",
       "Notes",
       "ID",
@@ -181,6 +273,10 @@ const importTemplateSheets: ImportTemplateSheetDefinition[] = [
       "2021-02-10",
       "2041-02-10",
       5,
+      null,
+      240,
+      null,
+      null,
       "active",
       "Floating ROI",
       null,
@@ -353,6 +449,43 @@ const importTemplateSheets: ImportTemplateSheetDefinition[] = [
       null,
     ],
   },
+  {
+    sheetName: "Real Estate",
+    headers: [
+      "Property Name",
+      "Property Type",
+      "Owner",
+      "Purchase Date",
+      "Purchase Price",
+      "Current Market Value",
+      "Address",
+      "City",
+      "State",
+      "PIN Code",
+      "Self Occupied / Rented",
+      "Monthly Rent",
+      "Linked Home Loan ID",
+      "Notes",
+      "ID",
+    ],
+    sampleRow: [
+      "Lakeview Residency",
+      "Apartment",
+      "Priyesh",
+      "2020-08-12",
+      7800000,
+      11200000,
+      "Tower 3, Whitefield Main Road",
+      "Bengaluru",
+      "Karnataka",
+      "560066",
+      "rented",
+      42000,
+      null,
+      "Primary rental property",
+      null,
+    ],
+  },
 ];
 
 function createTemplateWorkbook() {
@@ -367,8 +500,24 @@ function createTemplateWorkbook() {
   return workbook;
 }
 
-export function downloadImportTemplateWorkbook() {
-  const workbook = createTemplateWorkbook();
+function createTemplateWorkbookForSheets(sheetNames: string[]) {
+  const workbook = XLSX.utils.book_new();
+  const selected = new Set(sheetNames);
+
+  for (const sheet of importTemplateSheets) {
+    if (!selected.has(sheet.sheetName)) {
+      continue;
+    }
+
+    const rows = [sheet.headers, sheet.sampleRow];
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheet.sheetName);
+  }
+
+  return workbook;
+}
+
+function downloadWorkbook(workbook: XLSX.WorkBook, fileName: string) {
   const output = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
   const blob = new Blob([output], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -377,9 +526,29 @@ export function downloadImportTemplateWorkbook() {
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
-  anchor.download = "wealthos-import-template.xlsx";
+  anchor.download = fileName;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(objectUrl);
+}
+
+export function downloadImportTemplateWorkbook() {
+  const workbook = createTemplateWorkbook();
+  downloadWorkbook(workbook, "wealthos-import-template.xlsx");
+}
+
+export function downloadPpfImportTemplateWorkbook() {
+  const workbook = createTemplateWorkbookForSheets(["PPF Accounts"]);
+  downloadWorkbook(workbook, "wealthos-ppf-import-template.xlsx");
+}
+
+export function downloadEpfImportTemplateWorkbook() {
+  const workbook = createTemplateWorkbookForSheets(["EPF Accounts"]);
+  downloadWorkbook(workbook, "wealthos-epf-import-template.xlsx");
+}
+
+export function downloadNpsImportTemplateWorkbook() {
+  const workbook = createTemplateWorkbookForSheets(["NPS Accounts"]);
+  downloadWorkbook(workbook, "wealthos-nps-import-template.xlsx");
 }

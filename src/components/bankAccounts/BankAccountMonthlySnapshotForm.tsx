@@ -170,10 +170,10 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
         <p className="text-sm font-medium text-slate-700">Auto-calculated preview</p>
         <div className="mt-2 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
-          <p>Monthly Change: <span className="font-semibold text-slate-900">${computedPreview.monthlyChange.toLocaleString()}</span></p>
-          <p>Cash Flow: <span className="font-semibold text-slate-900">${computedPreview.cashFlow.toLocaleString()}</span></p>
-          <p>Average Balance: <span className="font-semibold text-slate-900">${computedPreview.averageBalance.toLocaleString()}</span></p>
-          <p>Interest Earned: <span className="font-semibold text-slate-900">${computedPreview.interestEarned.toLocaleString()}</span></p>
+          <p>Monthly Change: <span className="font-semibold text-slate-900">₹{computedPreview.monthlyChange.toLocaleString("en-IN")}</span></p>
+          <p>Cash Flow: <span className="font-semibold text-slate-900">₹{computedPreview.cashFlow.toLocaleString("en-IN")}</span></p>
+          <p>Average Balance: <span className="font-semibold text-slate-900">₹{computedPreview.averageBalance.toLocaleString("en-IN")}</span></p>
+          <p>Interest Earned: <span className="font-semibold text-slate-900">₹{computedPreview.interestEarned.toLocaleString("en-IN")}</span></p>
         </div>
       </div>
 

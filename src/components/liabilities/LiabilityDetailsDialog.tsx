@@ -31,7 +31,7 @@ function formatCurrency(value: number | null) {
     return "—";
   }
 
-  return `$${value.toLocaleString()}`;
+  return `₹${value.toLocaleString("en-IN")}`;
 }
 
 export function LiabilityDetailsDialog({ liability, open, onOpenChange }: LiabilityDetailsDialogProps) {
@@ -78,6 +78,22 @@ export function LiabilityDetailsDialog({ liability, open, onOpenChange }: Liabil
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Due day</p>
             <p className="mt-1 text-base font-semibold text-slate-900">{liability.due_day ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Due date</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(liability.due_date)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Tenure (months)</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{liability.tenure_months ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Credit limit</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.credit_limit)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Sanction limit</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.sanction_limit)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Start date</p>

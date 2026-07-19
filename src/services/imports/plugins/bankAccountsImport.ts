@@ -125,7 +125,7 @@ export const bankAccountsImportPlugin: ImportModulePlugin<BankAccountImportPaylo
         account_number: accountNumber,
         current_balance: currentBalance,
         opening_balance: openingBalance,
-        currency: parseString(row.currency) ?? "USD",
+        currency: parseString(row.currency) ?? "INR",
         interest_rate: parseNumber(row.interest_rate) ?? 0,
         nickname: parseString(row.nickname),
         ifsc: parseString(row.ifsc),

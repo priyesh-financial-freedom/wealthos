@@ -8,7 +8,7 @@ interface AccountEngineKpiCardsProps {
 }
 
 function formatMoney(value: number) {
-  return `$${value.toLocaleString()}`;
+  return `₹${value.toLocaleString("en-IN")}`;
 }
 
 function formatRatio(value: number | null) {

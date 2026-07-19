@@ -1,6 +1,7 @@
 "use client";
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DetailDialog, DetailGrid, DetailItem, DetailSection } from "@/components/ui/detail-dialog";
+import { formatCurrency, formatDate, formatPercent, formatNumber } from "@/lib/formatters";
 import type { Investment } from "@/types/investment";
 
 interface InvestmentDetailsDialogProps {
@@ -10,111 +11,72 @@ interface InvestmentDetailsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "—";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "—";
-  }
-
-  return parsed.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatCurrency(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-
-  return `₹${value.toLocaleString("en-IN")}`;
-}
-
-function formatPercent(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-
-  return `${(value * 100).toFixed(2)}%`;
-}
-
 export function InvestmentDetailsDialog({ investment, totalPortfolioValue, open, onOpenChange }: InvestmentDetailsDialogProps) {
   if (!investment) {
     return null;
   }
 
+  const isStock = investment.category === "Stocks";
   const gainPercent = investment.cost_basis > 0 ? investment.gain_loss / investment.cost_basis : null;
   const portfolioWeight = totalPortfolioValue > 0 ? investment.current_value / totalPortfolioValue : null;
+  const averagePurchasePrice = investment.units > 0 ? investment.cost_basis / investment.units : null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{investment.investment_name}</DialogTitle>
-        </DialogHeader>
+    <DetailDialog open={open} onOpenChange={onOpenChange} title={investment.investment_name} description="Position summary and metadata.">
+      <div className="space-y-6">
+        <DetailSection title="Performance">
+          <DetailGrid>
+            <DetailItem label="Current value" value={formatCurrency(investment.current_value)} />
+            <DetailItem label="Invested value" value={formatCurrency(investment.cost_basis)} />
+            <DetailItem label="Overall gain/loss" value={formatCurrency(investment.gain_loss)} />
+            <DetailItem label="Gain %" value={formatPercent(gainPercent, { digits: 2 })} />
+            <DetailItem label="Portfolio weight" value={formatPercent(portfolioWeight, { digits: 2 })} />
+            {!isStock ? <DetailItem label="Today's gain/loss" value={formatCurrency(investment.today_gain_loss)} /> : null}
+          </DetailGrid>
+        </DetailSection>
 
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Performance</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <DetailCard label="Current value" value={formatCurrency(investment.current_value)} />
-            <DetailCard label="Cost basis" value={formatCurrency(investment.cost_basis)} />
-            <DetailCard label="Overall gain/loss" value={formatCurrency(investment.gain_loss)} />
-            <DetailCard label="Gain %" value={formatPercent(gainPercent)} />
-            <DetailCard label="Portfolio weight" value={formatPercent(portfolioWeight)} />
-            <DetailCard label="Today's gain/loss" value={formatCurrency(investment.today_gain_loss)} />
-            <DetailCard label="CAGR" value={formatPercent(investment.cagr)} />
-            <DetailCard label="XIRR" value={formatPercent(investment.xirr)} />
-          </div>
-        </div>
+        <DetailSection title="Position">
+          <DetailGrid>
+            <DetailItem label="Category" value={investment.category} />
+            {!isStock ? <DetailItem label="Region" value={investment.region} /> : null}
+            <DetailItem label="Units" value={formatNumber(investment.units)} />
+            <DetailItem label={isStock ? "Current Price" : "NAV / Price"} value={formatCurrency(investment.nav_price)} />
+            {isStock ? <DetailItem label="Average Purchase Price" value={formatCurrency(averagePurchasePrice)} /> : null}
+            <DetailItem label="Purchase date" value={formatDate(investment.purchase_date)} />
+            <DetailItem label="Updated" value={formatDate(investment.updated_at)} />
+            <DetailItem label="Sector" value={investment.sector ?? "—"} />
+            <DetailItem label={isStock ? "Exchange" : "AMC / Issuer"} value={isStock ? investment.exchange ?? "—" : investment.amc ?? "—"} />
+          </DetailGrid>
+        </DetailSection>
 
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Position</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <DetailCard label="Category" value={investment.category} />
-            <DetailCard label="Region" value={investment.region} />
-            <DetailCard label="Units" value={investment.units.toLocaleString()} />
-            <DetailCard label="NAV / Price" value={formatCurrency(investment.nav_price)} />
-            <DetailCard label="Purchase date" value={formatDate(investment.purchase_date)} />
-            <DetailCard label="Updated" value={formatDate(investment.updated_at)} />
-            <DetailCard label="Sector" value={investment.sector ?? "—"} />
-            <DetailCard label="AMC / Issuer" value={investment.amc ?? "—"} />
-          </div>
-        </div>
+        {isStock ? (
+          <DetailSection title="Stock Metadata">
+            <DetailGrid>
+              <DetailItem label="Owner" value={investment.owner ?? "—"} />
+                <DetailItem label="Broker" value={investment.broker ?? "—"} />
+                <DetailItem label="ISIN" value={investment.isin ?? "—"} />
+            </DetailGrid>
+          </DetailSection>
+        ) : (
+          <DetailSection title="Family Office">
+            <DetailGrid>
+              <DetailItem label="Owner" value={investment.owner ?? "—"} />
+              <DetailItem label="Nominee" value={investment.nominee ?? "—"} />
+              <DetailItem label="Folio number" value={investment.folio_number ?? "—"} />
+              <DetailItem label="AMFI scheme code" value={investment.amfi_scheme_code ?? "—"} />
+              <DetailItem label="Investment mode" value={investment.investment_mode ?? "—"} />
+              <DetailItem label="Option type" value={investment.option_type ?? "—"} />
+              <DetailItem label="Broker platform" value={investment.broker_platform ?? "—"} />
+              <DetailItem label="SIP amount" value={formatCurrency(investment.sip_amount)} />
+              <DetailItem label="SIP date" value={investment.sip_date ? `${investment.sip_date}` : "—"} />
+            </DetailGrid>
+          </DetailSection>
+        )}
 
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Family Office</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            <DetailCard label="Owner" value={investment.owner ?? "—"} />
-            <DetailCard label="Nominee" value={investment.nominee ?? "—"} />
-            <DetailCard label="Folio number" value={investment.folio_number ?? "—"} />
-            <DetailCard label="AMFI scheme code" value={investment.amfi_scheme_code ?? "—"} />
-            <DetailCard label="Investment mode" value={investment.investment_mode ?? "—"} />
-            <DetailCard label="Option type" value={investment.option_type ?? "—"} />
-            <DetailCard label="Broker platform" value={investment.broker_platform ?? "—"} />
-            <DetailCard label="SIP amount" value={formatCurrency(investment.sip_amount)} />
-            <DetailCard label="SIP date" value={investment.sip_date ? `${investment.sip_date}` : "—"} />
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-sm font-medium text-slate-500">Notes</p>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{investment.notes || "No notes provided."}</p>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DetailCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="mt-1 text-base font-semibold text-slate-900">{value}</p>
-    </div>
+        <DetailSection title="Notes">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{investment.notes || "No notes provided."}</div>
+        </DetailSection>
+      </div>
+    </DetailDialog>
   );
 }

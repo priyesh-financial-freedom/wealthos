@@ -10,15 +10,15 @@ interface UniversalAccountDetailDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function formatMoney(value: number, currency: string) {
+function formatMoney(value: number) {
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency,
+      currency: "INR",
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    return `$${Number(value ?? 0).toLocaleString()}`;
+    return `₹${Number(value ?? 0).toLocaleString("en-IN")}`;
   }
 }
 
@@ -43,15 +43,15 @@ export function UniversalAccountDetailDialog({ account, metrics, open, onOpenCha
 
         <div className="space-y-6">
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Metric title="Current Value" value={formatMoney(account.current_value, account.currency)} />
-            <Metric title="Opening Value" value={formatMoney(account.opening_value, account.currency)} />
-            <Metric title="Net Change" value={formatMoney(account.current_value - account.opening_value, account.currency)} />
-            <Metric title="Monthly Growth" value={formatMoney(metrics?.monthlyGrowth ?? 0, account.currency)} />
+            <Metric title="Current Value" value={formatMoney(account.current_value)} />
+            <Metric title="Opening Value" value={formatMoney(account.opening_value)} />
+            <Metric title="Net Change" value={formatMoney(account.current_value - account.opening_value)} />
+            <Metric title="Monthly Growth" value={formatMoney(metrics?.monthlyGrowth ?? 0)} />
             <Metric title="CAGR" value={formatPercent(metrics?.cagr ?? null)} />
             <Metric title="XIRR" value={formatPercent(metrics?.xirr ?? null)} />
-            <Metric title="Contributions" value={formatMoney(metrics?.totalContributions ?? 0, account.currency)} />
-            <Metric title="Withdrawals" value={formatMoney(metrics?.totalWithdrawals ?? 0, account.currency)} />
-            <Metric title="Lifetime Return" value={formatMoney(metrics?.lifetimeReturn ?? 0, account.currency)} />
+            <Metric title="Contributions" value={formatMoney(metrics?.totalContributions ?? 0)} />
+            <Metric title="Withdrawals" value={formatMoney(metrics?.totalWithdrawals ?? 0)} />
+            <Metric title="Lifetime Return" value={formatMoney(metrics?.lifetimeReturn ?? 0)} />
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">

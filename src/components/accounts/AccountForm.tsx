@@ -35,7 +35,7 @@ const defaultState = (initialData?: Account | null): AccountFormState => ({
   institution: initialData?.institution ?? "",
   owner: initialData?.owner ?? "",
   current_value: initialData?.current_value ?? 0,
-  currency: initialData?.currency ?? "USD",
+  currency: initialData?.currency ?? "INR",
   status: initialData?.status ?? "active",
   linked_item_type: initialData?.linked_item_type ?? "",
   linked_item_id: initialData?.linked_item_id ?? "",

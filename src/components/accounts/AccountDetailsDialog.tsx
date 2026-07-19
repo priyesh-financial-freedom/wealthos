@@ -26,15 +26,15 @@ function formatDate(value: string | null) {
   });
 }
 
-function formatCurrency(value: number, currency: string) {
+function formatCurrency(value: number) {
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: currency || "USD",
+      currency: "INR",
       maximumFractionDigits: 2,
     }).format(value);
   } catch {
-    return `$${value.toLocaleString()}`;
+    return `₹${value.toLocaleString("en-IN")}`;
   }
 }
 
@@ -69,7 +69,7 @@ export function AccountDetailsDialog({ account, open, onOpenChange }: AccountDet
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Current value</p>
-            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(Number(account.current_value ?? 0), account.currency)}</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(Number(account.current_value ?? 0))}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Currency</p>

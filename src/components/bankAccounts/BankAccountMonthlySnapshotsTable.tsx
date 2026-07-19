@@ -51,13 +51,13 @@ export function BankAccountMonthlySnapshotsTable({ snapshots, accounts, onEdit, 
               <tr key={snapshot.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-700">{monthLabel(snapshot.snapshot_month, snapshot.snapshot_year)}</td>
                 <td className="px-4 py-3 text-slate-700">{accountLabel(accounts, snapshot.bank_account_id)}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.opening_balance.toLocaleString()}</td>
-                <td className="px-4 py-3 text-emerald-700">${snapshot.deposits.toLocaleString()}</td>
-                <td className="px-4 py-3 text-rose-700">${snapshot.withdrawals.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-900">${snapshot.closing_balance.toLocaleString()}</td>
-                <td className={`px-4 py-3 font-medium ${snapshot.monthly_change >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${snapshot.monthly_change.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.average_balance.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.interest_earned.toLocaleString()}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.opening_balance.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-emerald-700">₹{snapshot.deposits.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-rose-700">₹{snapshot.withdrawals.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-900">₹{snapshot.closing_balance.toLocaleString("en-IN")}</td>
+                <td className={`px-4 py-3 font-medium ${snapshot.monthly_change >= 0 ? "text-emerald-700" : "text-rose-700"}`}>₹{snapshot.monthly_change.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.average_balance.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.interest_earned.toLocaleString("en-IN")}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(snapshot)}>

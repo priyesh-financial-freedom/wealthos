@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LiabilityDetailsDialog } from "@/components/liabilities/LiabilityDetailsDialog";
-import { LiabilityCard } from "@/components/liabilities/LiabilityCard";
 import { LiabilityForm } from "@/components/liabilities/LiabilityForm";
 import { LiabilitySummary } from "@/components/liabilities/LiabilitySummary";
 import { LiabilityTable } from "@/components/liabilities/LiabilityTable";
@@ -15,11 +15,99 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
+import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
+import { getAssets } from "@/services/assets";
+import { getBankAccounts } from "@/services/bankAccounts";
+import { getFixedDeposits } from "@/services/fixedDeposits";
+import { getGoldHoldings } from "@/services/goldHoldings";
+import { getInvestments } from "@/services/investments";
 import { createLiability, deleteLiability, getLiabilities, updateLiability } from "@/services/liabilities";
-import type { Liability, LiabilityInsert } from "@/types/liability";
+import { getRetirementAccounts } from "@/services/retirement";
+import { getSilverHoldings } from "@/services/silverHoldings";
+import { LIABILITY_TYPES, type Liability, type LiabilityInsert, type LiabilityType } from "@/types/liability";
+
+interface SummaryBucket {
+  label: string;
+  value: number;
+  share: number;
+}
+
+const CHART_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#b45309", "#7c3aed", "#be123c", "#0e7490", "#475569"];
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + Number(value ?? 0), 0);
+}
+
+function liabilityBucketLabel(type: LiabilityType) {
+  if (type === "Home Loan" || type === "Loan Against Property") {
+    return "Home Loans";
+  }
+
+  if (type === "Car Loan") {
+    return "Vehicle Loans";
+  }
+
+  if (type === "Credit Card") {
+    return "Credit Cards";
+  }
+
+  if (type === "Overdraft / Line of Credit") {
+    return "Overdraft";
+  }
+
+  return "Other";
+}
+
+function buildSummaryBuckets(liabilities: Liability[]): SummaryBucket[] {
+  const grouped = liabilities.reduce<Record<string, number>>((acc, liability) => {
+    const key = liabilityBucketLabel(liability.liability_type);
+    acc[key] = (acc[key] ?? 0) + Number(liability.outstanding_amount ?? 0);
+    return acc;
+  }, {
+    "Home Loans": 0,
+    "Vehicle Loans": 0,
+    "Credit Cards": 0,
+    Overdraft: 0,
+    Other: 0,
+  });
+
+  const totalLiabilities = sum(Object.values(grouped));
+  return ["Home Loans", "Vehicle Loans", "Credit Cards", "Overdraft", "Other"].map((label) => ({
+    label,
+    value: Number(grouped[label] ?? 0),
+    share: totalLiabilities > 0 ? Number(grouped[label] ?? 0) / totalLiabilities : 0,
+  }));
+}
+
+function buildAllocationRows(liabilities: Liability[]) {
+  const grouped = liabilities.reduce<Record<string, number>>((acc, liability) => {
+    const key = liability.liability_type;
+    acc[key] = (acc[key] ?? 0) + Number(liability.outstanding_amount ?? 0);
+    return acc;
+  }, {});
+
+  return Object.entries(grouped)
+    .map(([name, value]) => ({ name, value }))
+    .filter((row) => row.value > 0)
+    .sort((left, right) => right.value - left.value);
+}
+
+function buildEmiRows(liabilities: Liability[]) {
+  const grouped = liabilities.reduce<Record<string, number>>((acc, liability) => {
+    const key = liability.liability_type;
+    acc[key] = (acc[key] ?? 0) + Number(liability.emi ?? 0);
+    return acc;
+  }, {});
+
+  return Object.entries(grouped)
+    .map(([name, emi]) => ({ name, emi }))
+    .filter((row) => row.emi > 0)
+    .sort((left, right) => right.emi - left.emi);
+}
 
 export default function LiabilitiesPage() {
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
+  const [totalAssetBase, setTotalAssetBase] = useState(0);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -34,11 +122,39 @@ export default function LiabilitiesPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function refreshLiabilities() {
+  async function refreshDashboard() {
     try {
       setLoading(true);
-      const nextLiabilities = await getLiabilities();
+      const [
+        nextLiabilities,
+        realEstateAssets,
+        bankAccounts,
+        investments,
+        fixedDeposits,
+        goldHoldings,
+        silverHoldings,
+        retirementAccounts,
+      ] = await Promise.all([
+        getLiabilities(),
+        getAssets().catch(() => []),
+        getBankAccounts().catch(() => []),
+        getInvestments().catch(() => []),
+        getFixedDeposits().catch(() => []),
+        getGoldHoldings().catch(() => []),
+        getSilverHoldings().catch(() => []),
+        getRetirementAccounts().catch(() => []),
+      ]);
+
+      const bankTotal = sum(bankAccounts.filter((account) => account.status !== "closed").map((account) => Number(account.current_balance ?? 0)));
+      const investmentTotal = sum(investments.map((investment) => Number(investment.current_value ?? 0)));
+      const fixedDepositTotal = sum(fixedDeposits.map((entry) => Number(entry.current_value ?? 0)));
+      const goldTotal = sum(goldHoldings.map((entry) => Number(entry.current_value ?? 0)));
+      const silverTotal = sum(silverHoldings.map((entry) => Number(entry.current_value ?? 0)));
+      const retirementTotal = sum(retirementAccounts.map((entry) => Number(entry.current_balance ?? 0)));
+      const realEstateTotal = sum(realEstateAssets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
+
       setLiabilities(nextLiabilities);
+      setTotalAssetBase(bankTotal + investmentTotal + fixedDepositTotal + goldTotal + silverTotal + retirementTotal + realEstateTotal);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load liabilities");
@@ -52,9 +168,37 @@ export default function LiabilitiesPage() {
 
     async function loadLiabilities() {
       try {
-        const nextLiabilities = await getLiabilities();
+        const [
+          nextLiabilities,
+          realEstateAssets,
+          bankAccounts,
+          investments,
+          fixedDeposits,
+          goldHoldings,
+          silverHoldings,
+          retirementAccounts,
+        ] = await Promise.all([
+          getLiabilities(),
+          getAssets().catch(() => []),
+          getBankAccounts().catch(() => []),
+          getInvestments().catch(() => []),
+          getFixedDeposits().catch(() => []),
+          getGoldHoldings().catch(() => []),
+          getSilverHoldings().catch(() => []),
+          getRetirementAccounts().catch(() => []),
+        ]);
+
+        const bankTotal = sum(bankAccounts.filter((account) => account.status !== "closed").map((account) => Number(account.current_balance ?? 0)));
+        const investmentTotal = sum(investments.map((investment) => Number(investment.current_value ?? 0)));
+        const fixedDepositTotal = sum(fixedDeposits.map((entry) => Number(entry.current_value ?? 0)));
+        const goldTotal = sum(goldHoldings.map((entry) => Number(entry.current_value ?? 0)));
+        const silverTotal = sum(silverHoldings.map((entry) => Number(entry.current_value ?? 0)));
+        const retirementTotal = sum(retirementAccounts.map((entry) => Number(entry.current_balance ?? 0)));
+        const realEstateTotal = sum(realEstateAssets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
+
         if (isMounted) {
           setLiabilities(nextLiabilities);
+          setTotalAssetBase(bankTotal + investmentTotal + fixedDepositTotal + goldTotal + silverTotal + retirementTotal + realEstateTotal);
           setError(null);
         }
       } catch (err) {
@@ -70,8 +214,17 @@ export default function LiabilitiesPage() {
 
     void loadLiabilities();
 
+    const handleRefresh = () => {
+      void refreshDashboard();
+    };
+
+    window.addEventListener("wealthos:finance-data-updated", handleRefresh);
+    window.addEventListener("focus", handleRefresh);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("wealthos:finance-data-updated", handleRefresh);
+      window.removeEventListener("focus", handleRefresh);
     };
   }, []);
 
@@ -113,6 +266,10 @@ export default function LiabilitiesPage() {
     });
   }, [liabilities, query, sortDirection, sortKey, statusFilter, typeFilter]);
 
+  const liabilitySummaryCards = useMemo(() => buildSummaryBuckets(filteredLiabilities), [filteredLiabilities]);
+  const allocationRows = useMemo(() => buildAllocationRows(filteredLiabilities), [filteredLiabilities]);
+  const emiRows = useMemo(() => buildEmiRows(filteredLiabilities), [filteredLiabilities]);
+
   async function handleCreate(values: LiabilityInsert) {
     setSubmitting(true);
     setError(null);
@@ -121,7 +278,7 @@ export default function LiabilitiesPage() {
       await createLiability(values);
       setDialogOpen(false);
       setNotice("Liability created successfully.");
-      await refreshLiabilities();
+      await refreshDashboard();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create liability");
@@ -142,7 +299,7 @@ export default function LiabilitiesPage() {
       setDialogOpen(false);
       setEditingLiability(null);
       setNotice("Liability updated successfully.");
-      await refreshLiabilities();
+      await refreshDashboard();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update liability");
@@ -158,7 +315,7 @@ export default function LiabilitiesPage() {
       await deleteLiability(liability.id);
       setDeleteTarget(null);
       setNotice("Liability deleted successfully.");
-      await refreshLiabilities();
+      await refreshDashboard();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete liability");
@@ -187,7 +344,7 @@ export default function LiabilitiesPage() {
     <AppLayout>
       <PageContainer>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <PageHeader title="Liabilities" description="Track debt, repayment obligations, and risk in one place." />
+          <PageHeader title="Liabilities" description="Executive liability dashboard with debt concentration, EMI pressure, and repayment intelligence." />
           <Button onClick={() => { setEditingLiability(null); setDialogOpen(true); }} disabled={submitting}>
             Add Liability
           </Button>
@@ -199,13 +356,74 @@ export default function LiabilitiesPage() {
         <ToastViewport type="success" message={notice ?? ""} onDismiss={() => setNotice(null)} />
         <ToastViewport type="error" message={error ?? ""} onDismiss={() => setError(null)} />
 
-        <LiabilitySummary liabilities={filteredLiabilities} />
+        <LiabilitySummary liabilities={filteredLiabilities} totalAssetBase={totalAssetBase} />
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {liabilitySummaryCards.map((bucket) => (
+            <DashboardCard key={bucket.label}>
+              <p className="text-sm font-medium text-slate-500">{bucket.label}</p>
+              <p className="mt-2 text-xl font-semibold text-slate-900">{formatCurrency(bucket.value, { maximumFractionDigits: 0 })}</p>
+              <p className="mt-1 text-xs text-slate-500">{formatPercent(bucket.share, { digits: 1 })} of total liabilities</p>
+            </DashboardCard>
+          ))}
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <DashboardCard>
+            <h3 className="text-base font-semibold text-slate-900">Liability Allocation</h3>
+            <p className="mt-1 text-sm text-slate-600">Outstanding balance split by liability type</p>
+            {allocationRows.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600">
+                Add liabilities to visualize debt allocation.
+              </div>
+            ) : (
+              <div className="mt-4 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={allocationRows} dataKey="value" nameKey="name" innerRadius={62} outerRadius={96} paddingAngle={2}>
+                      {allocationRows.map((entry, index) => (
+                        <Cell key={`${entry.name}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </DashboardCard>
+
+          <DashboardCard>
+            <h3 className="text-base font-semibold text-slate-900">EMI Breakdown</h3>
+            <p className="mt-1 text-sm text-slate-600">Monthly repayment pressure by liability type</p>
+            {emiRows.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-600">
+                Add EMI values to analyze monthly repayment obligations.
+              </div>
+            ) : (
+              <div className="mt-4 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={emiRows}>
+                    <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => truncateLabel(String(value), 14)} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} />
+                    <Bar dataKey="emi" radius={[10, 10, 0, 0]} fill="#0f172a">
+                      {emiRows.map((entry, index) => (
+                        <Cell key={`${entry.name}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </DashboardCard>
+        </div>
 
         <DashboardCard>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Liability portfolio</h3>
-              <p className="text-sm text-slate-600">Search, filter, sort, and manage obligations</p>
+              <h3 className="text-base font-semibold text-slate-900">Liability portfolio register</h3>
+              <p className="text-sm text-slate-600">Search, filter, sort, and manage liabilities from one unified module</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search liabilities" className="max-w-sm" />
@@ -218,12 +436,9 @@ export default function LiabilitiesPage() {
               </select>
               <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
                 <option value="all">All types</option>
-                <option value="Home Loan">Home Loan</option>
-                <option value="Car Loan">Car Loan</option>
-                <option value="Personal Loan">Personal Loan</option>
-                <option value="Education Loan">Education Loan</option>
-                <option value="Credit Card">Credit Card</option>
-                <option value="Other">Other</option>
+                {LIABILITY_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
               </select>
               <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={`${sortKey}:${sortDirection}`} onChange={(event) => {
                 const [nextKey, nextDirection] = event.target.value.split(":") as [typeof sortKey, typeof sortDirection];
@@ -246,12 +461,6 @@ export default function LiabilitiesPage() {
 
           {loading ? <LoadingSpinner label="Loading liabilities..." /> : filteredLiabilities.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center"><h4 className="text-base font-semibold text-slate-900">No liabilities yet</h4><p className="mt-2 text-sm text-slate-600">Add your first liability to track debt, repayment obligations, and risk.</p></div> : <LiabilityTable liabilities={filteredLiabilities} onView={(liability) => setSelectedLiability(liability)} onEdit={(liability) => { setEditingLiability(liability); setDialogOpen(true); }} onDelete={(liability) => setDeleteTarget(liability)} />}
         </DashboardCard>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          {filteredLiabilities.slice(0, 2).map((liability) => (
-            <LiabilityCard key={liability.id} liability={liability} />
-          ))}
-        </div>
       </PageContainer>
 
       <LiabilityDetailsDialog liability={selectedLiability} open={Boolean(selectedLiability)} onOpenChange={(open) => { if (!open) setSelectedLiability(null); }} />

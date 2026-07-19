@@ -1,101 +1,118 @@
 export type RetirementAccountType = "EPF" | "PPF" | "NPS";
+export type ContributionFrequency = "Monthly" | "Quarterly" | "Annual" | "One-time";
 
-export interface RetirementAccount {
+export type ContributionMonth =
+  | "January"
+  | "February"
+  | "March"
+  | "April"
+  | "May"
+  | "June"
+  | "July"
+  | "August"
+  | "September"
+  | "October"
+  | "November"
+  | "December";
+
+export interface BaseRetirementAccount {
   id: string;
   user_id: string;
   account_type: RetirementAccountType;
+  owner: string;
   institution: string;
-  account_number: string;
-  holder_name: string;
+  current_balance: number;
+  account_number: string | null;
   opening_date: string | null;
-  current_value: number;
-  monthly_contribution: number;
-  annual_contribution: number;
-  interest_rate: number;
+  interest_rate: number | null;
   nominee: string | null;
   notes: string | null;
+  contribution_frequency: ContributionFrequency;
+  contribution_amount: number;
+  contribution_day: number | null;
+  contribution_month: ContributionMonth | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface RetirementAccountInsert {
-  account_type: RetirementAccountType;
+export interface PpfAccount extends BaseRetirementAccount {
+  account_type: "PPF";
+  maturity_date: string | null;
+}
+
+export interface EpfAccount extends BaseRetirementAccount {
+  account_type: "EPF";
+  employer: string | null;
+  uan: string | null;
+  employee_contribution: number | null;
+  employer_contribution: number | null;
+}
+
+export interface NpsAccount extends BaseRetirementAccount {
+  account_type: "NPS";
+  pran: string | null;
+  pop: string | null;
+  equity_percent: number | null;
+  corporate_debt_percent: number | null;
+  government_securities_percent: number | null;
+  alternative_assets_percent: number | null;
+}
+
+export type RetirementAccount = PpfAccount | EpfAccount | NpsAccount;
+
+export interface BaseRetirementAccountInsert {
+  owner: string;
   institution: string;
-  account_number: string;
-  holder_name: string;
+  current_balance: number;
+  account_number?: string | null;
   opening_date?: string | null;
-  current_value: number;
-  monthly_contribution?: number;
-  annual_contribution?: number;
-  interest_rate?: number;
+  interest_rate?: number | null;
   nominee?: string | null;
   notes?: string | null;
+  contribution_frequency: ContributionFrequency;
+  contribution_amount: number;
+  contribution_day?: number | null;
+  contribution_month?: ContributionMonth | null;
 }
 
-export interface RetirementAccountUpdate extends Partial<RetirementAccountInsert> {
+export interface PpfAccountInsert extends BaseRetirementAccountInsert {
+  account_type: "PPF";
+  maturity_date?: string | null;
+}
+
+export interface EpfAccountInsert extends BaseRetirementAccountInsert {
+  account_type: "EPF";
+  employer?: string | null;
+  uan?: string | null;
+  employee_contribution?: number | null;
+  employer_contribution?: number | null;
+}
+
+export interface NpsAccountInsert extends BaseRetirementAccountInsert {
+  account_type: "NPS";
+  pran?: string | null;
+  pop?: string | null;
+  equity_percent?: number | null;
+  corporate_debt_percent?: number | null;
+  government_securities_percent?: number | null;
+  alternative_assets_percent?: number | null;
+}
+
+export type RetirementAccountInsert = PpfAccountInsert | EpfAccountInsert | NpsAccountInsert;
+
+export interface RetirementAccountUpdate {
   id: string;
-}
-
-export interface MonthlyRetirementSnapshot {
-  id: string;
-  user_id: string;
-  retirement_account_id: string;
-  snapshot_month: number;
-  snapshot_year: number;
-  opening_balance: number;
-  contribution: number;
-  interest: number;
-  closing_balance: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MonthlyRetirementSnapshotInsert {
-  retirement_account_id: string;
-  snapshot_month: number;
-  snapshot_year: number;
-  opening_balance: number;
-  contribution?: number;
-  interest?: number;
-  closing_balance: number;
-}
-
-export interface MonthlyRetirementSnapshotUpdate extends Partial<MonthlyRetirementSnapshotInsert> {
-  id: string;
-}
-
-export interface RetirementTrendPoint {
-  month: string;
-  total: number;
-  contribution: number;
-  interest: number;
-}
-
-export interface RetirementContributionPoint {
-  month: string;
-  contribution: number;
-}
-
-export interface RetirementYearlyGrowthPoint {
-  year: string;
-  growth: number;
+  account_type: RetirementAccountType;
+  values: Partial<RetirementAccountInsert>;
 }
 
 export interface RetirementDashboardModel {
-  totalCorpus: number;
+  totalRetirementAssets: number;
   balancesByType: Record<RetirementAccountType, number>;
-  monthlyContribution: number;
-  annualGrowthAmount: number;
-  annualGrowthPercent: number | null;
-  retirementAllocationPercent: number;
-  trend: RetirementTrendPoint[];
-  allocation: Array<{ name: RetirementAccountType; value: number }>;
-  contributionHistory: RetirementContributionPoint[];
-  yearlyGrowth: RetirementYearlyGrowthPoint[];
+  ownerAllocation: Array<{ name: string; value: number }>;
+  accountTypeAllocation: Array<{ name: RetirementAccountType; value: number }>;
 }
 
 export interface RetirementExecutiveSummary {
-  totalCorpus: number;
-  retirementAllocationPercent: number;
-  annualGrowthPercent: number | null;
+  totalRetirementAssets: number;
 }

@@ -1,69 +1,120 @@
 import { createRetirementAccount, getRetirementAccounts, updateRetirementAccount } from "@/services/retirement";
 import type { ImportIssue, ImportModulePlugin, ImportValidationResult, ImportValidatedRecord } from "@/services/imports/types";
 import { buildNormalizedRow, isUuid, issue, parseDate, parseNumber, parseString, pickValue } from "@/services/imports/utils";
-import type { RetirementAccountInsert, RetirementAccountType } from "@/types/retirementAccount";
-
-const accountTypes: RetirementAccountType[] = ["EPF", "PPF", "NPS"];
+import type { ContributionFrequency, ContributionMonth, RetirementAccountInsert, RetirementAccountType } from "@/types/retirementAccount";
 
 interface RetirementImportPayload {
   id?: string;
   values: RetirementAccountInsert;
 }
 
-function parseAccountType(value: string | null) {
+const contributionFrequencies: ContributionFrequency[] = ["Monthly", "Quarterly", "Annual", "One-time"];
+const contributionMonths: ContributionMonth[] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function parseAccountTypeFromSheet(sheetName: string): RetirementAccountType | null {
+  const normalized = sheetName.trim().toLowerCase();
+  if (normalized.includes("ppf")) {
+    return "PPF";
+  }
+  if (normalized.includes("epf")) {
+    return "EPF";
+  }
+  if (normalized.includes("nps")) {
+    return "NPS";
+  }
+  return null;
+}
+
+function parseContributionFrequency(value: string | null): ContributionFrequency | null {
   if (!value) {
     return null;
   }
 
-  const normalized = value.toLowerCase();
-  return accountTypes.find((item) => item.toLowerCase() === normalized) ?? null;
+  const normalized = value.trim().toLowerCase();
+  return contributionFrequencies.find((item) => item.toLowerCase() === normalized) ?? null;
+}
+
+function parseContributionMonth(value: string | null): ContributionMonth | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return contributionMonths.find((item) => item.toLowerCase() === normalized) ?? null;
 }
 
 export const retirementImportPlugin: ImportModulePlugin<RetirementImportPayload> = {
   moduleId: "retirement",
   displayName: "Retirement",
-  supportedSheets: ["Retirement"],
+  supportedSheets: ["PPF Accounts", "EPF Accounts", "NPS Accounts"],
   async validateRows(sheetName, rows) {
     const issues: ImportIssue[] = [];
     const records: Array<ImportValidatedRecord<RetirementImportPayload>> = [];
     const existing = await getRetirementAccounts();
-    const existingIds = new Set(existing.map((item) => item.id));
+    const existingById = new Map(existing.map((item) => [item.id, item] as const));
+    const accountType = parseAccountTypeFromSheet(sheetName);
+
+    if (!accountType) {
+      return {
+        totalRows: rows.length,
+        records: [],
+        issues: [
+          issue({
+            sheetName,
+            rowNumber: 1,
+            field: "sheet_name",
+            message: "Unsupported retirement sheet. Use PPF Accounts, EPF Accounts, or NPS Accounts.",
+          }),
+        ],
+      };
+    }
 
     rows.forEach((rawRow, index) => {
       const rowNumber = index + 2;
       const row = buildNormalizedRow(rawRow);
 
       const id = parseString(pickValue(row, ["id"]));
-      const accountType = parseAccountType(parseString(pickValue(row, ["account_type", "account type", "type"])));
+      const owner = parseString(pickValue(row, ["owner", "holder", "holder_name", "holder name"]));
       const institution = parseString(pickValue(row, ["institution"]));
+      const currentBalance = parseNumber(pickValue(row, ["current_balance", "current balance"]));
       const accountNumber = parseString(pickValue(row, ["account_number", "account number"]));
-      const holderName = parseString(pickValue(row, ["holder_name", "holder name"]));
-      const currentValue = parseNumber(pickValue(row, ["current_value", "current value"]));
       const openingDateRaw = pickValue(row, ["opening_date", "opening date"]);
       const openingDate = openingDateRaw === undefined ? null : parseDate(openingDateRaw);
+      const contributionFrequency = parseContributionFrequency(parseString(pickValue(row, ["contribution_frequency", "contribution frequency"])));
+      const contributionAmount = parseNumber(pickValue(row, ["contribution_amount", "contribution amount"]));
+      const contributionDay = parseNumber(pickValue(row, ["contribution_day", "contribution day"]));
+      const contributionMonth = parseContributionMonth(parseString(pickValue(row, ["contribution_month", "contribution month"])));
 
       if (id && !isUuid(id)) {
         issues.push(issue({ sheetName, rowNumber, field: "id", message: "ID must be a valid UUID." }));
       }
 
-      if (!accountType) {
-        issues.push(issue({ sheetName, rowNumber, field: "account_type", message: "Invalid retirement account type." }));
+      if (!owner) {
+        issues.push(issue({ sheetName, rowNumber, field: "owner", message: "Owner is required." }));
       }
 
       if (!institution) {
         issues.push(issue({ sheetName, rowNumber, field: "institution", message: "Institution is required." }));
       }
 
-      if (!accountNumber) {
-        issues.push(issue({ sheetName, rowNumber, field: "account_number", message: "Account number is required." }));
+      if (currentBalance === null) {
+        issues.push(issue({ sheetName, rowNumber, field: "current_balance", message: "Current balance must be a valid number." }));
       }
 
-      if (!holderName) {
-        issues.push(issue({ sheetName, rowNumber, field: "holder_name", message: "Holder name is required." }));
+      if (!contributionFrequency) {
+        issues.push(issue({ sheetName, rowNumber, field: "contribution_frequency", message: "Contribution frequency is required." }));
       }
 
-      if (currentValue === null) {
-        issues.push(issue({ sheetName, rowNumber, field: "current_value", message: "Current value must be a valid number." }));
+      if (contributionAmount === null) {
+        issues.push(issue({ sheetName, rowNumber, field: "contribution_amount", message: "Contribution amount must be a valid number." }));
+      }
+
+      if (contributionDay !== null && (contributionDay < 1 || contributionDay > 31)) {
+        issues.push(issue({ sheetName, rowNumber, field: "contribution_day", message: "Contribution day must be between 1 and 31." }));
+      }
+
+      if (contributionFrequency === "Annual" && !contributionMonth) {
+        issues.push(issue({ sheetName, rowNumber, field: "contribution_month", message: "Contribution month is required for annual frequency." }));
       }
 
       if (openingDateRaw !== undefined && !openingDate) {
@@ -71,11 +122,13 @@ export const retirementImportPlugin: ImportModulePlugin<RetirementImportPayload>
       }
 
       const hasErrors = issues.some((item) => item.sheetName === sheetName && item.rowNumber === rowNumber && item.severity === "error");
-      if (hasErrors || !accountType || !institution || !accountNumber || !holderName || currentValue === null) {
+      if (hasErrors || !owner || !institution || currentBalance === null || !contributionFrequency || contributionAmount === null) {
         return;
       }
 
-      if (id && !existingIds.has(id)) {
+      const existingAccount = id ? existingById.get(id) : null;
+
+      if (id && !existingAccount) {
         issues.push(issue({
           sheetName,
           rowNumber,
@@ -85,28 +138,57 @@ export const retirementImportPlugin: ImportModulePlugin<RetirementImportPayload>
         }));
       }
 
-      const monthlyContribution = parseNumber(pickValue(row, ["monthly_contribution", "monthly contribution"]));
-      const annualContribution = parseNumber(pickValue(row, ["annual_contribution", "annual contribution"]));
-
-      const values: RetirementAccountInsert = {
+      const baseValues = {
         account_type: accountType,
+        owner,
         institution,
+        current_balance: currentBalance,
         account_number: accountNumber,
-        holder_name: holderName,
         opening_date: openingDate,
-        current_value: currentValue,
-        monthly_contribution: monthlyContribution ?? undefined,
-        annual_contribution: annualContribution ?? undefined,
-        interest_rate: parseNumber(pickValue(row, ["interest_rate", "interest rate"])) ?? undefined,
+        interest_rate: parseNumber(pickValue(row, ["interest_rate", "interest rate"])),
         nominee: parseString(pickValue(row, ["nominee"])),
         notes: parseString(pickValue(row, ["notes"])),
+        contribution_frequency: contributionFrequency,
+        contribution_amount: contributionAmount,
+        contribution_day: contributionDay,
+        contribution_month: contributionFrequency === "Annual" ? contributionMonth : null,
       };
+
+      let values: RetirementAccountInsert;
+
+      if (accountType === "PPF") {
+        values = {
+          ...baseValues,
+          account_type: "PPF",
+          maturity_date: parseDate(pickValue(row, ["maturity_date", "maturity date"])),
+        };
+      } else if (accountType === "EPF") {
+        values = {
+          ...baseValues,
+          account_type: "EPF",
+          employer: parseString(pickValue(row, ["employer"])),
+          uan: parseString(pickValue(row, ["uan"])),
+          employee_contribution: parseNumber(pickValue(row, ["employee_contribution", "employee contribution"])),
+          employer_contribution: parseNumber(pickValue(row, ["employer_contribution", "employer contribution"])),
+        };
+      } else {
+        values = {
+          ...baseValues,
+          account_type: "NPS",
+          pran: parseString(pickValue(row, ["pran"])),
+          pop: parseString(pickValue(row, ["pop"])),
+          equity_percent: parseNumber(pickValue(row, ["equity_percent", "equity %", "equity percentage"])),
+          corporate_debt_percent: parseNumber(pickValue(row, ["corporate_debt_percent", "corporate debt %", "corporate debt percentage"])),
+          government_securities_percent: parseNumber(pickValue(row, ["government_securities_percent", "government securities %", "government securities percentage"])),
+          alternative_assets_percent: parseNumber(pickValue(row, ["alternative_assets_percent", "alternative assets %", "alternative assets percentage"])),
+        };
+      }
 
       records.push({
         rowNumber,
-        action: id && existingIds.has(id) ? "update" : "create",
+        action: id && existingAccount && existingAccount.account_type === accountType ? "update" : "create",
         payload: {
-          id: id && existingIds.has(id) ? id : undefined,
+          id: id && existingAccount && existingAccount.account_type === accountType ? id : undefined,
           values,
         },
       });

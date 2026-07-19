@@ -44,7 +44,7 @@ export function AccountEngineTrendCards({ summary }: AccountEngineTrendCardsProp
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+                <Tooltip formatter={(value) => `₹${Number(value ?? 0).toLocaleString("en-IN")}`} />
                 <Area type="monotone" dataKey="total" stroke="#0f172a" fill="url(#ua-total)" strokeWidth={2.5} />
                 <Area type="monotone" dataKey="inflow" stroke="#059669" fill="url(#ua-inflow)" strokeWidth={2.2} />
                 <Area type="monotone" dataKey="outflow" stroke="#be123c" fill="url(#ua-outflow)" strokeWidth={2.2} />
@@ -73,7 +73,7 @@ export function AccountEngineTrendCards({ summary }: AccountEngineTrendCardsProp
                       <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+                  <Tooltip formatter={(value) => `₹${Number(value ?? 0).toLocaleString("en-IN")}`} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -84,7 +84,7 @@ export function AccountEngineTrendCards({ summary }: AccountEngineTrendCardsProp
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                     <span className="font-medium text-slate-700">{item.name}</span>
                   </div>
-                  <span className="font-semibold text-slate-900">${item.value.toLocaleString()}</span>
+                  <span className="font-semibold text-slate-900">₹{item.value.toLocaleString("en-IN")}</span>
                 </div>
               ))}
             </div>

@@ -8,6 +8,7 @@ import { fixedDepositsImportPlugin } from "@/services/imports/plugins/fixedDepos
 import { goldImportPlugin } from "@/services/imports/plugins/goldImport";
 import { silverImportPlugin } from "@/services/imports/plugins/silverImport";
 import { insuranceImportPlugin } from "@/services/imports/plugins/insuranceImport";
+import { realEstateImportPlugin } from "@/services/imports/plugins/realEstateImport";
 
 export const importModulePlugins: ImportModulePlugin[] = [
   bankAccountsImportPlugin,
@@ -18,6 +19,7 @@ export const importModulePlugins: ImportModulePlugin[] = [
   fixedDepositsImportPlugin,
   goldImportPlugin,
   silverImportPlugin,
+  realEstateImportPlugin,
 ];
 
 const sheetLookup = importModulePlugins.reduce<Map<string, ImportModulePlugin>>((acc, plugin) => {
@@ -89,6 +91,8 @@ registerAliases(retirementImportPlugin, [
   "Retirement",
   "Retirement Accounts",
   "PPF Accounts",
+  "EPF Accounts",
+  "NPS Accounts",
   "EPF PPF NPS",
   "PFP Retirement",
   "Priyesh Retirement",
@@ -118,6 +122,15 @@ registerAliases(silverImportPlugin, [
   "Silver Holdings",
   "PFP Silver",
   "Priyesh Silver",
+]);
+
+registerAliases(realEstateImportPlugin, [
+  "Real Estate",
+  "Property",
+  "Properties",
+  "Real Estate Properties",
+  "PFP Real Estate",
+  "Priyesh Real Estate",
 ]);
 
 function isReferenceSheet(sheetName: string) {
@@ -165,11 +178,14 @@ export function getSupportedSheetNames() {
     "MF Holdings",
     "Stock Holdings",
     "PPF Accounts",
+    "EPF Accounts",
+    "NPS Accounts",
     "Loan Inputs",
     "Health Insurance",
     "Life Insurance",
     "Fixed Deposits",
     "Gold",
     "Silver",
+    "Real Estate",
   ];
 }

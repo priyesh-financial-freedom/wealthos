@@ -130,8 +130,27 @@ export async function executeImportPlan(plan: ImportPreviewPlanItem[]): Promise<
   let updated = 0;
   let failed = 0;
 
+  console.info("[imports] executeImportPlan:start", {
+    modules: plan.map((item) => ({ moduleId: item.plugin.moduleId, sheetName: item.sheetName, records: item.records.length })),
+  });
+
   for (const item of plan) {
+    console.info("[imports] module:execute:start", {
+      moduleId: item.plugin.moduleId,
+      sheetName: item.sheetName,
+      records: item.records.length,
+    });
+
     const execution = await item.plugin.executeRows(item.sheetName, item.records);
+
+    console.info("[imports] module:execute:done", {
+      moduleId: item.plugin.moduleId,
+      sheetName: item.sheetName,
+      inserted: execution.inserted,
+      updated: execution.updated,
+      failed: execution.failed,
+      issues: execution.issues.length,
+    });
 
     inserted += execution.inserted;
     updated += execution.updated;
@@ -148,7 +167,7 @@ export async function executeImportPlan(plan: ImportPreviewPlanItem[]): Promise<
     });
   }
 
-  return {
+  const summary: ImportExecutionSummary = {
     modules,
     issues,
     totals: {
@@ -157,4 +176,13 @@ export async function executeImportPlan(plan: ImportPreviewPlanItem[]): Promise<
       failed,
     },
   };
+
+  console.info("[imports] executeImportPlan:done", {
+    inserted: summary.totals.inserted,
+    updated: summary.totals.updated,
+    failed: summary.totals.failed,
+    issues: summary.issues.length,
+  });
+
+  return summary;
 }

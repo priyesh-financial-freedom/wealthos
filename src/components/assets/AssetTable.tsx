@@ -43,7 +43,7 @@ export function AssetTable({ assets, onEdit, onDelete, onView }: AssetTableProps
                 <td className="px-4 py-3 font-medium text-slate-900">{asset.asset_name}</td>
                 <td className="px-4 py-3 text-slate-600">{asset.asset_type}</td>
                 <td className="px-4 py-3 text-slate-600">{asset.institution ?? "—"}</td>
-                <td className="px-4 py-3 text-slate-900">${asset.current_value.toLocaleString()}</td>
+                <td className="px-4 py-3 text-slate-900">₹{asset.current_value.toLocaleString("en-IN")}</td>
                 <td className="px-4 py-3 text-slate-600">{asset.owner ?? "—"}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>

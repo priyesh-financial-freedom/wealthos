@@ -2,87 +2,109 @@ import { Eye, Pencil, Trash2 } from "lucide-react";
 
 import { BankAccountTypeBadge } from "@/components/bankAccounts/BankAccountTypeBadge";
 import { Button } from "@/components/ui/button";
+import { DataGrid, type DataGridSortDirection } from "@/components/ui/data-grid";
+import { formatCurrency } from "@/lib/formatters";
 import type { BankAccount } from "@/types/bankAccount";
 
 interface BankAccountTableProps {
   accounts: BankAccount[];
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  typeFilter: string;
+  onTypeFilterChange: (value: string) => void;
+  statusFilter: string;
+  onStatusFilterChange: (value: string) => void;
+  sortKey: "account_name" | "bank" | "current_balance" | "interest_rate" | "updated_at";
+  sortDirection: DataGridSortDirection;
+  onSortChange: (key: BankAccountTableProps["sortKey"], direction: DataGridSortDirection) => void;
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onView: (account: BankAccount) => void;
   onEdit: (account: BankAccount) => void;
   onDelete: (account: BankAccount) => void;
 }
-
-function formatCurrency(value: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return `$${Number(value ?? 0).toLocaleString()}`;
-  }
-}
-
-export function BankAccountTable({ accounts, onView, onEdit, onDelete }: BankAccountTableProps) {
-  if (accounts.length === 0) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No bank accounts found.</div>;
-  }
-
+export function BankAccountTable({
+  accounts,
+  searchValue,
+  onSearchChange,
+  typeFilter,
+  onTypeFilterChange,
+  statusFilter,
+  onStatusFilterChange,
+  sortKey,
+  sortDirection,
+  onSortChange,
+  page,
+  pageSize,
+  totalRows,
+  onPageChange,
+  onPageSizeChange,
+  onView,
+  onEdit,
+  onDelete,
+}: BankAccountTableProps) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Bank accounts inventory</h3>
-          <p className="text-sm text-slate-600">Manage balances, ownership, and account profile details</p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Eye className="h-4 w-4" />
-          Click row for details
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Bank</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Account Name</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Type</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Masked Number</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Current Balance</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Owner</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Status</th>
-              <th className="px-4 py-3 text-right font-medium text-slate-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 bg-white">
-            {accounts.map((account) => (
-              <tr key={account.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onView(account)}>
-                <td className="px-4 py-3 text-slate-700">{account.bank}</td>
-                <td className="px-4 py-3 font-medium text-slate-900">{account.account_name}</td>
-                <td className="px-4 py-3"><BankAccountTypeBadge type={account.account_type} /></td>
-                <td className="px-4 py-3 text-slate-700">{account.masked_account_number}</td>
-                <td className="px-4 py-3 text-slate-900">{formatCurrency(account.current_balance, account.currency)}</td>
-                <td className="px-4 py-3 text-slate-700">{account.owner || "—"}</td>
-                <td className="px-4 py-3 text-slate-700 capitalize">{account.status}</td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => onView(account)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(account)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => onDelete(account)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <DataGrid
+      title="Bank accounts inventory"
+      description="Manage balances, ownership, and account profile details"
+      columns={[
+        { key: "bank", header: "Bank", sortable: true, widthClassName: "min-w-40", cell: (account) => account.bank },
+        { key: "account_name", header: "Account Name", sortable: true, widthClassName: "min-w-48", className: "font-medium text-slate-900", cell: (account) => account.account_name },
+        { key: "type", header: "Type", widthClassName: "min-w-32", cell: (account) => <BankAccountTypeBadge type={account.account_type} /> },
+        { key: "masked_number", header: "Masked Number", widthClassName: "min-w-36", cell: (account) => account.masked_account_number },
+        { key: "current_balance", header: "Current Balance", sortable: true, widthClassName: "min-w-40 text-slate-900", cell: (account) => formatCurrency(account.current_balance, { maximumFractionDigits: 0 }) },
+        { key: "owner", header: "Owner", widthClassName: "min-w-36", cell: (account) => account.owner || "—" },
+        { key: "status", header: "Status", widthClassName: "min-w-28 capitalize", cell: (account) => account.status },
+        {
+          key: "actions",
+          header: "Actions",
+          widthClassName: "min-w-32",
+          className: "text-right",
+          headerClassName: "text-right",
+          cell: (account) => (
+            <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+              <Button type="button" variant="ghost" size="icon" onClick={() => onView(account)}>
+                <Eye className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(account)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => onDelete(account)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ),
+        },
+      ]}
+      rows={accounts}
+      getRowId={(account) => account.id}
+      onRowClick={onView}
+      search={{ value: searchValue, onChange: onSearchChange, placeholder: "Search bank accounts" }}
+      filters={
+        <>
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={typeFilter} onChange={(event) => onTypeFilterChange(event.target.value)}>
+            <option value="all">All types</option>
+            <option value="Savings">Savings</option>
+            <option value="Salary">Salary</option>
+            <option value="Current">Current</option>
+            <option value="Cash">Cash</option>
+            <option value="Wallet">Wallet</option>
+          </select>
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
+            <option value="all">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="closed">Closed</option>
+          </select>
+        </>
+      }
+      sort={{ key: sortKey, direction: sortDirection, onChange: (key, direction) => onSortChange(key as BankAccountTableProps["sortKey"], direction) }}
+      pagination={{ page, pageSize, totalRows, onPageChange, onPageSizeChange, pageSizeOptions: [10, 20, 50] }}
+      emptyTitle="No bank accounts yet"
+      emptyDescription="Add your first bank account to start treasury tracking."
+    />
   );
 }

@@ -11,15 +11,15 @@ interface UniversalAccountsTableProps {
   onDelete: (account: UniversalAccount) => void;
 }
 
-function formatMoney(value: number, currency: string) {
+function formatMoney(value: number) {
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency,
+      currency: "INR",
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    return `$${Number(value ?? 0).toLocaleString()}`;
+    return `₹${Number(value ?? 0).toLocaleString("en-IN")}`;
   }
 }
 
@@ -62,9 +62,9 @@ export function UniversalAccountsTable({ accounts, metricsByAccountId, onView, o
                   <td className="px-4 py-3 font-medium text-slate-900">{account.name}</td>
                   <td className="px-4 py-3 text-slate-700">{account.institution || "—"}</td>
                   <td className="px-4 py-3 text-slate-700">{account.account_type}</td>
-                  <td className="px-4 py-3 text-slate-900">{formatMoney(account.current_value, account.currency)}</td>
+                  <td className="px-4 py-3 text-slate-900">{formatMoney(account.current_value)}</td>
                   <td className={`px-4 py-3 font-medium ${metrics.monthlyGrowth >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                    {formatMoney(metrics.monthlyGrowth, account.currency)}
+                    {formatMoney(metrics.monthlyGrowth)}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{formatPercent(metrics.cagr)}</td>
                   <td className="px-4 py-3 text-slate-700">{formatPercent(metrics.xirr)}</td>

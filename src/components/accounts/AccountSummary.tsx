@@ -8,9 +8,9 @@ interface AccountSummaryProps {
 }
 
 function formatCurrency(value: number, currency: string) {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: currency || "USD",
+    currency: currency || "INR",
     maximumFractionDigits: 0,
   }).format(value);
 }
@@ -27,7 +27,7 @@ export function AccountSummary({ accounts }: AccountSummaryProps) {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm text-slate-500">Total Value</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{formatCurrency(totalValue, "USD")}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{formatCurrency(totalValue, "INR")}</p>
           </div>
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
             <CircleDollarSign className="h-5 w-5" />

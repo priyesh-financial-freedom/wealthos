@@ -49,15 +49,15 @@ export function UniversalMonthlySnapshotsTable({ snapshots, accounts, onEdit, on
               <tr key={snapshot.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-700">{monthLabel(snapshot.snapshot_month, snapshot.snapshot_year)}</td>
                 <td className="px-4 py-3 text-slate-700">{accountLabel(accounts, snapshot.universal_account_id)}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.opening_value.toLocaleString()}</td>
-                <td className="px-4 py-3 text-emerald-700">${snapshot.contribution.toLocaleString()}</td>
-                <td className="px-4 py-3 text-rose-700">${snapshot.withdrawal.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-900">${snapshot.closing_value.toLocaleString()}</td>
-                <td className={`px-4 py-3 font-medium ${snapshot.monthly_growth >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${snapshot.monthly_growth.toLocaleString()}</td>
-                <td className={`px-4 py-3 font-medium ${snapshot.cash_flow >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${snapshot.cash_flow.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.interest.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.dividend.toLocaleString()}</td>
-                <td className="px-4 py-3 text-slate-700">${snapshot.gain_loss.toLocaleString()}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.opening_value.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-emerald-700">₹{snapshot.contribution.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-rose-700">₹{snapshot.withdrawal.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-900">₹{snapshot.closing_value.toLocaleString("en-IN")}</td>
+                <td className={`px-4 py-3 font-medium ${snapshot.monthly_growth >= 0 ? "text-emerald-700" : "text-rose-700"}`}>₹{snapshot.monthly_growth.toLocaleString("en-IN")}</td>
+                <td className={`px-4 py-3 font-medium ${snapshot.cash_flow >= 0 ? "text-emerald-700" : "text-rose-700"}`}>₹{snapshot.cash_flow.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.interest.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.dividend.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-700">₹{snapshot.gain_loss.toLocaleString("en-IN")}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(snapshot)}>

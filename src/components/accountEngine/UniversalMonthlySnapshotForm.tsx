@@ -157,8 +157,8 @@ export function UniversalMonthlySnapshotForm({ accounts, initialData, onSubmit, 
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-        <p>Monthly Growth: <span className={`font-semibold ${preview.monthlyGrowth >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${preview.monthlyGrowth.toLocaleString()}</span></p>
-        <p>Cash Flow: <span className={`font-semibold ${preview.cashFlow >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${preview.cashFlow.toLocaleString()}</span></p>
+        <p>Monthly Growth: <span className={`font-semibold ${preview.monthlyGrowth >= 0 ? "text-emerald-700" : "text-rose-700"}`}>₹{preview.monthlyGrowth.toLocaleString("en-IN")}</span></p>
+        <p>Cash Flow: <span className={`font-semibold ${preview.cashFlow >= 0 ? "text-emerald-700" : "text-rose-700"}`}>₹{preview.cashFlow.toLocaleString("en-IN")}</span></p>
       </div>
 
       <div className="space-y-2">

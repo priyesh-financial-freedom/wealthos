@@ -1,30 +1,101 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
-import { InvestmentDashboard } from "@/components/investments/InvestmentDashboard";
 import { InvestmentDetailsDialog } from "@/components/investments/InvestmentDetailsDialog";
 import { InvestmentForm } from "@/components/investments/InvestmentForm";
-import { InvestmentTable } from "@/components/investments/InvestmentTable";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { DashboardCard } from "@/components/dashboard/DashboardCard";
+import { ContentContainer } from "@/components/layout/ContentContainer";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PageToolbar } from "@/components/layout/PageToolbar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
-import { buildInvestmentInsights, buildInvestmentSummary, createInvestment, deleteInvestment, getInvestments, getRecentInvestments, getTopInvestments, updateInvestment } from "@/services/investments";
+import { ToastViewport } from "@/components/ui/feedback";
+import { buildInvestmentSummary, createInvestment, deleteInvestment, getInvestments, updateInvestment } from "@/services/investments";
 import type { Investment, InvestmentInsert } from "@/types/investment";
+
+type InvestmentSortKey = "name" | "category" | "current_value" | "gain_loss" | "cost_basis" | "nav_price";
+type CategoryFilter = "all" | "Mutual Funds" | "Stocks";
+
+const InvestmentDashboard = dynamic(() => import("@/components/investments/InvestmentDashboard").then((mod) => mod.InvestmentDashboard), {
+  ssr: false,
+});
+
+const InvestmentTable = dynamic(() => import("@/components/investments/InvestmentTable").then((mod) => mod.InvestmentTable), {
+  ssr: false,
+});
+
+function matchesInvestmentQuery(investment: Investment, normalizedQuery: string) {
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return `${investment.investment_name} ${investment.category} ${investment.sector ?? ""} ${investment.amc ?? ""} ${investment.exchange ?? ""} ${investment.owner ?? ""} ${investment.folio_number ?? ""} ${investment.amfi_scheme_code ?? ""} ${investment.isin ?? ""} ${investment.broker_platform ?? ""} ${investment.broker ?? ""} ${investment.nominee ?? ""}`
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+function getInvestmentSortValue(investment: Investment, sortKey: InvestmentSortKey) {
+  switch (sortKey) {
+    case "name":
+      return investment.investment_name.toLowerCase();
+    case "category":
+      return investment.category;
+    case "gain_loss":
+      return investment.gain_loss;
+    case "cost_basis":
+      return investment.cost_basis;
+    case "nav_price":
+      return investment.nav_price;
+    case "current_value":
+    default:
+      return investment.current_value;
+  }
+}
+
+function filterAndSortInvestments(params: {
+  investments: Investment[];
+  query: string;
+  categoryFilter: CategoryFilter;
+  regionFilter: string;
+  sortKey: InvestmentSortKey;
+  sortDirection: "asc" | "desc";
+}) {
+  const normalizedQuery = params.query.trim().toLowerCase();
+  const multiplier = params.sortDirection === "asc" ? 1 : -1;
+
+  return params.investments
+    .filter((investment) => {
+      const matchesQuery = matchesInvestmentQuery(investment, normalizedQuery);
+      const matchesCategory = params.categoryFilter === "all" || investment.category === params.categoryFilter;
+      const matchesRegion = params.regionFilter === "all" || investment.region === params.regionFilter;
+      return matchesQuery && matchesCategory && matchesRegion;
+    })
+    .sort((left, right) => {
+      const leftValue = getInvestmentSortValue(left, params.sortKey);
+      const rightValue = getInvestmentSortValue(right, params.sortKey);
+
+      if (typeof leftValue === "string" && typeof rightValue === "string") {
+        return leftValue.localeCompare(rightValue) * multiplier;
+      }
+
+      return (Number(leftValue) - Number(rightValue)) * multiplier;
+    });
+}
 
 export default function InvestmentsPage() {
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [regionFilter, setRegionFilter] = useState("all");
-  const [sortKey, setSortKey] = useState<"name" | "category" | "current_value" | "gain_loss" | "cagr" | "xirr" | "cost_basis" | "nav_price">("current_value");
+  const [sortKey, setSortKey] = useState<InvestmentSortKey>("current_value");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvestment, setEditingInvestment] = useState<Investment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Investment | null>(null);
@@ -75,53 +146,13 @@ export default function InvestmentsPage() {
   }, []);
 
   const summary = useMemo(() => buildInvestmentSummary(investments), [investments]);
-  const topInvestments = useMemo(() => getTopInvestments(investments), [investments]);
-  const recentInvestments = useMemo(() => getRecentInvestments(investments), [investments]);
-  const insights = useMemo(() => buildInvestmentInsights(summary), [summary]);
 
-  const filteredInvestments = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const filtered = investments.filter((investment) => {
-      const matchesQuery = !normalized || `${investment.investment_name} ${investment.category} ${investment.sector ?? ""} ${investment.amc ?? ""} ${investment.owner ?? ""} ${investment.folio_number ?? ""} ${investment.amfi_scheme_code ?? ""} ${investment.broker_platform ?? ""} ${investment.nominee ?? ""}`.toLowerCase().includes(normalized);
-      const matchesCategory = categoryFilter === "all" || investment.category === categoryFilter;
-      const matchesRegion = regionFilter === "all" || investment.region === regionFilter;
-      return matchesQuery && matchesCategory && matchesRegion;
-    });
+  const filteredInvestments = useMemo(
+    () => filterAndSortInvestments({ investments, query, categoryFilter, regionFilter, sortKey, sortDirection }),
+    [categoryFilter, investments, query, regionFilter, sortDirection, sortKey],
+  );
 
-    return [...filtered].sort((left, right) => {
-      const multiplier = sortDirection === "asc" ? 1 : -1;
-
-      const getValue = (investment: Investment) => {
-        switch (sortKey) {
-          case "name":
-            return investment.investment_name.toLowerCase();
-          case "category":
-            return investment.category;
-          case "gain_loss":
-            return investment.gain_loss;
-          case "cagr":
-            return investment.cagr ?? -Infinity;
-          case "xirr":
-            return investment.xirr ?? -Infinity;
-          case "cost_basis":
-            return investment.cost_basis;
-          case "nav_price":
-            return investment.nav_price;
-          case "current_value":
-          default:
-            return investment.current_value;
-        }
-      };
-
-      const leftValue = getValue(left);
-      const rightValue = getValue(right);
-      if (typeof leftValue === "string" && typeof rightValue === "string") {
-        return leftValue.localeCompare(rightValue) * multiplier;
-      }
-
-      return (Number(leftValue) - Number(rightValue)) * multiplier;
-    });
-  }, [categoryFilter, investments, query, regionFilter, sortDirection, sortKey]);
+  const paginatedInvestments = useMemo(() => filteredInvestments.slice((page - 1) * pageSize, page * pageSize), [filteredInvestments, page, pageSize]);
 
   async function handleCreate(values: InvestmentInsert) {
     setSubmitting(true);
@@ -200,10 +231,12 @@ export default function InvestmentsPage() {
   return (
     <AppLayout>
       <PageContainer>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Mutual Funds & Investments" }]} />
+
+        <PageToolbar>
           <PageHeader title="Investments" description="Track portfolio performance, allocation, and growth with an executive-grade workspace." />
           <Button onClick={() => { setEditingInvestment(null); setDialogOpen(true); }} disabled={submitting}>Add Investment</Button>
-        </div>
+        </PageToolbar>
 
         {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
         {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
@@ -211,62 +244,63 @@ export default function InvestmentsPage() {
         <ToastViewport type="success" message={notice ?? ""} onDismiss={() => setNotice(null)} />
         <ToastViewport type="error" message={error ?? ""} onDismiss={() => setError(null)} />
 
-        <InvestmentDashboard loading={loading} emptyState={investments.length === 0} summary={summary} topInvestments={topInvestments} recentInvestments={recentInvestments} insights={insights} />
+        <ContentContainer className="border-none bg-transparent p-0 shadow-none">
+          <InvestmentDashboard loading={loading} emptyState={investments.length === 0} summary={summary} />
+        </ContentContainer>
 
-        <DashboardCard id="investment-form">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">Investment portfolio</h3>
-              <p className="text-sm text-slate-600">Search, filter, sort, and manage holdings</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search investments" className="max-w-sm" />
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-                <option value="all">All categories</option>
-                <option value="Mutual Funds">Mutual Funds</option>
-                <option value="Stocks">Stocks</option>
-                <option value="ETFs">ETFs</option>
-                <option value="Bonds">Bonds</option>
-                <option value="Fixed Deposits">Fixed Deposits</option>
-                <option value="EPF">EPF</option>
-                <option value="PPF">PPF</option>
-                <option value="NPS">NPS</option>
-                <option value="Gold">Gold</option>
-                <option value="Silver">Silver</option>
-                <option value="Sovereign Gold Bonds">Sovereign Gold Bonds</option>
-                <option value="Crypto">Crypto</option>
-                <option value="Cash Equivalents">Cash Equivalents</option>
-              </select>
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)}>
-                <option value="all">All regions</option>
-                <option value="Domestic">Domestic</option>
-                <option value="International">International</option>
-              </select>
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={`${sortKey}:${sortDirection}`} onChange={(event) => {
-                const [nextKey, nextDirection] = event.target.value.split(":") as [typeof sortKey, typeof sortDirection];
-                setSortKey(nextKey);
-                setSortDirection(nextDirection);
-              }}>
-                <option value="current_value:desc">Current value (High-Low)</option>
-                <option value="current_value:asc">Current value (Low-High)</option>
-                <option value="gain_loss:desc">Gain/Loss (High-Low)</option>
-                <option value="gain_loss:asc">Gain/Loss (Low-High)</option>
-                <option value="cagr:desc">CAGR (High-Low)</option>
-                <option value="cagr:asc">CAGR (Low-High)</option>
-                <option value="xirr:desc">XIRR (High-Low)</option>
-                <option value="xirr:asc">XIRR (Low-High)</option>
-                <option value="cost_basis:desc">Cost basis (High-Low)</option>
-                <option value="cost_basis:asc">Cost basis (Low-High)</option>
-                <option value="nav_price:desc">NAV / Price (High-Low)</option>
-                <option value="nav_price:asc">NAV / Price (Low-High)</option>
-                <option value="name:asc">Name (A-Z)</option>
-                <option value="name:desc">Name (Z-A)</option>
-              </select>
-            </div>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: "All", value: "all" as const },
+            { label: "Mutual Funds", value: "Mutual Funds" as const },
+            { label: "Stocks", value: "Stocks" as const },
+          ].map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              variant={categoryFilter === option.value ? "default" : "outline"}
+              onClick={() => {
+                setCategoryFilter(option.value);
+                setPage(1);
+              }}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
 
-          {loading ? <LoadingSpinner label="Loading investments..." /> : filteredInvestments.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center"><h4 className="text-base font-semibold text-slate-900">No investments yet</h4><p className="mt-2 text-sm text-slate-600">Add your first holding to unlock allocation, return, and diversification insights.</p></div> : <InvestmentTable investments={filteredInvestments} totalPortfolioValue={summary.totalInvestmentValue} onView={(investment) => setSelectedInvestment(investment)} onEdit={(investment) => { setEditingInvestment(investment); setDialogOpen(true); }} onDelete={(investment) => setDeleteTarget(investment)} />}
-        </DashboardCard>
+        <InvestmentTable
+          investments={paginatedInvestments}
+          totalPortfolioValue={summary.totalInvestmentValue}
+          searchValue={query}
+          onSearchChange={(value) => {
+            setQuery(value);
+            setPage(1);
+          }}
+          categoryFilter={categoryFilter}
+          regionFilter={regionFilter}
+          onRegionFilterChange={(value) => {
+            setRegionFilter(value);
+            setPage(1);
+          }}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSortChange={(nextKey, nextDirection) => {
+            setSortKey(nextKey);
+            setSortDirection(nextDirection);
+            setPage(1);
+          }}
+          page={page}
+          pageSize={pageSize}
+          totalRows={filteredInvestments.length}
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(1);
+          }}
+          onView={(investment) => setSelectedInvestment(investment)}
+          onEdit={(investment) => { setEditingInvestment(investment); setDialogOpen(true); }}
+          onDelete={(investment) => setDeleteTarget(investment)}
+        />
       </PageContainer>
 
       <InvestmentDetailsDialog investment={selectedInvestment} totalPortfolioValue={summary.totalInvestmentValue} open={Boolean(selectedInvestment)} onOpenChange={(open) => { if (!open) setSelectedInvestment(null); }} />

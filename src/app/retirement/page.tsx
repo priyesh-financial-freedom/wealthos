@@ -7,8 +7,6 @@ import {
   RetirementAccountsTable,
   RetirementDashboard,
   RetirementDetailDialog,
-  RetirementSnapshotForm,
-  RetirementSnapshotsTable,
 } from "@/components/retirement";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -18,23 +16,17 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
-import { getBalanceSheetData } from "@/services/balanceSheet";
 import {
   buildRetirementDashboardModel,
-  createMonthlyRetirementSnapshot,
   createRetirementAccount,
-  deleteMonthlyRetirementSnapshot,
   deleteRetirementAccount,
-  getMonthlyRetirementSnapshots,
   getRetirementAccounts,
-  updateMonthlyRetirementSnapshot,
   updateRetirementAccount,
 } from "@/services/retirement";
 import type {
-  MonthlyRetirementSnapshot,
-  MonthlyRetirementSnapshotInsert,
   RetirementAccount,
   RetirementAccountInsert,
+  RetirementAccountType,
 } from "@/types/retirementAccount";
 
 type AccountModalState =
@@ -42,51 +34,33 @@ type AccountModalState =
   | { kind: "edit"; account: RetirementAccount }
   | null;
 
-type SnapshotModalState =
-  | { kind: "create"; accountId?: string }
-  | { kind: "edit"; snapshot: MonthlyRetirementSnapshot }
-  | null;
-
 export default function RetirementPage() {
   const [accounts, setAccounts] = useState<RetirementAccount[]>([]);
-  const [snapshots, setSnapshots] = useState<MonthlyRetirementSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingAccount, setSavingAccount] = useState(false);
-  const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [sortValue, setSortValue] = useState("current_value:desc");
+  const [typeFilter, setTypeFilter] = useState<"all" | RetirementAccountType>("all");
+  const [sortValue, setSortValue] = useState("current_balance:desc");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [accountModal, setAccountModal] = useState<AccountModalState>(null);
-  const [snapshotModal, setSnapshotModal] = useState<SnapshotModalState>(null);
   const [detailAccount, setDetailAccount] = useState<RetirementAccount | null>(null);
 
   async function loadData() {
     setError(null);
 
     try {
-      const [retirementAccounts, retirementSnapshots, balanceSheetData] = await Promise.all([
-        getRetirementAccounts(),
-        getMonthlyRetirementSnapshots(),
-        getBalanceSheetData(),
-      ]);
-
-      const retirementModel = buildRetirementDashboardModel(
-        retirementAccounts,
-        retirementSnapshots,
-        balanceSheetData.summary.netWorth - balanceSheetData.summary.categoryTotals.retirement,
-      );
+      const retirementAccounts = await getRetirementAccounts();
+      const retirementModel = buildRetirementDashboardModel(retirementAccounts);
 
       setAccounts(retirementAccounts);
-      setSnapshots(retirementSnapshots);
       setDashboardModel(retirementModel);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load retirement data");
     }
   }
 
-  const [dashboardModel, setDashboardModel] = useState(() => buildRetirementDashboardModel([], [], 0));
+  const [dashboardModel, setDashboardModel] = useState(() => buildRetirementDashboardModel([]));
 
   useEffect(() => {
     let isMounted = true;
@@ -127,15 +101,25 @@ export default function RetirementPage() {
     return () => window.clearTimeout(timer);
   }, [error]);
 
+  useEffect(() => {
+    const requestedType = new URLSearchParams(window.location.search).get("type");
+    if (requestedType === "PPF" || requestedType === "EPF" || requestedType === "NPS") {
+      setTypeFilter(requestedType);
+      return;
+    }
+
+    setTypeFilter("all");
+  }, []);
+
   const filteredAccounts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    const [sortField, sortDirection] = sortValue.split(":") as [keyof RetirementAccount, "asc" | "desc"];
+    const [sortField, sortDirection] = sortValue.split(":") as ["current_balance" | "institution" | "updated_at", "asc" | "desc"];
 
     return [...accounts]
       .filter((account) => {
         const matchesQuery =
           !normalizedQuery ||
-          `${account.account_type} ${account.institution} ${account.account_number} ${account.holder_name} ${account.nominee ?? ""} ${account.notes ?? ""}`
+          `${account.account_type} ${account.owner} ${account.institution} ${account.account_number ?? ""} ${account.nominee ?? ""} ${account.notes ?? ""}`
             .toLowerCase()
             .includes(normalizedQuery);
         const matchesType = typeFilter === "all" || account.account_type === typeFilter;
@@ -154,11 +138,6 @@ export default function RetirementPage() {
         return String(leftValue).localeCompare(String(rightValue)) * direction;
       });
   }, [accounts, query, sortValue, typeFilter]);
-
-  const accountsById = useMemo(
-    () => Object.fromEntries(accounts.map((account) => [account.id, account] as const)),
-    [accounts],
-  );
 
   async function handleSaveAccount(values: RetirementAccountInsert) {
     setSavingAccount(true);
@@ -190,51 +169,12 @@ export default function RetirementPage() {
     }
 
     try {
-      await deleteRetirementAccount(account.id);
+      await deleteRetirementAccount(account.id, account.account_type);
       setNotice("Retirement account deleted successfully.");
       await loadData();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete retirement account");
-    }
-  }
-
-  async function handleSaveSnapshot(values: MonthlyRetirementSnapshotInsert) {
-    setSavingSnapshot(true);
-    setError(null);
-    setNotice(null);
-
-    try {
-      if (snapshotModal?.kind === "edit") {
-        await updateMonthlyRetirementSnapshot({ id: snapshotModal.snapshot.id, ...values });
-        setNotice("Monthly retirement snapshot updated successfully.");
-      } else {
-        await createMonthlyRetirementSnapshot(values);
-        setNotice("Monthly retirement snapshot created successfully.");
-      }
-      setSnapshotModal(null);
-      await loadData();
-      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save monthly retirement snapshot");
-    } finally {
-      setSavingSnapshot(false);
-    }
-  }
-
-  async function handleDeleteSnapshot(snapshot: MonthlyRetirementSnapshot) {
-    const confirmed = window.confirm("Delete this monthly retirement snapshot?");
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      await deleteMonthlyRetirementSnapshot(snapshot.id);
-      setNotice("Monthly retirement snapshot deleted successfully.");
-      await loadData();
-      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete monthly retirement snapshot");
     }
   }
 
@@ -244,12 +184,9 @@ export default function RetirementPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <PageHeader
             title="Retirement"
-            description="Premium command center for EPF, PPF, and NPS balances, contribution discipline, and long-horizon compounding."
+            description="Track PPF, EPF, and NPS balances and recurring contribution schedules in dedicated modules."
           />
           <div className="flex flex-wrap gap-3">
-            <Button onClick={() => setSnapshotModal({ kind: "create" })} disabled={accounts.length === 0} variant="outline">
-              Add Snapshot
-            </Button>
             <Button onClick={() => setAccountModal({ kind: "create" })}>Add Retirement Account</Button>
           </div>
         </div>
@@ -266,6 +203,19 @@ export default function RetirementPage() {
           <>
             <RetirementDashboard model={dashboardModel} emptyState={accounts.length === 0} />
 
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "All", value: "all" as const },
+                { label: "PPF", value: "PPF" as const },
+                { label: "EPF", value: "EPF" as const },
+                { label: "NPS", value: "NPS" as const },
+              ].map((option) => (
+                <Button key={option.value} type="button" variant={typeFilter === option.value ? "default" : "outline"} onClick={() => setTypeFilter(option.value)}>
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+
             <DashboardCard>
               <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr_0.8fr_1fr]">
                 <div className="space-y-2">
@@ -276,12 +226,12 @@ export default function RetirementPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700" htmlFor="retirement-filter-type">
-                    Filter by type
+                    Module
                   </label>
-                  <select id="retirement-filter-type" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+                  <select id="retirement-filter-type" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "all" | RetirementAccountType)}>
                     <option value="all">All types</option>
-                    <option value="EPF">EPF</option>
                     <option value="PPF">PPF</option>
+                    <option value="EPF">EPF</option>
                     <option value="NPS">NPS</option>
                   </select>
                 </div>
@@ -290,9 +240,8 @@ export default function RetirementPage() {
                     Sort by
                   </label>
                   <select id="retirement-sort" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={sortValue} onChange={(event) => setSortValue(event.target.value)}>
-                    <option value="current_value:desc">Highest value</option>
-                    <option value="current_value:asc">Lowest value</option>
-                    <option value="interest_rate:desc">Highest rate</option>
+                    <option value="current_balance:desc">Highest balance</option>
+                    <option value="current_balance:asc">Lowest balance</option>
                     <option value="institution:asc">Institution A-Z</option>
                     <option value="updated_at:desc">Recently updated</option>
                   </select>
@@ -307,27 +256,13 @@ export default function RetirementPage() {
             <section className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold text-slate-900">Retirement Accounts</h2>
-                <p className="text-sm text-slate-500">Create, edit, delete, search, sort, and filter retirement accounts without touching existing modules.</p>
+                <p className="text-sm text-slate-500">Shared CRUD workflow across PPF, EPF, and NPS account modules.</p>
               </div>
               <RetirementAccountsTable
                 accounts={filteredAccounts}
                 onView={setDetailAccount}
                 onEdit={(account) => setAccountModal({ kind: "edit", account })}
                 onDelete={handleDeleteAccount}
-                onAddSnapshot={(account) => setSnapshotModal({ kind: "create", accountId: account.id })}
-              />
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-slate-900">Monthly Retirement Snapshots</h2>
-                <p className="text-sm text-slate-500">Each monthly close can create retirement snapshots automatically, and you can manage them manually here.</p>
-              </div>
-              <RetirementSnapshotsTable
-                snapshots={snapshots}
-                accountsById={accountsById}
-                onEdit={(snapshot) => setSnapshotModal({ kind: "edit", snapshot })}
-                onDelete={handleDeleteSnapshot}
               />
             </section>
           </>
@@ -343,22 +278,6 @@ export default function RetirementPage() {
               onSubmit={handleSaveAccount}
               onCancel={() => setAccountModal(null)}
               submitting={savingAccount}
-            />
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={snapshotModal !== null} onOpenChange={(open) => !open && setSnapshotModal(null)}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>{snapshotModal?.kind === "edit" ? "Edit monthly retirement snapshot" : "Add monthly retirement snapshot"}</DialogTitle>
-            </DialogHeader>
-            <RetirementSnapshotForm
-              accounts={accounts}
-              initialData={snapshotModal?.kind === "edit" ? snapshotModal.snapshot : null}
-              initialAccountId={snapshotModal?.kind === "create" ? snapshotModal.accountId : null}
-              onSubmit={handleSaveSnapshot}
-              onCancel={() => setSnapshotModal(null)}
-              submitting={savingSnapshot}
             />
           </DialogContent>
         </Dialog>

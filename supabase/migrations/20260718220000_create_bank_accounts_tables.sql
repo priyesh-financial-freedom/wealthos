@@ -7,7 +7,7 @@ create table if not exists public.bank_accounts (
   nickname text,
   account_number text not null,
   ifsc text,
-  currency text not null default 'USD',
+  currency text not null default 'INR',
   current_balance numeric(14,2) not null default 0,
   opening_balance numeric(14,2) not null default 0,
   interest_rate numeric(7,3) not null default 0,

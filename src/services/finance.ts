@@ -84,6 +84,10 @@ export function calculateNetWorth(totalAssets: number, totalLiabilities: number)
   return totalAssets - totalLiabilities;
 }
 
+export function calculateTotalAssetBase(summary: Pick<FinanceSummarySnapshot, "totalAssets" | "totalInvestments">): number {
+  return Number(summary.totalAssets ?? 0) + Number(summary.totalInvestments ?? 0);
+}
+
 export function calculateDebtRatio(totalAssets: number, totalLiabilities: number): number {
   if (totalAssets <= 0) {
     return 0;
@@ -106,7 +110,7 @@ export function calculateAssetAllocation(assets: Asset[]): AllocationItem[] {
 
 export function calculateLiabilityAllocation(liabilities: Liability[]): AllocationItem[] {
   const grouped = liabilities.reduce<Record<string, number>>((acc, liability) => {
-    const key = liability.liability_type || "Other";
+    const key = liability.liability_type || "Other Liability";
     acc[key] = (acc[key] ?? 0) + Number(liability.outstanding_amount ?? 0);
     return acc;
   }, {});
@@ -195,7 +199,7 @@ export function buildExecutiveInsights(summary: FinanceSummarySnapshot, assets: 
   const insights: ExecutiveInsight[] = [];
   const realEstateShare = getShareForAllocation(summary.assetAllocation, "Real Estate");
   const cashShare = getShareForAllocation(summary.assetAllocation, "Cash & Bank") || getShareForAllocation(summary.assetAllocation, "Cash");
-  const homeLoanShare = getShareForAllocation(summary.liabilityAllocation, "Home Loan");
+  const homeLoanShare = getShareForAllocation(summary.liabilityAllocation, "Home Loan") + getShareForAllocation(summary.liabilityAllocation, "Loan Against Property");
 
   if (summary.debtRatio <= 0.35) {
     insights.push({ title: "Debt ratio is healthy", detail: `Your debt ratio is ${(summary.debtRatio * 100).toFixed(1)}%, leaving room for new capital deployment.`, tone: "positive" });
@@ -216,7 +220,7 @@ export function buildExecutiveInsights(summary: FinanceSummarySnapshot, assets: 
   }
 
   if (summary.totalInvestments > 0) {
-    insights.push({ title: "Investments are contributing to net worth", detail: `Investments now contribute $${summary.totalInvestments.toLocaleString()} to your balance sheet.`, tone: "neutral" });
+    insights.push({ title: "Investments are contributing to net worth", detail: `Investments now contribute ₹${summary.totalInvestments.toLocaleString("en-IN")} to your balance sheet.`, tone: "neutral" });
   }
 
   if (investments.length > 0) {
@@ -228,7 +232,7 @@ export function buildExecutiveInsights(summary: FinanceSummarySnapshot, assets: 
   }
 
   if (summary.monthlyEmi > 0) {
-    insights.push({ title: "Cash flow commitment", detail: `Monthly EMI obligations total $${summary.monthlyEmi.toLocaleString()} per month across ${liabilities.length} liabilities.`, tone: "neutral" });
+    insights.push({ title: "Cash flow commitment", detail: `Monthly EMI obligations total ₹${summary.monthlyEmi.toLocaleString("en-IN")} per month across ${liabilities.length} liabilities.`, tone: "neutral" });
   }
 
   if (assets.length === 0 && liabilities.length === 0) {
@@ -286,7 +290,7 @@ export function buildFinancialHealthScore({
       },
       {
         label: "Monthly momentum",
-        value: `$${latestMonthlyGrowth.toLocaleString()}`,
+        value: `₹${latestMonthlyGrowth.toLocaleString("en-IN")}`,
         tone: latestMonthlyGrowth >= 0 ? "positive" : "warning",
       },
       {

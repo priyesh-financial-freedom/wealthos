@@ -45,7 +45,7 @@ const defaultValues: FixedDepositInsert = {
 };
 
 function formatMoney(value: number) {
-  return `$${value.toLocaleString()}`;
+  return `₹${value.toLocaleString("en-IN")}`;
 }
 
 export default function FixedDepositsPage() {

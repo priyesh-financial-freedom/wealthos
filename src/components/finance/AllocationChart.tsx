@@ -28,7 +28,7 @@ export function AllocationChart({ title, description, data }: AllocationChartPro
                 <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(value) => `$${Number(value ?? 0).toLocaleString()}`} />
+            <Tooltip formatter={(value) => `₹${Number(value ?? 0).toLocaleString("en-IN")}`} />
           </PieChart>
         </ResponsiveContainer>
       </div>
@@ -39,7 +39,7 @@ export function AllocationChart({ title, description, data }: AllocationChartPro
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
               <span>{item.name}</span>
             </div>
-            <span className="font-medium text-slate-900">${item.value.toLocaleString()}</span>
+            <span className="font-medium text-slate-900">₹{item.value.toLocaleString("en-IN")}</span>
           </div>
         ))}
       </div>

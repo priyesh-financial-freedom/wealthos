@@ -22,10 +22,24 @@ const categories: InvestmentCategory[] = [
 const regions: InvestmentRegion[] = ["Domestic", "International"];
 const investmentModes: InvestmentMode[] = ["Direct", "Regular"];
 const optionTypes: InvestmentOptionType[] = ["Growth", "IDCW"];
+const folioNumberAliases = [
+  "folio_number",
+  "folio number",
+  "folio no",
+  "folio no.",
+  "folio #",
+  "folio",
+  "foliono",
+  "folio no#",
+];
 
 interface InvestmentImportPayload {
   id?: string;
   values: InvestmentInsert;
+}
+
+function isStockSheet(sheetName: string) {
+  return sheetName.trim().toLowerCase() === "stock holdings";
 }
 
 function parseCategory(value: string | null) {
@@ -73,6 +87,7 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
     const records: Array<ImportValidatedRecord<InvestmentImportPayload>> = [];
     const existing = await getInvestments();
     const existingIds = new Set(existing.map((item) => item.id));
+    const stockSheet = isStockSheet(sheetName);
 
     rows.forEach((rawRow, index) => {
       const rowNumber = index + 2;
@@ -80,13 +95,23 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
 
       const id = parseString(pickValue(row, ["id"]));
       const investmentName = parseString(pickValue(row, ["investment_name", "investment name", "name"]));
-      const category = parseCategory(parseString(pickValue(row, ["category"])));
+      const parsedCategory = parseCategory(parseString(pickValue(row, ["category"])));
+      const category = stockSheet ? parsedCategory ?? "Stocks" : parsedCategory;
       const units = parseNumber(pickValue(row, ["units"]));
-      const navPrice = parseNumber(pickValue(row, ["nav_price", "nav price"]));
-      const costBasis = parseNumber(pickValue(row, ["cost_basis", "cost basis"]));
+      const averagePurchasePrice = parseNumber(
+        pickValue(row, ["average_purchase_price", "average purchase price", "avg purchase price", "average price", "purchase price"]),
+      );
+      const navPrice = stockSheet
+        ? parseNumber(pickValue(row, ["current_price", "current price", "nav_price", "nav price", "price"]))
+        : parseNumber(pickValue(row, ["nav_price", "nav price"]));
+      const costBasis = stockSheet ? null : parseNumber(pickValue(row, ["cost_basis", "cost basis"]));
       const region = parseRegion(parseString(pickValue(row, ["region"])));
       const purchaseDateRaw = pickValue(row, ["purchase_date", "purchase date"]);
       const purchaseDate = purchaseDateRaw === undefined ? null : parseDate(purchaseDateRaw);
+      const owner = parseString(pickValue(row, ["owner"]));
+      const stockBroker = parseString(pickValue(row, ["broker", "broker_platform", "broker platform", "platform"]));
+      const stockExchange = parseString(pickValue(row, ["exchange"]));
+      const stockIsin = parseString(pickValue(row, ["isin", "i_s_i_n"]));
       const sipAmountRaw = pickValue(row, ["sip_amount", "sip amount"]);
       const sipAmount = sipAmountRaw === undefined ? null : parseNumber(sipAmountRaw);
       const sipDateRaw = pickValue(row, ["sip_date", "sip date"]);
@@ -108,16 +133,35 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
         issues.push(issue({ sheetName, rowNumber, field: "category", message: "Invalid category." }));
       }
 
+      if (stockSheet && category && category !== "Stocks") {
+        issues.push(issue({ sheetName, rowNumber, field: "category", message: "Category must be Stocks for this sheet." }));
+      }
+
       if (units === null) {
         issues.push(issue({ sheetName, rowNumber, field: "units", message: "Units must be a valid number." }));
       }
 
       if (navPrice === null) {
-        issues.push(issue({ sheetName, rowNumber, field: "nav_price", message: "NAV price must be a valid number." }));
+        issues.push(
+          issue({
+            sheetName,
+            rowNumber,
+            field: stockSheet ? "current_price" : "nav_price",
+            message: stockSheet ? "Current price must be a valid number." : "NAV price must be a valid number.",
+          }),
+        );
       }
 
-      if (costBasis === null) {
+      if (!stockSheet && costBasis === null) {
         issues.push(issue({ sheetName, rowNumber, field: "cost_basis", message: "Cost basis must be a valid number." }));
+      }
+
+      if (stockSheet && averagePurchasePrice === null) {
+        issues.push(issue({ sheetName, rowNumber, field: "average_purchase_price", message: "Average purchase price must be a valid number." }));
+      }
+
+      if (stockSheet && !owner) {
+        issues.push(issue({ sheetName, rowNumber, field: "owner", message: "Owner is required for stock imports." }));
       }
 
       if (!region) {
@@ -145,7 +189,16 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
       }
 
       const hasErrors = issues.some((item) => item.sheetName === sheetName && item.rowNumber === rowNumber && item.severity === "error");
-      if (hasErrors || !investmentName || !category || units === null || navPrice === null || costBasis === null || !region) {
+      if (
+        hasErrors ||
+        !investmentName ||
+        !category ||
+        units === null ||
+        navPrice === null ||
+        (!stockSheet && costBasis === null) ||
+        (stockSheet && averagePurchasePrice === null) ||
+        !region
+      ) {
         return;
       }
 
@@ -164,22 +217,26 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
         category,
         units,
         nav_price: navPrice,
-        cost_basis: costBasis,
-        today_gain_loss: parseNumber(pickValue(row, ["today_gain_loss", "today gain loss"])) ?? 0,
+        cost_basis: stockSheet ? Number((units * (averagePurchasePrice ?? 0)).toFixed(2)) : (costBasis ?? 0),
+        today_gain_loss: stockSheet ? 0 : parseNumber(pickValue(row, ["today_gain_loss", "today gain loss"])) ?? 0,
         sector: parseString(pickValue(row, ["sector"])),
-        amc: parseString(pickValue(row, ["amc"])),
+        amc: stockSheet ? null : parseString(pickValue(row, ["amc"])),
         region,
         purchase_date: purchaseDate,
-        owner: parseString(pickValue(row, ["owner"])),
-        folio_number: parseString(pickValue(row, ["folio_number", "folio number"])),
-        amfi_scheme_code: parseString(pickValue(row, ["amfi_scheme_code", "amfi scheme code"])),
-        sip_amount: sipAmount,
-        sip_date: sipDate,
-        investment_mode: investmentMode,
-        option_type: optionType,
-        broker_platform: parseString(pickValue(row, ["broker_platform", "broker platform"])),
-        nominee: parseString(pickValue(row, ["nominee"])),
+        owner,
+        folio_number: stockSheet ? null : parseString(pickValue(row, folioNumberAliases)),
+        amfi_scheme_code: stockSheet ? null : parseString(pickValue(row, ["amfi_scheme_code", "amfi scheme code"])),
+        sip_amount: stockSheet ? null : sipAmount,
+        sip_date: stockSheet ? null : sipDate,
+        investment_mode: stockSheet ? null : investmentMode,
+        option_type: stockSheet ? null : optionType,
+        broker_platform: stockSheet ? null : parseString(pickValue(row, ["broker_platform", "broker platform"])),
+        nominee: stockSheet ? null : parseString(pickValue(row, ["nominee"])),
         notes: parseString(pickValue(row, ["notes"])),
+        broker: stockSheet ? stockBroker : null,
+        exchange: stockSheet ? stockExchange : null,
+        isin: stockSheet ? stockIsin : null,
+        average_purchase_price: stockSheet ? averagePurchasePrice : null,
       };
 
       records.push({
@@ -203,9 +260,32 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
     let inserted = 0;
     let updated = 0;
     let failed = 0;
+    const stockSheet = isStockSheet(sheetName);
+
+    console.info("[Stocks Import Execute] executeRows entered", {
+      sheetName,
+      stockSheet,
+      rowsEnteringExecuteRows: records.length,
+    });
+
+    if (stockSheet && records.length === 0) {
+      console.warn("[Stocks Import Execute] executeRows called with zero records for stock sheet", {
+        sheetName,
+        rowsEnteringExecuteRows: 0,
+      });
+    }
 
     for (const record of records) {
       try {
+        if (stockSheet) {
+          console.info("[Stocks Import Execute] Row payload", {
+            sheetName,
+            rowNumber: record.rowNumber,
+            action: record.action,
+            payloadPassedToInsert: record.payload.values,
+          });
+        }
+
         if (record.action === "update" && record.payload.id) {
           await updateInvestment({ id: record.payload.id, ...record.payload.values });
           updated += 1;
@@ -215,6 +295,16 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
         }
       } catch (error) {
         failed += 1;
+        if (stockSheet) {
+          console.error("[Stocks Import Execute] Supabase insert/update error", {
+            sheetName,
+            rowNumber: record.rowNumber,
+            action: record.action,
+            payloadPassedToInsert: record.payload.values,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         issues.push(
           issue({
             severity: "error",
@@ -224,6 +314,16 @@ export const investmentsImportPlugin: ImportModulePlugin<InvestmentImportPayload
           }),
         );
       }
+    }
+
+    if (stockSheet) {
+      console.info("[Stocks Import Execute] Summary", {
+        sheetName,
+        rowsEnteringExecuteRows: records.length,
+        rowsActuallyInserted: inserted,
+        rowsUpdated: updated,
+        rowsFailed: failed,
+      });
     }
 
     return { inserted, updated, failed, issues };

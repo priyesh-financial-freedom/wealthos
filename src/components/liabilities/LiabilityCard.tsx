@@ -23,13 +23,13 @@ export function LiabilityCard({ liability }: LiabilityCardProps) {
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
             <DollarSign className="h-4 w-4" /> Outstanding
           </div>
-          <p className="mt-2 text-lg font-semibold text-slate-900">${liability.outstanding_amount.toLocaleString()}</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">₹{liability.outstanding_amount.toLocaleString("en-IN")}</p>
         </div>
         <div className="rounded-xl bg-slate-50 p-3">
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
             <ReceiptText className="h-4 w-4" /> EMI
           </div>
-          <p className="mt-2 text-lg font-semibold text-slate-900">{liability.emi ? `$${liability.emi.toLocaleString()}` : "—"}</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">{liability.emi ? `₹${liability.emi.toLocaleString("en-IN")}` : "—"}</p>
         </div>
         <div className="rounded-xl bg-slate-50 p-3">
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">

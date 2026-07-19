@@ -2,15 +2,24 @@
 
 import { useMemo, useState } from "react";
 
-import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ContentContainer } from "@/components/layout/ContentContainer";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PageToolbar } from "@/components/layout/PageToolbar";
 import { Button } from "@/components/ui/button";
-import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
+import { DataGrid } from "@/components/ui/data-grid";
+import { ToastViewport } from "@/components/ui/feedback";
+import { LoadingState } from "@/components/ui/states";
 import { buildImportPreview, executeImportPlan, parseWorkbookForImport } from "@/services/imports/excelImport";
 import { getSupportedSheetNames } from "@/services/imports/registry";
-import { downloadImportTemplateWorkbook } from "@/services/imports/templateWorkbook";
+import {
+  downloadEpfImportTemplateWorkbook,
+  downloadImportTemplateWorkbook,
+  downloadNpsImportTemplateWorkbook,
+  downloadPpfImportTemplateWorkbook,
+} from "@/services/imports/templateWorkbook";
 import type { ImportExecutionSummary, ImportPreview, ParsedWorkbook } from "@/services/imports/types";
 
 function formatIssueLabel(field?: string) {
@@ -29,6 +38,12 @@ export default function ImportDataPage() {
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [detectedSearch, setDetectedSearch] = useState("");
+  const [detectedPage, setDetectedPage] = useState(1);
+  const [previewSearch, setPreviewSearch] = useState("");
+  const [previewPage, setPreviewPage] = useState(1);
+  const [executionSearch, setExecutionSearch] = useState("");
+  const [executionPage, setExecutionPage] = useState(1);
 
   const supportedSheets = useMemo(() => getSupportedSheetNames(), []);
 
@@ -76,6 +91,56 @@ export default function ImportDataPage() {
     () => preview?.modules.reduce((sum, modulePreview) => sum + modulePreview.validRows, 0) ?? 0,
     [preview],
   );
+
+  const detectedRows = useMemo(() => {
+    if (!parsedWorkbook) {
+      return [] as Array<{ importable: boolean; sheetName: string; module: string; rows: number; validationStatus: string }>;
+    }
+
+    const normalizedQuery = detectedSearch.trim().toLowerCase();
+
+    return parsedWorkbook.detectedSheets
+      .map((sheet) => {
+        const status = !selectedSheets.includes(sheet.sheetName)
+          ? "Not selected"
+          : (() => {
+              const validation = validationBySheet.get(sheet.sheetName);
+              if (!validation) {
+                return "Pending validation";
+              }
+              if (validation.errorCount > 0) {
+                return `Errors (${validation.errorCount})`;
+              }
+              if (validation.warningCount > 0) {
+                return `Warnings (${validation.warningCount})`;
+              }
+              return "Ready";
+            })();
+
+        return {
+          importable: selectedSheets.includes(sheet.sheetName),
+          sheetName: sheet.sheetName,
+          module: sheet.plugin.displayName,
+          rows: sheet.rows.length,
+          validationStatus: status,
+        };
+      })
+      .filter((row) => !normalizedQuery || `${row.sheetName} ${row.module} ${row.validationStatus}`.toLowerCase().includes(normalizedQuery));
+  }, [detectedSearch, parsedWorkbook, selectedSheets, validationBySheet]);
+
+  const previewRows = useMemo(() => {
+    const normalizedQuery = previewSearch.trim().toLowerCase();
+    return (preview?.modules ?? []).filter((item) => !normalizedQuery || `${item.displayName} ${item.sheetName}`.toLowerCase().includes(normalizedQuery));
+  }, [preview, previewSearch]);
+
+  const executionRows = useMemo(() => {
+    const normalizedQuery = executionSearch.trim().toLowerCase();
+    return (execution?.modules ?? []).filter((item) => !normalizedQuery || `${item.displayName} ${item.sheetName}`.toLowerCase().includes(normalizedQuery));
+  }, [execution, executionSearch]);
+
+  const paginatedDetectedRows = useMemo(() => detectedRows.slice((detectedPage - 1) * 10, detectedPage * 10), [detectedPage, detectedRows]);
+  const paginatedPreviewRows = useMemo(() => previewRows.slice((previewPage - 1) * 10, previewPage * 10), [previewPage, previewRows]);
+  const paginatedExecutionRows = useMemo(() => executionRows.slice((executionPage - 1) * 10, executionPage * 10), [executionPage, executionRows]);
 
   async function handleWorkbookSelection(nextFile: File | null) {
     setFile(nextFile);
@@ -165,7 +230,13 @@ export default function ImportDataPage() {
     try {
       const summary = await executeImportPlan(preview.executablePlan);
       setExecution(summary);
-      setNotice("Import completed.");
+
+      if (summary.totals.failed > 0) {
+        const firstIssue = summary.issues[0]?.message;
+        throw new Error(firstIssue ? `Import failed for ${summary.totals.failed} row(s): ${firstIssue}` : `Import failed for ${summary.totals.failed} row(s).`);
+      }
+
+      setNotice(`Import completed. Inserted ${summary.totals.inserted} row(s), updated ${summary.totals.updated} row(s).`);
 
       if (summary.totals.inserted > 0 || summary.totals.updated > 0) {
         window.dispatchEvent(new Event("wealthos:finance-data-updated"));
@@ -180,6 +251,7 @@ export default function ImportDataPage() {
   return (
     <AppLayout>
       <PageContainer>
+        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Import Wizard" }]} />
         <PageHeader
           title="Import Data"
           description="Upload an .xlsx workbook and run module-based import plugins. The wizard orchestrates parsing, validation, preview, and execution."
@@ -188,18 +260,28 @@ export default function ImportDataPage() {
         <ToastViewport type="success" message={notice ?? ""} onDismiss={() => setNotice(null)} />
         <ToastViewport type="error" message={error ?? ""} onDismiss={() => setError(null)} />
 
-        <DashboardCard>
+        <ContentContainer>
           <div className="space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">Step 1: Upload Workbook</h2>
-              <p className="text-sm text-slate-600">Supported sheets: {supportedSheets.join(", ")}</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={downloadImportTemplateWorkbook} disabled={loadingSheets || validating || executing}>
-                Download Template
-              </Button>
-            </div>
+            <PageToolbar>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Step 1: Upload Workbook</h2>
+                <p className="text-sm text-slate-600">Supported sheets: {supportedSheets.join(", ")}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={downloadImportTemplateWorkbook} disabled={loadingSheets || validating || executing}>
+                  Download Full Template
+                </Button>
+                <Button type="button" variant="outline" onClick={downloadPpfImportTemplateWorkbook} disabled={loadingSheets || validating || executing}>
+                  PPF Template
+                </Button>
+                <Button type="button" variant="outline" onClick={downloadEpfImportTemplateWorkbook} disabled={loadingSheets || validating || executing}>
+                  EPF Template
+                </Button>
+                <Button type="button" variant="outline" onClick={downloadNpsImportTemplateWorkbook} disabled={loadingSheets || validating || executing}>
+                  NPS Template
+                </Button>
+              </div>
+            </PageToolbar>
 
             <input
               type="file"
@@ -227,13 +309,13 @@ export default function ImportDataPage() {
               </p>
             </div>
           </div>
-        </DashboardCard>
+        </ContentContainer>
 
-        {loadingSheets ? <LoadingSpinner label="Detecting worksheets in workbook..." /> : null}
-        {validating ? <LoadingSpinner label="Validating selected sheets..." /> : null}
+        {loadingSheets ? <LoadingState label="Detecting worksheets in workbook..." /> : null}
+        {validating ? <LoadingState label="Validating selected sheets..." /> : null}
 
         {parsedWorkbook ? (
-          <DashboardCard>
+          <ContentContainer>
             <div className="space-y-3">
               <h2 className="text-base font-semibold text-slate-900">Step 2: Detected Sheets</h2>
               <p className="text-sm text-slate-600">Workbook: {parsedWorkbook.fileName}</p>
@@ -265,66 +347,43 @@ export default function ImportDataPage() {
                 </Button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-600">
-                      <th className="px-2 py-2">Import</th>
-                      <th className="px-2 py-2">Sheet</th>
-                      <th className="px-2 py-2">Module</th>
-                      <th className="px-2 py-2">Rows</th>
-                      <th className="px-2 py-2">Validation Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsedWorkbook.detectedSheets.map((sheet) => (
-                      <tr key={sheet.sheetName} className="border-b border-slate-100">
-                        <td className="px-2 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedSheets.includes(sheet.sheetName)}
-                            onChange={() => {
-                              setSelectedSheets((current) => {
-                                const next = current.includes(sheet.sheetName)
-                                  ? current.filter((name) => name !== sheet.sheetName)
-                                  : [...current, sheet.sheetName];
-                                return next;
-                              });
-                              setPreview(null);
-                              setExecution(null);
-                            }}
-                          />
-                        </td>
-                        <td className="px-2 py-2">{sheet.sheetName}</td>
-                        <td className="px-2 py-2">{sheet.plugin.displayName}</td>
-                        <td className="px-2 py-2">{sheet.rows.length}</td>
-                        <td className="px-2 py-2">
-                          {(() => {
-                            if (!selectedSheets.includes(sheet.sheetName)) {
-                              return "Not selected";
-                            }
-
-                            const status = validationBySheet.get(sheet.sheetName);
-                            if (!status) {
-                              return "Pending validation";
-                            }
-
-                            if (status.errorCount > 0) {
-                              return `Errors (${status.errorCount})`;
-                            }
-
-                            if (status.warningCount > 0) {
-                              return `Warnings (${status.warningCount})`;
-                            }
-
-                            return "Ready";
-                          })()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                title="Detected sheets"
+                description="Select which importable sheets should move into validation."
+                columns={[
+                  {
+                    key: "import",
+                    header: "Import",
+                    widthClassName: "min-w-24",
+                    cell: (row) => (
+                      <input
+                        type="checkbox"
+                        checked={row.importable}
+                        onChange={() => {
+                          setSelectedSheets((current) => {
+                            const next = current.includes(row.sheetName)
+                              ? current.filter((name) => name !== row.sheetName)
+                              : [...current, row.sheetName];
+                            return next;
+                          });
+                          setPreview(null);
+                          setExecution(null);
+                        }}
+                      />
+                    ),
+                  },
+                  { key: "sheet", header: "Sheet", widthClassName: "min-w-48", cell: (row) => row.sheetName },
+                  { key: "module", header: "Module", widthClassName: "min-w-40", cell: (row) => row.module },
+                  { key: "rows", header: "Rows", widthClassName: "min-w-24", cell: (row) => row.rows },
+                  { key: "status", header: "Validation Status", widthClassName: "min-w-40", cell: (row) => row.validationStatus },
+                ]}
+                rows={paginatedDetectedRows}
+                getRowId={(row) => row.sheetName}
+                search={{ value: detectedSearch, onChange: setDetectedSearch, placeholder: "Search detected sheets" }}
+                pagination={{ page: detectedPage, pageSize: 10, totalRows: detectedRows.length, onPageChange: setDetectedPage }}
+                emptyTitle="No importable sheets found"
+                emptyDescription="This workbook does not contain any supported import sheets."
+              />
 
               {parsedWorkbook.detectedSheets.some((sheet) => sheet.columnMapping.length > 0) ? (
                 <div className="space-y-3 pt-2">
@@ -362,28 +421,20 @@ export default function ImportDataPage() {
               {parsedWorkbook.referenceSheets.length > 0 ? (
                 <div className="space-y-2 pt-2">
                   <h3 className="text-sm font-semibold text-slate-800">Reference / Calculation Sheets</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-left text-slate-600">
-                          <th className="px-2 py-2">Sheet</th>
-                          <th className="px-2 py-2">Module</th>
-                          <th className="px-2 py-2">Rows</th>
-                          <th className="px-2 py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {parsedWorkbook.referenceSheets.map((sheet) => (
-                          <tr key={sheet.sheetName} className="border-b border-slate-100">
-                            <td className="px-2 py-2">{sheet.sheetName}</td>
-                            <td className="px-2 py-2">{sheet.label}</td>
-                            <td className="px-2 py-2">{sheet.rowCount}</td>
-                            <td className="px-2 py-2">Not importable</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataGrid
+                    title="Reference sheets"
+                    columns={[
+                      { key: "sheet", header: "Sheet", widthClassName: "min-w-48", cell: (row) => row.sheetName },
+                      { key: "label", header: "Module", widthClassName: "min-w-32", cell: (row) => row.label },
+                      { key: "rows", header: "Rows", widthClassName: "min-w-24", cell: (row) => row.rowCount },
+                      { key: "status", header: "Status", widthClassName: "min-w-28", cell: () => "Not importable" },
+                    ]}
+                    rows={parsedWorkbook.referenceSheets}
+                    getRowId={(row) => row.sheetName}
+                    emptyTitle="No reference sheets"
+                    emptyDescription="No reference or calculation sheets were detected."
+                    maxBodyHeightClassName="max-h-[24rem]"
+                  />
                 </div>
               ) : null}
 
@@ -394,40 +445,32 @@ export default function ImportDataPage() {
                 Selected importable sheets: {selectedSheets.length} of {parsedWorkbook.detectedSheets.length}
               </p>
             </div>
-          </DashboardCard>
+          </ContentContainer>
         ) : null}
 
         {preview ? (
-          <DashboardCard>
+          <ContentContainer>
             <div className="space-y-4">
               <h2 className="text-base font-semibold text-slate-900">Step 3: Validation Preview</h2>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-600">
-                      <th className="px-2 py-2">Module</th>
-                      <th className="px-2 py-2">Sheet</th>
-                      <th className="px-2 py-2">Rows</th>
-                      <th className="px-2 py-2">Valid</th>
-                      <th className="px-2 py-2">Errors</th>
-                      <th className="px-2 py-2">Warnings</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.modules.map((modulePreview) => (
-                      <tr key={`${modulePreview.moduleId}:${modulePreview.sheetName}`} className="border-b border-slate-100">
-                        <td className="px-2 py-2">{modulePreview.displayName}</td>
-                        <td className="px-2 py-2">{modulePreview.sheetName}</td>
-                        <td className="px-2 py-2">{modulePreview.totalRows}</td>
-                        <td className="px-2 py-2">{modulePreview.validRows}</td>
-                        <td className="px-2 py-2">{modulePreview.errorCount}</td>
-                        <td className="px-2 py-2">{modulePreview.warningCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                title="Validation preview"
+                columns={[
+                  { key: "module", header: "Module", widthClassName: "min-w-40", cell: (row) => row.displayName },
+                  { key: "sheet", header: "Sheet", widthClassName: "min-w-40", cell: (row) => row.sheetName },
+                  { key: "rows", header: "Rows", widthClassName: "min-w-20", cell: (row) => row.totalRows },
+                  { key: "valid", header: "Valid", widthClassName: "min-w-20", cell: (row) => row.validRows },
+                  { key: "errors", header: "Errors", widthClassName: "min-w-20", cell: (row) => row.errorCount },
+                  { key: "warnings", header: "Warnings", widthClassName: "min-w-24", cell: (row) => row.warningCount },
+                ]}
+                rows={paginatedPreviewRows}
+                getRowId={(row) => `${row.moduleId}:${row.sheetName}`}
+                search={{ value: previewSearch, onChange: setPreviewSearch, placeholder: "Search validation results" }}
+                pagination={{ page: previewPage, pageSize: 10, totalRows: previewRows.length, onPageChange: setPreviewPage }}
+                emptyTitle="No validation results"
+                emptyDescription="Run validation on the selected sheets to populate this preview."
+                maxBodyHeightClassName="max-h-[28rem]"
+              />
 
               {preview.issues.length > 0 ? (
                 <div className="space-y-2">
@@ -451,43 +494,36 @@ export default function ImportDataPage() {
                 </Button>
               </div>
             </div>
-          </DashboardCard>
+          </ContentContainer>
         ) : null}
 
-        {executing ? <LoadingSpinner label="Importing validated rows..." /> : null}
+        {executing ? <LoadingState label="Importing validated rows..." /> : null}
 
         {execution ? (
-          <DashboardCard>
+          <ContentContainer>
             <div className="space-y-4">
               <h2 className="text-base font-semibold text-slate-900">Step 4: Execution Summary</h2>
               <p className="text-sm text-slate-700">
                 Inserted: {execution.totals.inserted} | Updated: {execution.totals.updated} | Failed: {execution.totals.failed}
               </p>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-600">
-                      <th className="px-2 py-2">Module</th>
-                      <th className="px-2 py-2">Sheet</th>
-                      <th className="px-2 py-2">Inserted</th>
-                      <th className="px-2 py-2">Updated</th>
-                      <th className="px-2 py-2">Failed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {execution.modules.map((item) => (
-                      <tr key={`${item.moduleId}:${item.sheetName}`} className="border-b border-slate-100">
-                        <td className="px-2 py-2">{item.displayName}</td>
-                        <td className="px-2 py-2">{item.sheetName}</td>
-                        <td className="px-2 py-2">{item.inserted}</td>
-                        <td className="px-2 py-2">{item.updated}</td>
-                        <td className="px-2 py-2">{item.failed}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                title="Execution summary"
+                columns={[
+                  { key: "module", header: "Module", widthClassName: "min-w-40", cell: (row) => row.displayName },
+                  { key: "sheet", header: "Sheet", widthClassName: "min-w-40", cell: (row) => row.sheetName },
+                  { key: "inserted", header: "Inserted", widthClassName: "min-w-24", cell: (row) => row.inserted },
+                  { key: "updated", header: "Updated", widthClassName: "min-w-24", cell: (row) => row.updated },
+                  { key: "failed", header: "Failed", widthClassName: "min-w-20", cell: (row) => row.failed },
+                ]}
+                rows={paginatedExecutionRows}
+                getRowId={(row) => `${row.moduleId}:${row.sheetName}`}
+                search={{ value: executionSearch, onChange: setExecutionSearch, placeholder: "Search execution summary" }}
+                pagination={{ page: executionPage, pageSize: 10, totalRows: executionRows.length, onPageChange: setExecutionPage }}
+                emptyTitle="No execution results"
+                emptyDescription="Execute a validated import plan to populate this summary."
+                maxBodyHeightClassName="max-h-[28rem]"
+              />
 
               {execution.issues.length > 0 ? (
                 <ul className="list-disc space-y-1 pl-5 text-sm text-rose-700">
@@ -500,7 +536,7 @@ export default function ImportDataPage() {
                 </ul>
               ) : null}
             </div>
-          </DashboardCard>
+          </ContentContainer>
         ) : null}
       </PageContainer>
     </AppLayout>

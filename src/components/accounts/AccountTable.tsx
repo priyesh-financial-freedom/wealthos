@@ -11,15 +11,15 @@ interface AccountTableProps {
   onDelete: (account: Account) => void;
 }
 
-function formatCurrency(value: number, currency: string) {
+function formatCurrency(value: number) {
   try {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: currency || "USD",
+      currency: "INR",
       maximumFractionDigits: 0,
     }).format(value);
   } catch {
-    return `$${Number(value ?? 0).toLocaleString()}`;
+    return `₹${Number(value ?? 0).toLocaleString("en-IN")}`;
   }
 }
 
@@ -61,7 +61,7 @@ export function AccountTable({ accounts, onView, onEdit, onDelete }: AccountTabl
                 <td className="px-4 py-3"><AccountCategoryBadge category={account.category} /></td>
                 <td className="px-4 py-3 text-slate-600">{account.institution || "—"}</td>
                 <td className="px-4 py-3 text-slate-600">{account.owner || "—"}</td>
-                <td className="px-4 py-3 text-slate-900">{formatCurrency(Number(account.current_value ?? 0), account.currency)}</td>
+                <td className="px-4 py-3 text-slate-900">{formatCurrency(Number(account.current_value ?? 0))}</td>
                 <td className="px-4 py-3 text-slate-700 capitalize">{account.status.replaceAll("_", " ")}</td>
                 <td className="px-4 py-3 text-slate-600">{account.linked_item_type && account.linked_item_id ? `${account.linked_item_type} • ${account.linked_item_id.slice(0, 8)}...` : "—"}</td>
                 <td className="px-4 py-3 text-right">

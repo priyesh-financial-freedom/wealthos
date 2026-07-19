@@ -47,7 +47,7 @@ export async function createAccount(input: AccountInsert): Promise<Account> {
     .insert({
       ...input,
       user_id: user.id,
-      currency: input.currency ?? "USD",
+      currency: input.currency ?? "INR",
       status: input.status ?? "active",
     })
     .select()

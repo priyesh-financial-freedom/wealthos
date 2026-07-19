@@ -41,6 +41,10 @@ export interface Investment {
   broker_platform: string | null;
   nominee: string | null;
   notes: string | null;
+  broker: string | null;
+  exchange: string | null;
+  isin: string | null;
+  average_purchase_price: number | null;
   created_at: string;
   updated_at: string;
   current_value: number;
@@ -71,6 +75,10 @@ export interface InvestmentInsert {
   broker_platform?: string | null;
   nominee?: string | null;
   notes?: string | null;
+  broker?: string | null;
+  exchange?: string | null;
+  isin?: string | null;
+  average_purchase_price?: number | null;
 }
 
 export interface InvestmentUpdate extends Partial<InvestmentInsert> {

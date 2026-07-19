@@ -27,7 +27,35 @@ function formatDate(value: string | null) {
 }
 
 function formatMoney(value: number) {
-  return `$${value.toLocaleString()}`;
+  return `₹${value.toLocaleString("en-IN")}`;
+}
+
+function renderAccountSpecificFields(account: RetirementAccount) {
+  if (account.account_type === "PPF") {
+    return <StatCard label="Maturity Date" value={formatDate(account.maturity_date)} />;
+  }
+
+  if (account.account_type === "EPF") {
+    return (
+      <>
+        <StatCard label="Employer" value={account.employer || "—"} />
+        <StatCard label="UAN" value={account.uan || "—"} />
+        <StatCard label="Employee Contribution" value={account.employee_contribution === null ? "—" : formatMoney(account.employee_contribution)} />
+        <StatCard label="Employer Contribution" value={account.employer_contribution === null ? "—" : formatMoney(account.employer_contribution)} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <StatCard label="PRAN" value={account.pran || "—"} />
+      <StatCard label="POP" value={account.pop || "—"} />
+      <StatCard label="Equity %" value={account.equity_percent === null ? "—" : `${account.equity_percent.toFixed(2)}%`} />
+      <StatCard label="Corporate Debt %" value={account.corporate_debt_percent === null ? "—" : `${account.corporate_debt_percent.toFixed(2)}%`} />
+      <StatCard label="Government Securities %" value={account.government_securities_percent === null ? "—" : `${account.government_securities_percent.toFixed(2)}%`} />
+      <StatCard label="Alternative Assets %" value={account.alternative_assets_percent === null ? "—" : `${account.alternative_assets_percent.toFixed(2)}%`} />
+    </>
+  );
 }
 
 export function RetirementDetailDialog({ account, open, onOpenChange }: RetirementDetailDialogProps) {
@@ -43,16 +71,19 @@ export function RetirementDetailDialog({ account, open, onOpenChange }: Retireme
         </DialogHeader>
 
         <div className="grid gap-4 md:grid-cols-2">
+          <StatCard label="Owner" value={account.owner} />
           <StatCard label="Institution" value={account.institution} />
-          <StatCard label="Holder Name" value={account.holder_name} />
-          <StatCard label="Account Number" value={account.account_number} />
+          <StatCard label="Account Number" value={account.account_number || "—"} />
           <StatCard label="Opening Date" value={formatDate(account.opening_date)} />
-          <StatCard label="Current Value" value={formatMoney(account.current_value)} />
-          <StatCard label="Monthly Contribution" value={formatMoney(account.monthly_contribution)} />
-          <StatCard label="Annual Contribution" value={formatMoney(account.annual_contribution)} />
-          <StatCard label="Interest Rate" value={`${account.interest_rate.toFixed(2)}%`} />
+          <StatCard label="Current Balance" value={formatMoney(account.current_balance)} />
+          <StatCard label="Contribution Frequency" value={account.contribution_frequency} />
+          <StatCard label="Contribution Amount" value={formatMoney(account.contribution_amount)} />
+          <StatCard label="Contribution Day" value={account.contribution_day ? String(account.contribution_day) : "—"} />
+          <StatCard label="Contribution Month" value={account.contribution_month || "—"} />
+          <StatCard label="Interest Rate" value={account.interest_rate === null ? "—" : `${account.interest_rate.toFixed(2)}%`} />
           <StatCard label="Nominee" value={account.nominee || "—"} />
           <StatCard label="Created" value={formatDate(account.created_at)} />
+          {renderAccountSpecificFields(account)}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">

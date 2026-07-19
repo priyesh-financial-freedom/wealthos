@@ -20,7 +20,7 @@ create table if not exists public.accounts (
   institution text,
   owner text,
   current_value numeric(14,2) not null default 0,
-  currency text not null default 'USD',
+  currency text not null default 'INR',
   status text not null default 'active' check (status in ('active', 'inactive', 'closed', 'archived')),
   linked_item_type text check (linked_item_type in ('asset', 'investment', 'liability')),
   linked_item_id uuid,

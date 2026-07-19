@@ -16,17 +16,17 @@ export function AssetSummary({ assets }: AssetSummaryProps) {
     <div className="grid gap-4 md:grid-cols-3">
       <DashboardCard>
         <p className="text-sm text-slate-500">Total value</p>
-        <p className="mt-2 text-2xl font-semibold text-slate-900">${totalValue.toLocaleString()}</p>
+        <p className="mt-2 text-2xl font-semibold text-slate-900">₹{totalValue.toLocaleString("en-IN")}</p>
       </DashboardCard>
       <DashboardCard>
         <p className="text-sm text-slate-500">Cost basis</p>
-        <p className="mt-2 text-2xl font-semibold text-slate-900">${totalPurchases.toLocaleString()}</p>
+        <p className="mt-2 text-2xl font-semibold text-slate-900">₹{totalPurchases.toLocaleString("en-IN")}</p>
       </DashboardCard>
       <DashboardCard>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-slate-500">Unrealized gain</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">${gain.toLocaleString()}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">₹{gain.toLocaleString("en-IN")}</p>
           </div>
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
             <TrendingUp className="h-5 w-5" />

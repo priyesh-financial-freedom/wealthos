@@ -8,14 +8,16 @@ import { BankAccountMonthlySnapshotForm } from "@/components/bankAccounts/BankAc
 import { BankAccountMonthlySnapshotsTable } from "@/components/bankAccounts/BankAccountMonthlySnapshotsTable";
 import { BankAccountsDashboard } from "@/components/bankAccounts/BankAccountsDashboard";
 import { BankAccountTable } from "@/components/bankAccounts/BankAccountTable";
-import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ContentContainer } from "@/components/layout/ContentContainer";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PageToolbar } from "@/components/layout/PageToolbar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
-import { Input } from "@/components/ui/input";
+import { ToastViewport } from "@/components/ui/feedback";
+import { LoadingState } from "@/components/ui/states";
 import {
   buildBankAccountsDashboardModel,
   createBankAccount,
@@ -45,6 +47,8 @@ export default function BankAccountsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortKey, setSortKey] = useState<"account_name" | "bank" | "current_balance" | "interest_rate" | "updated_at">("current_balance");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
@@ -166,6 +170,8 @@ export default function BankAccountsPage() {
     () => buildBankAccountsDashboardModel(filteredAccounts, snapshots, totalLiabilities),
     [filteredAccounts, snapshots, totalLiabilities],
   );
+
+  const paginatedAccounts = useMemo(() => filteredAccounts.slice((page - 1) * pageSize, page * pageSize), [filteredAccounts, page, pageSize]);
 
   async function handleCreateAccount(values: BankAccountInsert) {
     setSubmitting(true);
@@ -306,7 +312,9 @@ export default function BankAccountsPage() {
   return (
     <AppLayout>
       <PageContainer>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Bank Accounts" }]} />
+
+        <PageToolbar>
           <PageHeader title="Bank Accounts" description="Premium treasury workspace for liquidity, cash flow, and monthly banking intelligence." />
           <div className="flex flex-wrap gap-2">
             <Button
@@ -329,7 +337,7 @@ export default function BankAccountsPage() {
               Add Bank Account
             </Button>
           </div>
-        </div>
+        </PageToolbar>
 
         {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
         {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
@@ -337,70 +345,51 @@ export default function BankAccountsPage() {
         <ToastViewport type="success" message={notice ?? ""} onDismiss={() => setNotice(null)} />
         <ToastViewport type="error" message={error ?? ""} onDismiss={() => setError(null)} />
 
-        <BankAccountsDashboard model={dashboardModel} emptyState={accounts.length === 0} />
+        <ContentContainer className="border-none bg-transparent p-0 shadow-none">
+          <BankAccountsDashboard model={dashboardModel} emptyState={accounts.length === 0} />
+        </ContentContainer>
 
-        <DashboardCard>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">Banking directory</h3>
-              <p className="text-sm text-slate-600">Search, filter, sort, and manage account metadata and balances</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search bank accounts" className="max-w-sm" />
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-                <option value="all">All types</option>
-                <option value="Savings">Savings</option>
-                <option value="Salary">Salary</option>
-                <option value="Current">Current</option>
-                <option value="Cash">Cash</option>
-                <option value="Wallet">Wallet</option>
-              </select>
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="all">All statuses</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="closed">Closed</option>
-              </select>
-              <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={`${sortKey}:${sortDirection}`} onChange={(event) => {
-                const [nextKey, nextDirection] = event.target.value.split(":") as [typeof sortKey, typeof sortDirection];
-                setSortKey(nextKey);
-                setSortDirection(nextDirection);
-              }}>
-                <option value="current_balance:desc">Current Balance (High-Low)</option>
-                <option value="current_balance:asc">Current Balance (Low-High)</option>
-                <option value="interest_rate:desc">Interest Rate (High-Low)</option>
-                <option value="interest_rate:asc">Interest Rate (Low-High)</option>
-                <option value="account_name:asc">Account Name (A-Z)</option>
-                <option value="account_name:desc">Account Name (Z-A)</option>
-                <option value="bank:asc">Bank (A-Z)</option>
-                <option value="bank:desc">Bank (Z-A)</option>
-                <option value="updated_at:desc">Updated (Newest)</option>
-                <option value="updated_at:asc">Updated (Oldest)</option>
-              </select>
-            </div>
-          </div>
+        <BankAccountTable
+          accounts={paginatedAccounts}
+          searchValue={query}
+          onSearchChange={(value) => {
+            setQuery(value);
+            setPage(1);
+          }}
+          typeFilter={typeFilter}
+          onTypeFilterChange={(value) => {
+            setTypeFilter(value);
+            setPage(1);
+          }}
+          statusFilter={statusFilter}
+          onStatusFilterChange={(value) => {
+            setStatusFilter(value);
+            setPage(1);
+          }}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSortChange={(nextKey, nextDirection) => {
+            setSortKey(nextKey);
+            setSortDirection(nextDirection);
+            setPage(1);
+          }}
+          page={page}
+          pageSize={pageSize}
+          totalRows={filteredAccounts.length}
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(1);
+          }}
+          onView={(account) => setSelectedAccount(account)}
+          onEdit={(account) => {
+            setEditingAccount(account);
+            setAccountDialogOpen(true);
+          }}
+          onDelete={(account) => setDeleteAccountTarget(account)}
+        />
 
-          {loading ? (
-            <LoadingSpinner label="Loading bank accounts..." />
-          ) : filteredAccounts.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
-              <h4 className="text-base font-semibold text-slate-900">No bank accounts yet</h4>
-              <p className="mt-2 text-sm text-slate-600">Add your first bank account to start treasury tracking.</p>
-            </div>
-          ) : (
-            <BankAccountTable
-              accounts={filteredAccounts}
-              onView={(account) => setSelectedAccount(account)}
-              onEdit={(account) => {
-                setEditingAccount(account);
-                setAccountDialogOpen(true);
-              }}
-              onDelete={(account) => setDeleteAccountTarget(account)}
-            />
-          )}
-        </DashboardCard>
-
-        <DashboardCard>
+        <ContentContainer>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Monthly Banking Updates</h3>
@@ -419,7 +408,7 @@ export default function BankAccountsPage() {
           </div>
 
           {loading ? (
-            <LoadingSpinner label="Loading monthly updates..." />
+            <LoadingState label="Loading monthly updates..." />
           ) : (
             <BankAccountMonthlySnapshotsTable
               snapshots={snapshots}
@@ -431,7 +420,7 @@ export default function BankAccountsPage() {
               onDelete={(snapshot) => setDeleteSnapshotTarget(snapshot)}
             />
           )}
-        </DashboardCard>
+        </ContentContainer>
       </PageContainer>
 
       <BankAccountDetailsDialog

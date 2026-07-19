@@ -7,9 +7,12 @@ import { ArrowUpRight, Building2, Landmark, ShieldAlert, TrendingUp, Wallet } fr
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { ContentContainer } from "@/components/layout/ContentContainer";
+import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSpinner } from "@/components/ui/feedback";
+import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
 import { buildMonthlyHistoryModel, getMonthlyHistory } from "@/services/monthlySnapshots";
 import { getBalanceSheetData, type BalanceSheetSection, type BalanceSheetSummary } from "@/services/balanceSheet";
 import type { MonthlyHistoryRecord } from "@/services/monthlySnapshots";
@@ -55,15 +58,7 @@ const emptySummary: BalanceSheetSummary = {
 };
 
 function formatMoney(value: number) {
-  return `$${value.toLocaleString()}`;
-}
-
-function formatPercent(value: number | null) {
-  if (value === null) {
-    return "—";
-  }
-
-  return `${(value * 100).toFixed(1)}%`;
+  return formatCurrency(value, { maximumFractionDigits: 0 });
 }
 
 export default function BalanceSheetPage() {
@@ -124,6 +119,7 @@ export default function BalanceSheetPage() {
   return (
     <AppLayout>
       <PageContainer>
+        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Balance Sheet" }]} />
         <PageHeader
           title="Balance Sheet"
           description="A live financial statement that aggregates assets, investments, retirement accounts, bank balances, and liabilities into one executive balance sheet."
@@ -153,6 +149,7 @@ export default function BalanceSheetPage() {
               <TotalCard title="Net Worth" value={formatMoney(summary.netWorth)} subtitle="Current family-office balance sheet result" tone={summary.netWorth >= 0 ? "dark" : "warning"} />
             </section>
 
+            <ContentContainer className="border-none bg-transparent p-0 shadow-none">
             <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
               <DashboardCard>
                 <div className="mb-4 space-y-1">
@@ -202,9 +199,9 @@ export default function BalanceSheetPage() {
                           </linearGradient>
                         </defs>
                         <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => truncateLabel(String(value), 10)} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <Tooltip formatter={(value) => formatMoney(Number(value ?? 0))} />
+                        <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
                         <Area type="monotone" dataKey="netWorth" stroke="#0f172a" fill="url(#bs-networth)" strokeWidth={2.5} />
                         <Area type="monotone" dataKey="investments" stroke="#15803d" fill="url(#bs-investments)" strokeWidth={2} />
                       </AreaChart>
@@ -225,9 +222,9 @@ export default function BalanceSheetPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={monthlyGrowthData}>
                         <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => truncateLabel(String(value), 10)} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <Tooltip formatter={(value) => formatMoney(Number(value ?? 0))} />
+                        <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
                         <Bar dataKey="growth" radius={[10, 10, 0, 0]} fill="#0f172a" barSize={22} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -235,6 +232,7 @@ export default function BalanceSheetPage() {
                 )}
               </DashboardCard>
             </section>
+            </ContentContainer>
           </div>
         )}
       </PageContainer>

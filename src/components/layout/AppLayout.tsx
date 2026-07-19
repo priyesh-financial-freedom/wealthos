@@ -5,46 +5,28 @@ import { useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopNavigation } from "@/components/layout/TopNavigation";
+import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-const sidebarItems = [
-  { href: "/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
-  { href: "/balance-sheet", label: "Balance Sheet", icon: "Scale" },
-  { href: "/bank-accounts", label: "Bank Accounts", icon: "Landmark" },
-  { href: "/accounts", label: "Accounts", icon: "Wallet" },
-  { href: "/assets", label: "Assets", icon: "Wallet" },
-  { href: "/fixed-deposits", label: "Fixed Deposits", icon: "CircleDollarSign" },
-  { href: "/gold", label: "Gold", icon: "Medal" },
-  { href: "/silver", label: "Silver", icon: "Coins" },
-  { href: "/liabilities", label: "Liabilities", icon: "CreditCard" },
-  { href: "/investments", label: "Investments", icon: "TrendingUp" },
-  { href: "/history", label: "History", icon: "ArrowRightLeft" },
-  { href: "/income", label: "Income", icon: "Receipt" },
-  { href: "/expenses", label: "Expenses", icon: "ReceiptText" },
-  { href: "/goals", label: "Goals", icon: "Target" },
-  { href: "/retirement", label: "Retirement", icon: "PiggyBank" },
-  { href: "/insurance", label: "Insurance", icon: "ShieldCheck" },
-  { href: "/documents", label: "Documents", icon: "FileText" },
-  { href: "/reports", label: "Reports", icon: "BarChart3" },
-  { href: "/ai", label: "AI Advisor", icon: "Sparkles" },
-  { href: "/import-data", label: "Import Data", icon: "Upload" },
-  { href: "/settings", label: "Settings", icon: "Settings" },
-];
-
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const requestedType = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("type")
+    : null;
+  const activeHref = pathname === "/retirement" && (requestedType === "EPF" || requestedType === "PPF" || requestedType === "NPS")
+    ? `/retirement?type=${requestedType}`
+    : pathname;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="flex min-h-screen">
+    <div className="h-dvh min-h-screen bg-slate-50 text-slate-900">
+      <div className="flex h-full overflow-hidden">
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-30 hidden h-screen overflow-hidden border-r border-slate-200 bg-white/95 backdrop-blur xl:flex xl:flex-col",
@@ -67,12 +49,12 @@ export function AppLayout({ children }: AppLayoutProps) {
               {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             </Button>
           </div>
-          <Sidebar items={sidebarItems} activeHref={pathname} collapsed={collapsed} />
+          <Sidebar activeHref={activeHref} collapsed={collapsed} />
         </aside>
 
-        <div className={cn("flex min-h-screen flex-1 flex-col", collapsed ? "xl:pl-24" : "xl:pl-72")}>
+        <div className={cn("flex h-full min-h-0 flex-1 flex-col overflow-hidden", collapsed ? "xl:pl-24" : "xl:pl-72")}>
           <TopNavigation onMenuClick={() => setMobileOpen(true)} />
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6 lg:px-8">
             {children}
           </main>
         </div>
@@ -91,7 +73,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <PanelLeftClose className="h-4 w-4" />
           </Button>
         </div>
-        <Sidebar items={sidebarItems} activeHref={pathname} collapsed={false} />
+        <Sidebar activeHref={activeHref} collapsed={false} />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { FormActions, FormField, FormGrid } from "@/components/ui/form-layout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,7 +42,7 @@ const defaultState = (initialData?: BankAccount | null): BankAccountFormState =>
   nickname: initialData?.nickname ?? "",
   account_number: initialData?.account_number ?? "",
   ifsc: initialData?.ifsc ?? "",
-  currency: initialData?.currency ?? "USD",
+  currency: initialData?.currency ?? "INR",
   current_balance: initialData?.current_balance ?? 0,
   opening_balance: initialData?.opening_balance ?? 0,
   interest_rate: initialData?.interest_rate ?? 0,
@@ -115,9 +116,9 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <FormGrid>
+        <FormField>
           <Label htmlFor="account_type">Account Type</Label>
           <select id="account_type" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.account_type} onChange={(event) => updateField("account_type", event.target.value as BankAccountType)}>
             <option value="Savings">Savings</option>
@@ -126,102 +127,102 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
             <option value="Cash">Cash</option>
             <option value="Wallet">Wallet</option>
           </select>
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="bank">Bank</Label>
           <Input id="bank" value={formValues.bank} onChange={(event) => updateField("bank", event.target.value)} />
           {errors.bank ? <p className="text-sm text-rose-600">{errors.bank}</p> : null}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="account_name">Account Name</Label>
           <Input id="account_name" value={formValues.account_name} onChange={(event) => updateField("account_name", event.target.value)} />
           {errors.account_name ? <p className="text-sm text-rose-600">{errors.account_name}</p> : null}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="nickname">Nickname</Label>
           <Input id="nickname" value={formValues.nickname} onChange={(event) => updateField("nickname", event.target.value)} />
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="account_number">Account Number</Label>
           <Input id="account_number" value={formValues.account_number} onChange={(event) => updateField("account_number", event.target.value)} />
           {errors.account_number ? <p className="text-sm text-rose-600">{errors.account_number}</p> : null}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="ifsc">IFSC</Label>
           <Input id="ifsc" value={formValues.ifsc} onChange={(event) => updateField("ifsc", event.target.value)} />
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="currency">Currency</Label>
           <Input id="currency" value={formValues.currency} onChange={(event) => updateField("currency", event.target.value)} maxLength={6} />
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="status">Status</Label>
           <select id="status" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.status} onChange={(event) => updateField("status", event.target.value as BankAccountStatus)}>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
             <option value="closed">Closed</option>
           </select>
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="current_balance">Current Balance</Label>
           <Input id="current_balance" type="number" step="0.01" value={formValues.current_balance} onChange={(event) => updateField("current_balance", event.target.value)} />
           {errors.current_balance ? <p className="text-sm text-rose-600">{errors.current_balance}</p> : null}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="opening_balance">Opening Balance</Label>
           <Input id="opening_balance" type="number" step="0.01" value={formValues.opening_balance} onChange={(event) => updateField("opening_balance", event.target.value)} />
           {errors.opening_balance ? <p className="text-sm text-rose-600">{errors.opening_balance}</p> : null}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="interest_rate">Interest Rate (%)</Label>
           <Input id="interest_rate" type="number" step="0.001" value={formValues.interest_rate} onChange={(event) => updateField("interest_rate", event.target.value)} />
           {errors.interest_rate ? <p className="text-sm text-rose-600">{errors.interest_rate}</p> : null}
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="owner">Owner</Label>
           <Input id="owner" value={formValues.owner} onChange={(event) => updateField("owner", event.target.value)} />
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="nominee">Nominee</Label>
           <Input id="nominee" value={formValues.nominee} onChange={(event) => updateField("nominee", event.target.value)} />
-        </div>
+        </FormField>
 
-        <div className="space-y-2">
+        <FormField>
           <Label htmlFor="joint_holder">Joint Holder</Label>
           <Input id="joint_holder" value={formValues.joint_holder} onChange={(event) => updateField("joint_holder", event.target.value)} />
-        </div>
+        </FormField>
 
-        <div className="space-y-2 md:col-span-2">
+        <FormField className="md:col-span-2">
           <Label htmlFor="documents_placeholder">Documents Placeholder</Label>
           <Input id="documents_placeholder" value={formValues.documents_placeholder} onChange={(event) => updateField("documents_placeholder", event.target.value)} placeholder="Statements, KYC, passbook scans" />
-        </div>
-      </div>
+        </FormField>
+      </FormGrid>
 
-      <div className="space-y-2">
+      <FormField>
         <Label htmlFor="notes">Notes</Label>
         <Textarea id="notes" rows={4} value={formValues.notes} onChange={(event) => updateField("notes", event.target.value)} />
-      </div>
+      </FormField>
 
-      <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+      <FormActions>
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
         <Button type="submit" disabled={submitting}>
           {submitting ? "Saving..." : initialData ? "Save changes" : "Add account"}
         </Button>
-      </div>
+      </FormActions>
     </form>
   );
 }

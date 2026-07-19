@@ -7,6 +7,7 @@ import { getRetirementAccounts } from "@/services/retirement";
 import { getFixedDeposits } from "@/services/fixedDeposits";
 import { getGoldHoldings } from "@/services/goldHoldings";
 import { getSilverHoldings } from "@/services/silverHoldings";
+import { getRealEstateProperties } from "@/services/realEstateProperties";
 import type { Asset } from "@/types/asset";
 import type { BankAccount } from "@/types/bankAccount";
 import type { FixedDeposit } from "@/types/fixedDeposit";
@@ -15,6 +16,7 @@ import type { Investment, InvestmentCategory } from "@/types/investment";
 import type { Liability, LiabilityType } from "@/types/liability";
 import type { RetirementAccount } from "@/types/retirementAccount";
 import type { SilverHolding } from "@/types/silverHolding";
+import type { RealEstateProperty } from "@/types/realEstateProperty";
 
 export interface BalanceSheetSection {
   label: string;
@@ -59,6 +61,7 @@ export interface BalanceSheetData {
   fixedDeposits: FixedDeposit[];
   goldHoldings: GoldHolding[];
   silverHoldings: SilverHolding[];
+  realEstateProperties: RealEstateProperty[];
   summary: BalanceSheetSummary;
 }
 
@@ -101,7 +104,7 @@ function calculateInvestmentBreakdown(
     },
     {
       investments: assetInvestmentValue,
-      retirement: sum(retirementAccounts.map((account) => Number(account.current_value ?? 0))),
+      retirement: sum(retirementAccounts.map((account) => Number(account.current_balance ?? 0))),
       fixedDeposits: sum(fixedDeposits.map((account) => Number(account.current_value ?? 0))),
       goldAndSilver:
         sum(goldHoldings.map((holding) => Number(holding.current_value ?? 0))) +
@@ -115,15 +118,17 @@ function calculateInvestmentBreakdown(
 function liabilityBucket(type: LiabilityType) {
   switch (type) {
     case "Home Loan":
+    case "Loan Against Property":
       return "homeLoan" as const;
     case "Car Loan":
       return "carLoan" as const;
     case "Credit Card":
       return "creditCards" as const;
     case "Personal Loan":
+    case "Overdraft / Line of Credit":
       return "personalLoan" as const;
     case "Education Loan":
-    case "Other":
+    case "Other Liability":
     default:
       return "otherLiabilities" as const;
   }
@@ -138,12 +143,15 @@ export function buildBalanceSheetSummary(
   fixedDeposits: FixedDeposit[],
   goldHoldings: GoldHolding[],
   silverHoldings: SilverHolding[],
+  realEstateProperties: RealEstateProperty[],
 ): BalanceSheetSummary {
   const cashAndBank =
     sum(assets.filter((asset) => cashAssetTypes.has(asset.asset_type)).map((asset) => Number(asset.current_value ?? 0))) +
     sum(bankAccounts.filter((account) => account.status !== "closed").map((account) => Number(account.current_balance ?? 0)));
 
-  const realEstate = sum(assets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
+  const legacyRealEstate = sum(assets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
+  const moduleRealEstate = sum(realEstateProperties.map((property) => Number(property.current_market_value ?? 0)));
+  const realEstate = moduleRealEstate > 0 ? moduleRealEstate : legacyRealEstate;
   const vehicles = sum(assets.filter((asset) => asset.asset_type === "vehicle").map((asset) => Number(asset.current_value ?? 0)));
   const otherAssets = sum(
     assets
@@ -279,13 +287,13 @@ export function buildBalanceSheetSummary(
       label: "Personal Loan",
       value: categoryTotals.personalLoan,
       href: "/liabilities",
-      description: "Unsecured personal borrowing.",
+      description: "Personal loans and overdraft or line-of-credit exposures.",
     },
     {
       label: "Other Liabilities",
       value: categoryTotals.otherLiabilities,
       href: "/liabilities",
-      description: "Education loans and all remaining liabilities.",
+      description: "Education loans and all remaining liability obligations.",
     },
   ];
 
@@ -331,7 +339,7 @@ export function buildBalanceSheetSummary(
 }
 
 export async function getBalanceSheetData(): Promise<BalanceSheetData> {
-  const [assets, liabilities, investments, bankAccounts, retirementAccounts, fixedDeposits, goldHoldings, silverHoldings] = await Promise.all([
+  const [assets, liabilities, investments, bankAccounts, retirementAccounts, fixedDeposits, goldHoldings, silverHoldings, realEstateProperties] = await Promise.all([
     getAssets(),
     getLiabilities(),
     getInvestments(),
@@ -340,6 +348,7 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
     getFixedDeposits().catch(() => []),
     getGoldHoldings().catch(() => []),
     getSilverHoldings().catch(() => []),
+    getRealEstateProperties().catch(() => []),
   ]);
 
   return {
@@ -351,6 +360,7 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
     fixedDeposits,
     goldHoldings,
     silverHoldings,
+    realEstateProperties,
     summary: buildBalanceSheetSummary(
       assets,
       liabilities,
@@ -360,6 +370,7 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
       fixedDeposits,
       goldHoldings,
       silverHoldings,
+      realEstateProperties,
     ),
   };
 }

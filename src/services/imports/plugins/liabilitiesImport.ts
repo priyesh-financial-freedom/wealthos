@@ -1,14 +1,46 @@
 import { createLiability, getLiabilities, updateLiability } from "@/services/liabilities";
+import { supabase } from "@/lib/supabase/client";
 import type { ImportIssue, ImportModulePlugin, ImportValidationResult, ImportValidatedRecord } from "@/services/imports/types";
 import { buildNormalizedRow, isUuid, issue, parseDate, parseNumber, parseString, pickValue } from "@/services/imports/utils";
 import type { LiabilityInsert, LiabilityStatus, LiabilityType } from "@/types/liability";
 
-const liabilityTypes: LiabilityType[] = ["Home Loan", "Car Loan", "Personal Loan", "Education Loan", "Credit Card", "Other"];
+const liabilityTypes: LiabilityType[] = [
+  "Home Loan",
+  "Car Loan",
+  "Personal Loan",
+  "Education Loan",
+  "Loan Against Property",
+  "Credit Card",
+  "Overdraft / Line of Credit",
+  "Other Liability",
+];
 const statuses: LiabilityStatus[] = ["active", "paid_off", "pending", "closed"];
 
 interface LiabilityImportPayload {
   id?: string;
   values: LiabilityInsert;
+}
+
+function assertSupabaseClient() {
+  if (!supabase) {
+    throw new Error("Supabase client is not configured.");
+  }
+
+  return supabase;
+}
+
+async function requireAuthenticatedUserId() {
+  const client = assertSupabaseClient();
+  const {
+    data: { user },
+    error,
+  } = await client.auth.getUser();
+
+  if (error || !user) {
+    throw new Error("Authentication required.");
+  }
+
+  return user.id;
 }
 
 function parseLiabilityType(value: string | null) {
@@ -53,8 +85,10 @@ export const liabilitiesImportPlugin: ImportModulePlugin<LiabilityImportPayload>
       const dueDay = dueDayValue === undefined ? null : parseNumber(dueDayValue);
       const startDateRaw = pickValue(row, ["start_date", "start date"]);
       const endDateRaw = pickValue(row, ["end_date", "end date"]);
+      const dueDateRaw = pickValue(row, ["due_date", "due date"]);
       const startDate = startDateRaw === undefined ? null : parseDate(startDateRaw);
       const endDate = endDateRaw === undefined ? null : parseDate(endDateRaw);
+      const dueDate = dueDateRaw === undefined ? null : parseDate(dueDateRaw);
 
       if (id && !isUuid(id)) {
         issues.push(issue({ sheetName, rowNumber, field: "id", message: "ID must be a valid UUID." }));
@@ -92,6 +126,10 @@ export const liabilitiesImportPlugin: ImportModulePlugin<LiabilityImportPayload>
         issues.push(issue({ sheetName, rowNumber, field: "end_date", message: "End date is invalid." }));
       }
 
+      if (dueDateRaw !== undefined && !dueDate) {
+        issues.push(issue({ sheetName, rowNumber, field: "due_date", message: "Due date is invalid." }));
+      }
+
       const hasErrors = issues.some((item) => item.sheetName === sheetName && item.rowNumber === rowNumber && item.severity === "error");
       if (hasErrors || !liabilityType || !lender || !accountName || outstandingAmount === null || !status) {
         return;
@@ -118,6 +156,10 @@ export const liabilitiesImportPlugin: ImportModulePlugin<LiabilityImportPayload>
         start_date: startDate,
         end_date: endDate,
         due_day: dueDay,
+        due_date: dueDate,
+        tenure_months: parseNumber(pickValue(row, ["tenure_months", "tenure months", "tenure"])),
+        credit_limit: parseNumber(pickValue(row, ["credit_limit", "credit limit"])),
+        sanction_limit: parseNumber(pickValue(row, ["sanction_limit", "sanction limit"])),
         status,
         notes: parseString(pickValue(row, ["notes"])),
       };
@@ -144,16 +186,109 @@ export const liabilitiesImportPlugin: ImportModulePlugin<LiabilityImportPayload>
     let updated = 0;
     let failed = 0;
 
-    for (const record of records) {
+    console.info("[imports][liabilities] executeRows:start", {
+      sheetName,
+      records: records.length,
+    });
+
+    const createRecords = records.filter((record) => record.action !== "update" || !record.payload.id);
+    const updateRecords = records.filter((record) => record.action === "update" && record.payload.id);
+
+    console.info("[imports][liabilities] executeRows:createRecords", {
+      sheetName,
+      createRecords: createRecords.length,
+      updateRecords: updateRecords.length,
+    });
+
+    if (createRecords.length === 0) {
+      console.warn("[imports][liabilities] executeRows:noCreateRecords", {
+        sheetName,
+        records: records.length,
+      });
+    }
+
+    if (createRecords.length > 0) {
       try {
-        if (record.action === "update" && record.payload.id) {
-          await updateLiability({ id: record.payload.id, ...record.payload.values });
-          updated += 1;
-        } else {
-          await createLiability(record.payload.values);
-          inserted += 1;
+        const userId = await requireAuthenticatedUserId();
+        const insertPayload = createRecords.map((record) => ({
+          ...record.payload.values,
+          user_id: userId,
+        }));
+
+        console.info("[imports][liabilities] executeRows:beforeInsert", {
+          sheetName,
+          rows: insertPayload.length,
+          sample: insertPayload[0],
+        });
+
+        const { data, error } = await assertSupabaseClient()
+          .from("liabilities")
+          .insert(insertPayload)
+          .select("id");
+
+        console.info("[imports][liabilities] executeRows:afterInsert", {
+          sheetName,
+          requestedRows: insertPayload.length,
+          insertedRows: data?.length ?? 0,
+        });
+
+        if (error) {
+          console.error("[imports][liabilities] executeRows:insertError", {
+            sheetName,
+            error,
+          });
+          throw new Error(error.message);
+        }
+
+        inserted += data?.length ?? 0;
+
+        if (!data || data.length === 0) {
+          const zeroInsertError = "Supabase insert returned zero rows for liabilities import.";
+          console.error("[imports][liabilities] executeRows:zeroInserted", {
+            sheetName,
+            rowsRequested: insertPayload.length,
+          });
+          failed += createRecords.length;
+          createRecords.forEach((record) => {
+            issues.push(
+              issue({
+                severity: "error",
+                sheetName,
+                rowNumber: record.rowNumber,
+                message: zeroInsertError,
+              }),
+            );
+          });
         }
       } catch (error) {
+        console.error("[imports][liabilities] executeRows:createBatchError", {
+          sheetName,
+          error,
+        });
+        failed += createRecords.length;
+        createRecords.forEach((record) => {
+          issues.push(
+            issue({
+              severity: "error",
+              sheetName,
+              rowNumber: record.rowNumber,
+              message: error instanceof Error ? error.message : "Unable to import liability row.",
+            }),
+          );
+        });
+      }
+    }
+
+    for (const record of updateRecords) {
+      try {
+        await updateLiability({ id: record.payload.id!, ...record.payload.values });
+        updated += 1;
+      } catch (error) {
+        console.error("[imports][liabilities] executeRows:updateError", {
+          sheetName,
+          rowNumber: record.rowNumber,
+          error,
+        });
         failed += 1;
         issues.push(
           issue({
@@ -165,6 +300,14 @@ export const liabilitiesImportPlugin: ImportModulePlugin<LiabilityImportPayload>
         );
       }
     }
+
+    console.info("[imports][liabilities] executeRows:done", {
+      sheetName,
+      inserted,
+      updated,
+      failed,
+      issues: issues.length,
+    });
 
     return { inserted, updated, failed, issues };
   },

@@ -85,7 +85,7 @@ export async function createBankAccount(input: BankAccountInsert): Promise<BankA
     .insert({
       ...input,
       user_id: user.id,
-      currency: input.currency ?? "USD",
+      currency: input.currency ?? "INR",
       status: input.status ?? "active",
       interest_rate: input.interest_rate ?? 0,
     })
