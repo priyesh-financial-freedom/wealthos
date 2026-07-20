@@ -5,11 +5,13 @@ import {
   BarChart3,
   BookOpen,
   CalendarCheck2,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Coins,
   CreditCard,
+  Compass,
   Landmark,
   LayoutDashboard,
   Medal,
@@ -74,9 +76,17 @@ export interface SidebarNavItem {
 
 export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const [assetsOpen, setAssetsOpen] = useState(true);
+  const [planningOpen, setPlanningOpen] = useState(true);
   const [retirementOpen, setRetirementOpen] = useState(true);
 
   const dashboardActive = activeHref === "/dashboard";
+  const planningDashboardActive = activeHref === "/planning";
+  const planningScenariosActive = activeHref === "/planning/scenarios";
+  const planningGoalsActive = activeHref === "/planning/goals";
+  const planningRetirementActive = activeHref === "/planning/retirement";
+  const planningCashFlowActive = activeHref === "/planning/cashflow";
+  const planningEventsActive = activeHref === "/planning/events";
+  const planningActive = planningDashboardActive || planningScenariosActive || planningGoalsActive || planningRetirementActive || planningCashFlowActive || planningEventsActive;
   const netWorthActive = activeHref === "/balance-sheet";
 
   const bankAccountsActive = activeHref === "/bank-accounts";
@@ -111,6 +121,71 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
               <LayoutDashboard className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Dashboard</span> : null}
             </Link>
+          </div>
+
+          <div className="space-y-1">
+            <div className={rowWrapClass(1)}>
+              <div className="flex items-center gap-2">
+                <Link href="/planning" className={cn("min-w-0 flex-1", rowLinkClass({ active: planningActive, level: 1, collapsed }))}>
+                  <Compass className="h-4 w-4 shrink-0" />
+                  {!collapsed ? <span className="truncate">Planning</span> : null}
+                </Link>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                  onClick={() => setPlanningOpen((current) => !current)}
+                  aria-label={planningOpen ? "Collapse Planning" : "Expand Planning"}
+                >
+                  {planningOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {planningOpen ? (
+              <div className="space-y-1">
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning" className={rowLinkClass({ active: planningDashboardActive, level: 2, collapsed })}>
+                    <LayoutDashboard className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Dashboard</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/scenarios" className={rowLinkClass({ active: planningScenariosActive, level: 2, collapsed })}>
+                    <Compass className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Scenario Manager</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/goals" className={rowLinkClass({ active: planningGoalsActive, level: 2, collapsed })}>
+                    <Target className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Goals</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/retirement" className={rowLinkClass({ active: planningRetirementActive, level: 2, collapsed })}>
+                    <PiggyBank className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Retirement Planner</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/cashflow" className={rowLinkClass({ active: planningCashFlowActive, level: 2, collapsed })}>
+                    <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Cash Flow</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/events" className={rowLinkClass({ active: planningEventsActive, level: 2, collapsed })}>
+                    <CalendarClock className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Financial Events</span> : null}
+                  </Link>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className={rowWrapClass(1)}>
