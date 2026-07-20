@@ -153,7 +153,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 <div className={rowWrapClass(2)}>
                   <Link href="/planning/scenarios" className={rowLinkClass({ active: planningScenariosActive, level: 2, collapsed })}>
                     <Compass className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Scenario Manager</span> : null}
+                    {!collapsed ? <span className="truncate">Scenarios</span> : null}
                   </Link>
                 </div>
 
