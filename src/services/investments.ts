@@ -49,6 +49,14 @@ export interface InvestmentSummarySnapshot {
   largestHolding: Investment | null;
 }
 
+export interface InvestmentBalanceSheetSummary {
+  coreInvestmentsValue: number;
+  retirementClassifiedValue: number;
+  fixedDepositClassifiedValue: number;
+  preciousMetalClassifiedValue: number;
+  totalInvestmentValue: number;
+}
+
 interface Cashflow {
   date: Date;
   amount: number;
@@ -217,4 +225,41 @@ function getOldestPurchaseDate(investments: Investment[]) {
   }
 
   return purchases.reduce((earliest, current) => (new Date(current) < new Date(earliest) ? current : earliest), purchases[0]);
+}
+
+const retirementInvestmentCategories = new Set<InvestmentCategory>(["EPF", "PPF", "NPS"]);
+const fixedDepositCategories = new Set<InvestmentCategory>(["Fixed Deposits"]);
+const preciousMetalCategories = new Set<InvestmentCategory>(["Gold", "Silver", "Sovereign Gold Bonds"]);
+
+export function buildInvestmentBalanceSheetSummary(investments: Investment[]): InvestmentBalanceSheetSummary {
+  return investments.reduce<InvestmentBalanceSheetSummary>(
+    (acc, investment) => {
+      const currentValue = Number(investment.current_value ?? 0);
+
+      if (retirementInvestmentCategories.has(investment.category)) {
+        acc.retirementClassifiedValue += currentValue;
+      } else if (fixedDepositCategories.has(investment.category)) {
+        acc.fixedDepositClassifiedValue += currentValue;
+      } else if (preciousMetalCategories.has(investment.category)) {
+        acc.preciousMetalClassifiedValue += currentValue;
+      } else {
+        acc.coreInvestmentsValue += currentValue;
+      }
+
+      acc.totalInvestmentValue += currentValue;
+      return acc;
+    },
+    {
+      coreInvestmentsValue: 0,
+      retirementClassifiedValue: 0,
+      fixedDepositClassifiedValue: 0,
+      preciousMetalClassifiedValue: 0,
+      totalInvestmentValue: 0,
+    },
+  );
+}
+
+export async function getInvestmentBalanceSheetSummary(): Promise<InvestmentBalanceSheetSummary> {
+  const investments = await getInvestments();
+  return buildInvestmentBalanceSheetSummary(investments);
 }

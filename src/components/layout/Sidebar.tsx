@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   BarChart3,
   BookOpen,
+  CalendarCheck2,
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
@@ -13,6 +14,7 @@ import {
   LayoutDashboard,
   Medal,
   PiggyBank,
+  ArrowRightLeft,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -20,6 +22,7 @@ import {
   TrendingUp,
   Upload,
   Wallet,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -92,6 +95,9 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const goalsActive = activeHref === "/goals";
   const insuranceActive = activeHref === "/insurance";
   const reportsActive = ["/reports", "/history", "/income", "/expenses", "/documents"].includes(activeHref);
+  const monthEndCloseActive = activeHref === "/month-end-close";
+  const monthlyReviewActive = activeHref === "/monthly-review";
+  const projectionViewerActive = activeHref === "/projection-viewer";
   const aiActive = activeHref === "/ai";
   const importDataActive = activeHref === "/import-data";
   const settingsActive = activeHref === "/settings";
@@ -244,6 +250,27 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/reports" className={rowLinkClass({ active: reportsActive, level: 1, collapsed })}>
               <BarChart3 className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Reports</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/month-end-close" className={rowLinkClass({ active: monthEndCloseActive, level: 1, collapsed })}>
+              <CalendarCheck2 className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Month-End Close</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/monthly-review" className={rowLinkClass({ active: monthlyReviewActive, level: 1, collapsed })}>
+              <ArrowRightLeft className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Monthly Review</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/projection-viewer" className={rowLinkClass({ active: projectionViewerActive, level: 1, collapsed })}>
+              <Search className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Projection Viewer</span> : null}
             </Link>
           </div>
 

@@ -10,6 +10,11 @@ import type {
   CashTrendPoint,
 } from "@/types/bankAccount";
 
+export interface BankAccountsSummary {
+  totalActiveBalance: number;
+  activeAccountsCount: number;
+}
+
 function assertSupabaseClient() {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
@@ -278,4 +283,18 @@ export function buildBankAccountsDashboardModel(
     cashTrend,
     accountTypeAllocation,
   };
+}
+
+export function buildBankAccountsSummary(accounts: BankAccount[]): BankAccountsSummary {
+  const activeAccounts = accounts.filter((account) => account.status !== "closed");
+
+  return {
+    totalActiveBalance: activeAccounts.reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0),
+    activeAccountsCount: activeAccounts.length,
+  };
+}
+
+export async function getBankAccountsSummary(): Promise<BankAccountsSummary> {
+  const accounts = await getBankAccounts();
+  return buildBankAccountsSummary(accounts);
 }

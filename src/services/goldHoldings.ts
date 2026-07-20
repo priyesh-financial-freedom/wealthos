@@ -1,6 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
 import type { GoldHolding, GoldHoldingInsert, GoldHoldingUpdate } from "@/types/goldHolding";
 
+export interface GoldHoldingsSummary {
+  totalCurrentValue: number;
+  totalQuantity: number;
+  count: number;
+}
+
 function assertSupabaseClient() {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
@@ -98,4 +104,17 @@ export async function deleteGoldHolding(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export function buildGoldHoldingsSummary(holdings: GoldHolding[]): GoldHoldingsSummary {
+  return {
+    totalCurrentValue: holdings.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0),
+    totalQuantity: holdings.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0),
+    count: holdings.length,
+  };
+}
+
+export async function getGoldHoldingsSummary(): Promise<GoldHoldingsSummary> {
+  const holdings = await getGoldHoldings();
+  return buildGoldHoldingsSummary(holdings);
 }

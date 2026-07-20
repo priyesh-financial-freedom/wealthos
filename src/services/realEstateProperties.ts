@@ -5,6 +5,12 @@ import type {
   RealEstatePropertyUpdate,
 } from "@/types/realEstateProperty";
 
+export interface RealEstateSummary {
+  totalCurrentMarketValue: number;
+  totalPurchasePrice: number;
+  count: number;
+}
+
 function assertSupabaseClient() {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
@@ -108,4 +114,17 @@ export async function deleteRealEstateProperty(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export function buildRealEstateSummary(properties: RealEstateProperty[]): RealEstateSummary {
+  return {
+    totalCurrentMarketValue: properties.reduce((sum, item) => sum + Number(item.current_market_value ?? 0), 0),
+    totalPurchasePrice: properties.reduce((sum, item) => sum + Number(item.purchase_price ?? 0), 0),
+    count: properties.length,
+  };
+}
+
+export async function getRealEstateSummary(): Promise<RealEstateSummary> {
+  const properties = await getRealEstateProperties();
+  return buildRealEstateSummary(properties);
 }

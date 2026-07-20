@@ -29,7 +29,7 @@ import {
   updateBankAccount,
   updateBankAccountMonthlySnapshot,
 } from "@/services/bankAccounts";
-import { getLiabilities } from "@/services/liabilities";
+import { getBalanceSheetData } from "@/services/balanceSheet";
 import type {
   BankAccount,
   BankAccountInsert,
@@ -66,15 +66,15 @@ export default function BankAccountsPage() {
   async function refreshData() {
     try {
       setLoading(true);
-      const [accounts, snapshots, liabilities] = await Promise.all([
+      const [accounts, snapshots, balanceSheetData] = await Promise.all([
         getBankAccounts(),
         getBankAccountMonthlySnapshots(),
-        getLiabilities(),
+        getBalanceSheetData().catch(() => null),
       ]);
 
       setAccounts(accounts);
       setSnapshots(snapshots);
-      setTotalLiabilities(liabilities.reduce((sum, item) => sum + Number(item.outstanding_amount ?? 0), 0));
+      setTotalLiabilities(balanceSheetData?.summary.totalLiabilities ?? 0);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load bank accounts data");
@@ -88,10 +88,10 @@ export default function BankAccountsPage() {
 
     async function loadInitialData() {
       try {
-        const [accounts, snapshots, liabilities] = await Promise.all([
+        const [accounts, snapshots, balanceSheetData] = await Promise.all([
           getBankAccounts(),
           getBankAccountMonthlySnapshots(),
-          getLiabilities(),
+          getBalanceSheetData().catch(() => null),
         ]);
 
         if (!isMounted) {
@@ -100,7 +100,7 @@ export default function BankAccountsPage() {
 
         setAccounts(accounts);
         setSnapshots(snapshots);
-        setTotalLiabilities(liabilities.reduce((sum, item) => sum + Number(item.outstanding_amount ?? 0), 0));
+        setTotalLiabilities(balanceSheetData?.summary.totalLiabilities ?? 0);
         setError(null);
       } catch (err) {
         if (isMounted) {

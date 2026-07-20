@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const requestedType = typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search).get("type")
-    : null;
+  const [requestedType, setRequestedType] = useState<string | null>(null);
+
+  useEffect(() => {
+    const selectedType = new URLSearchParams(window.location.search).get("type");
+    setRequestedType(selectedType);
+  }, []);
+
   const activeHref = pathname === "/retirement" && (requestedType === "EPF" || requestedType === "PPF" || requestedType === "NPS")
     ? `/retirement?type=${requestedType}`
     : pathname;

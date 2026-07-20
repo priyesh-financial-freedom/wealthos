@@ -16,14 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
-import { getAssets } from "@/services/assets";
-import { getBankAccounts } from "@/services/bankAccounts";
-import { getFixedDeposits } from "@/services/fixedDeposits";
-import { getGoldHoldings } from "@/services/goldHoldings";
-import { getInvestments } from "@/services/investments";
+import { getBalanceSheetData } from "@/services/balanceSheet";
 import { createLiability, deleteLiability, getLiabilities, updateLiability } from "@/services/liabilities";
-import { getRetirementAccounts } from "@/services/retirement";
-import { getSilverHoldings } from "@/services/silverHoldings";
 import { LIABILITY_TYPES, type Liability, type LiabilityInsert, type LiabilityType } from "@/types/liability";
 
 interface SummaryBucket {
@@ -125,36 +119,13 @@ export default function LiabilitiesPage() {
   async function refreshDashboard() {
     try {
       setLoading(true);
-      const [
-        nextLiabilities,
-        realEstateAssets,
-        bankAccounts,
-        investments,
-        fixedDeposits,
-        goldHoldings,
-        silverHoldings,
-        retirementAccounts,
-      ] = await Promise.all([
+      const [nextLiabilities, balanceSheetData] = await Promise.all([
         getLiabilities(),
-        getAssets().catch(() => []),
-        getBankAccounts().catch(() => []),
-        getInvestments().catch(() => []),
-        getFixedDeposits().catch(() => []),
-        getGoldHoldings().catch(() => []),
-        getSilverHoldings().catch(() => []),
-        getRetirementAccounts().catch(() => []),
+        getBalanceSheetData().catch(() => null),
       ]);
 
-      const bankTotal = sum(bankAccounts.filter((account) => account.status !== "closed").map((account) => Number(account.current_balance ?? 0)));
-      const investmentTotal = sum(investments.map((investment) => Number(investment.current_value ?? 0)));
-      const fixedDepositTotal = sum(fixedDeposits.map((entry) => Number(entry.current_value ?? 0)));
-      const goldTotal = sum(goldHoldings.map((entry) => Number(entry.current_value ?? 0)));
-      const silverTotal = sum(silverHoldings.map((entry) => Number(entry.current_value ?? 0)));
-      const retirementTotal = sum(retirementAccounts.map((entry) => Number(entry.current_balance ?? 0)));
-      const realEstateTotal = sum(realEstateAssets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
-
       setLiabilities(nextLiabilities);
-      setTotalAssetBase(bankTotal + investmentTotal + fixedDepositTotal + goldTotal + silverTotal + retirementTotal + realEstateTotal);
+      setTotalAssetBase(balanceSheetData?.summary.totalBalanceSheetAssets ?? 0);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load liabilities");
@@ -168,37 +139,14 @@ export default function LiabilitiesPage() {
 
     async function loadLiabilities() {
       try {
-        const [
-          nextLiabilities,
-          realEstateAssets,
-          bankAccounts,
-          investments,
-          fixedDeposits,
-          goldHoldings,
-          silverHoldings,
-          retirementAccounts,
-        ] = await Promise.all([
+        const [nextLiabilities, balanceSheetData] = await Promise.all([
           getLiabilities(),
-          getAssets().catch(() => []),
-          getBankAccounts().catch(() => []),
-          getInvestments().catch(() => []),
-          getFixedDeposits().catch(() => []),
-          getGoldHoldings().catch(() => []),
-          getSilverHoldings().catch(() => []),
-          getRetirementAccounts().catch(() => []),
+          getBalanceSheetData().catch(() => null),
         ]);
-
-        const bankTotal = sum(bankAccounts.filter((account) => account.status !== "closed").map((account) => Number(account.current_balance ?? 0)));
-        const investmentTotal = sum(investments.map((investment) => Number(investment.current_value ?? 0)));
-        const fixedDepositTotal = sum(fixedDeposits.map((entry) => Number(entry.current_value ?? 0)));
-        const goldTotal = sum(goldHoldings.map((entry) => Number(entry.current_value ?? 0)));
-        const silverTotal = sum(silverHoldings.map((entry) => Number(entry.current_value ?? 0)));
-        const retirementTotal = sum(retirementAccounts.map((entry) => Number(entry.current_balance ?? 0)));
-        const realEstateTotal = sum(realEstateAssets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
 
         if (isMounted) {
           setLiabilities(nextLiabilities);
-          setTotalAssetBase(bankTotal + investmentTotal + fixedDepositTotal + goldTotal + silverTotal + retirementTotal + realEstateTotal);
+          setTotalAssetBase(balanceSheetData?.summary.totalBalanceSheetAssets ?? 0);
           setError(null);
         }
       } catch (err) {

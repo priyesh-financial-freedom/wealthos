@@ -1,4 +1,4 @@
-import { createLiability, getLiabilities, updateLiability } from "@/services/liabilities";
+import { getLiabilities, updateLiability } from "@/services/liabilities";
 import { supabase } from "@/lib/supabase/client";
 import type { ImportIssue, ImportModulePlugin, ImportValidationResult, ImportValidatedRecord } from "@/services/imports/types";
 import { buildNormalizedRow, isUuid, issue, parseDate, parseNumber, parseString, pickValue } from "@/services/imports/utils";

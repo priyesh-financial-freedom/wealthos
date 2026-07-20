@@ -15,6 +15,11 @@ import type {
   RetirementExecutiveSummary,
 } from "@/types/retirementAccount";
 
+export interface RetirementSummary {
+  totalRetirementAssets: number;
+  count: number;
+}
+
 function assertSupabaseClient() {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
@@ -403,4 +408,16 @@ export function buildRetirementExecutiveSummary(model: RetirementDashboardModel)
   return {
     totalRetirementAssets: model.totalRetirementAssets,
   };
+}
+
+export function buildRetirementSummary(accounts: RetirementAccount[]): RetirementSummary {
+  return {
+    totalRetirementAssets: accounts.reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0),
+    count: accounts.length,
+  };
+}
+
+export async function getRetirementSummary(): Promise<RetirementSummary> {
+  const accounts = await getRetirementAccounts();
+  return buildRetirementSummary(accounts);
 }

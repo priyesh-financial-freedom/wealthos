@@ -9,15 +9,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { LoadingSpinner } from "@/components/ui/feedback";
 import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
-import { getBankAccounts } from "@/services/bankAccounts";
 import { getBalanceSheetData } from "@/services/balanceSheet";
-import { getFixedDeposits } from "@/services/fixedDeposits";
-import { getGoldHoldings } from "@/services/goldHoldings";
-import { getInvestments } from "@/services/investments";
 import { buildMonthlyHistoryModel, getMonthlyHistory } from "@/services/monthlySnapshots";
-import { getRealEstateProperties } from "@/services/realEstateProperties";
-import { getRetirementAccounts } from "@/services/retirement";
-import { getSilverHoldings } from "@/services/silverHoldings";
 
 interface AssetBucket {
   name: string;
@@ -32,52 +25,56 @@ function sum(values: number[]) {
 }
 
 function buildAssetBuckets(params: {
-  realEstateAssets: Array<{ current_market_value: number }>;
-  bankAccounts: Array<{ current_balance: number; status: string }>;
-  investments: Array<{ category: string; current_value: number }>;
-  fixedDeposits: Array<{ current_value: number }>;
-  goldHoldings: Array<{ current_value: number }>;
-  silverHoldings: Array<{ current_value: number }>;
-  retirementAccounts: Array<{ current_balance: number }>;
+  bankAccountsValue: number;
+  investmentsValue: number;
+  fixedDepositsValue: number;
+  goldValue: number;
+  silverValue: number;
+  retirementValue: number;
+  realEstateValue: number;
+  bankAccountsCount: number;
+  investmentsCount: number;
+  fixedDepositsCount: number;
+  goldCount: number;
+  silverCount: number;
+  retirementCount: number;
+  realEstateCount: number;
 }): AssetBucket[] {
-  const activeBankAccounts = params.bankAccounts.filter((account) => account.status !== "closed");
-  const equityInvestments = params.investments.filter((investment) => investment.category === "Mutual Funds" || investment.category === "Stocks");
-
   return [
     {
       name: "Bank Accounts",
-      value: sum(activeBankAccounts.map((account) => account.current_balance)),
-      count: activeBankAccounts.length,
+      value: params.bankAccountsValue,
+      count: params.bankAccountsCount,
     },
     {
       name: "Investments",
-      value: sum(equityInvestments.map((investment) => investment.current_value)),
-      count: equityInvestments.length,
+      value: params.investmentsValue,
+      count: params.investmentsCount,
     },
     {
       name: "Fixed Deposits",
-      value: sum(params.fixedDeposits.map((account) => account.current_value)),
-      count: params.fixedDeposits.length,
+      value: params.fixedDepositsValue,
+      count: params.fixedDepositsCount,
     },
     {
       name: "Gold",
-      value: sum(params.goldHoldings.map((holding) => holding.current_value)),
-      count: params.goldHoldings.length,
+      value: params.goldValue,
+      count: params.goldCount,
     },
     {
       name: "Silver",
-      value: sum(params.silverHoldings.map((holding) => holding.current_value)),
-      count: params.silverHoldings.length,
+      value: params.silverValue,
+      count: params.silverCount,
     },
     {
       name: "Retirement Assets",
-      value: sum(params.retirementAccounts.map((account) => account.current_balance)),
-      count: params.retirementAccounts.length,
+      value: params.retirementValue,
+      count: params.retirementCount,
     },
     {
       name: "Real Estate",
-      value: sum(params.realEstateAssets.map((asset) => asset.current_market_value)),
-      count: params.realEstateAssets.length,
+      value: params.realEstateValue,
+      count: params.realEstateCount,
     },
   ];
 }
@@ -100,55 +97,59 @@ function EmptyStateCards() {
 }
 
 export default function AssetsPage() {
-  const [realEstateAssets, setRealEstateAssets] = useState<Array<{ current_market_value: number }>>([]);
+  const [buckets, setBuckets] = useState<AssetBucket[]>([]);
   const [sharedTotalAssets, setSharedTotalAssets] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [bankAccounts, setBankAccounts] = useState<Array<{ current_balance: number; status: string }>>([]);
-  const [investments, setInvestments] = useState<Array<{ category: string; current_value: number }>>([]);
-  const [fixedDeposits, setFixedDeposits] = useState<Array<{ current_value: number }>>([]);
-  const [goldHoldings, setGoldHoldings] = useState<Array<{ current_value: number }>>([]);
-  const [silverHoldings, setSilverHoldings] = useState<Array<{ current_value: number }>>([]);
-  const [retirementAccounts, setRetirementAccounts] = useState<Array<{ current_balance: number }>>([]);
   const [previousMonthChange, setPreviousMonthChange] = useState<number | null>(null);
 
   async function loadDashboard() {
     setError(null);
 
     try {
-      const [
-        bankRows,
-        investmentRows,
-        fdRows,
-        goldRows,
-        silverRows,
-        retirementRows,
-        realEstateRows,
-        historyRows,
-        balanceSheetData,
-      ] = await Promise.all([
-        getBankAccounts().catch(() => []),
-        getInvestments().catch(() => []),
-        getFixedDeposits().catch(() => []),
-        getGoldHoldings().catch(() => []),
-        getSilverHoldings().catch(() => []),
-        getRetirementAccounts().catch(() => []),
-        getRealEstateProperties().catch(() => []),
+      const [historyRows, balanceSheetData] = await Promise.all([
         getMonthlyHistory().catch(() => []),
         getBalanceSheetData().catch(() => null),
       ]);
-      setRealEstateAssets(realEstateRows.map((row) => ({ current_market_value: Number(row.current_market_value ?? 0) })));
 
       const historyModel = buildMonthlyHistoryModel(historyRows);
       const latestAssetBase = historyModel.latest ? Number(historyModel.latest.snapshot.assets_total ?? 0) + Number(historyModel.latest.snapshot.investments_total ?? 0) : null;
       const previousAssetBase = historyModel.previousMonth ? Number(historyModel.previousMonth.snapshot.assets_total ?? 0) + Number(historyModel.previousMonth.snapshot.investments_total ?? 0) : null;
 
-      setBankAccounts(bankRows.map((row) => ({ current_balance: Number(row.current_balance ?? 0), status: row.status })));
-      setInvestments(investmentRows.map((row) => ({ category: row.category, current_value: Number(row.current_value ?? 0) })));
-      setFixedDeposits(fdRows.map((row) => ({ current_value: Number(row.current_value ?? 0) })));
-      setGoldHoldings(goldRows.map((row) => ({ current_value: Number(row.current_value ?? 0) })));
-      setSilverHoldings(silverRows.map((row) => ({ current_value: Number(row.current_value ?? 0) })));
-      setRetirementAccounts(retirementRows.map((row) => ({ current_balance: Number(row.current_balance ?? 0) })));
+      const bankAccounts = balanceSheetData?.bankAccounts ?? [];
+      const investments = balanceSheetData?.investments ?? [];
+      const fixedDeposits = balanceSheetData?.fixedDeposits ?? [];
+      const goldHoldings = balanceSheetData?.goldHoldings ?? [];
+      const silverHoldings = balanceSheetData?.silverHoldings ?? [];
+      const retirementAccounts = balanceSheetData?.retirementAccounts ?? [];
+      const realEstateProperties = balanceSheetData?.realEstateProperties ?? [];
+
+      const summary = balanceSheetData?.summary;
+      const bankAccountsValue = bankAccounts
+        .filter((account) => account.status !== "closed")
+        .reduce((total, account) => total + Number(account.current_balance ?? 0), 0);
+      const goldValue = goldHoldings.reduce((total, holding) => total + Number(holding.current_value ?? 0), 0);
+      const silverValue = silverHoldings.reduce((total, holding) => total + Number(holding.current_value ?? 0), 0);
+
+      setBuckets(
+        buildAssetBuckets({
+          bankAccountsValue,
+          investmentsValue: summary?.categoryTotals.investments ?? 0,
+          fixedDepositsValue: summary?.categoryTotals.fixedDeposits ?? 0,
+          goldValue,
+          silverValue,
+          retirementValue: summary?.categoryTotals.retirement ?? 0,
+          realEstateValue: summary?.categoryTotals.realEstate ?? 0,
+          bankAccountsCount: bankAccounts.filter((account) => account.status !== "closed").length,
+          investmentsCount: investments.filter((investment) => investment.category === "Mutual Funds" || investment.category === "Stocks").length,
+          fixedDepositsCount: fixedDeposits.length,
+          goldCount: goldHoldings.length,
+          silverCount: silverHoldings.length,
+          retirementCount: retirementAccounts.length,
+          realEstateCount: realEstateProperties.length,
+        }),
+      );
+
       setSharedTotalAssets(balanceSheetData?.summary.totalBalanceSheetAssets ?? null);
       setPreviousMonthChange(latestAssetBase !== null && previousAssetBase !== null ? latestAssetBase - previousAssetBase : null);
     } catch (err) {
@@ -181,20 +182,6 @@ export default function AssetsPage() {
       window.removeEventListener("wealthos:finance-data-updated", handleRefresh);
     };
   }, []);
-
-  const buckets = useMemo(
-    () =>
-      buildAssetBuckets({
-        realEstateAssets,
-        bankAccounts,
-        investments,
-        fixedDeposits,
-        goldHoldings,
-        silverHoldings,
-        retirementAccounts,
-      }),
-    [bankAccounts, fixedDeposits, goldHoldings, investments, realEstateAssets, retirementAccounts, silverHoldings],
-  );
 
   const bucketTotalAssets = useMemo(() => sum(buckets.map((bucket) => bucket.value)), [buckets]);
   const totalAssets = sharedTotalAssets ?? bucketTotalAssets;

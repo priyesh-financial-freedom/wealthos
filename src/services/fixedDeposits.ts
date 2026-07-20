@@ -1,6 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
 import type { FixedDeposit, FixedDepositInsert, FixedDepositUpdate } from "@/types/fixedDeposit";
 
+export interface FixedDepositsSummary {
+  totalCurrentValue: number;
+  totalPrincipal: number;
+  count: number;
+}
+
 function assertSupabaseClient() {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
@@ -100,4 +106,17 @@ export async function deleteFixedDeposit(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export function buildFixedDepositsSummary(deposits: FixedDeposit[]): FixedDepositsSummary {
+  return {
+    totalCurrentValue: deposits.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0),
+    totalPrincipal: deposits.reduce((sum, item) => sum + Number(item.principal ?? 0), 0),
+    count: deposits.length,
+  };
+}
+
+export async function getFixedDepositsSummary(): Promise<FixedDepositsSummary> {
+  const deposits = await getFixedDeposits();
+  return buildFixedDepositsSummary(deposits);
 }

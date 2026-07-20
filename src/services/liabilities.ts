@@ -1,5 +1,40 @@
 import { supabase } from "@/lib/supabase/client";
-import type { Liability, LiabilityInsert, LiabilityUpdate } from "@/types/liability";
+import type { Liability, LiabilityInsert, LiabilityType, LiabilityUpdate } from "@/types/liability";
+
+export interface LiabilityBucketsSummary {
+  homeLoan: number;
+  carLoan: number;
+  creditCards: number;
+  personalLoan: number;
+  otherLiabilities: number;
+}
+
+export interface LiabilitiesSummary {
+  totalLiabilities: number;
+  totalMonthlyEmi: number;
+  count: number;
+  buckets: LiabilityBucketsSummary;
+  largestLiability: Liability | null;
+}
+
+function liabilityBucket(type: LiabilityType) {
+  switch (type) {
+    case "Home Loan":
+    case "Loan Against Property":
+      return "homeLoan" as const;
+    case "Car Loan":
+      return "carLoan" as const;
+    case "Credit Card":
+      return "creditCards" as const;
+    case "Personal Loan":
+    case "Overdraft / Line of Credit":
+      return "personalLoan" as const;
+    case "Education Loan":
+    case "Other Liability":
+    default:
+      return "otherLiabilities" as const;
+  }
+}
 
 function assertSupabaseClient() {
   if (!supabase) {
@@ -85,4 +120,44 @@ export async function deleteLiability(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export function buildLiabilitiesSummary(liabilities: Liability[]): LiabilitiesSummary {
+  const buckets = liabilities.reduce<LiabilityBucketsSummary>(
+    (acc, liability) => {
+      const bucket = liabilityBucket(liability.liability_type);
+      acc[bucket] += Number(liability.outstanding_amount ?? 0);
+      return acc;
+    },
+    {
+      homeLoan: 0,
+      carLoan: 0,
+      creditCards: 0,
+      personalLoan: 0,
+      otherLiabilities: 0,
+    },
+  );
+
+  const totalLiabilities =
+    buckets.homeLoan + buckets.carLoan + buckets.creditCards + buckets.personalLoan + buckets.otherLiabilities;
+
+  const largestLiability = liabilities.reduce<Liability | null>((current, liability) => {
+    if (!current || Number(liability.outstanding_amount ?? 0) > Number(current.outstanding_amount ?? 0)) {
+      return liability;
+    }
+    return current;
+  }, null);
+
+  return {
+    totalLiabilities,
+    totalMonthlyEmi: liabilities.reduce((sum, liability) => sum + Number(liability.emi ?? 0), 0),
+    count: liabilities.length,
+    buckets,
+    largestLiability,
+  };
+}
+
+export async function getLiabilitiesSummary(): Promise<LiabilitiesSummary> {
+  const liabilities = await getLiabilities();
+  return buildLiabilitiesSummary(liabilities);
 }

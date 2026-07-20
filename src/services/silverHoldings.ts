@@ -1,6 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
 import type { SilverHolding, SilverHoldingInsert, SilverHoldingUpdate } from "@/types/silverHolding";
 
+export interface SilverHoldingsSummary {
+  totalCurrentValue: number;
+  totalQuantity: number;
+  count: number;
+}
+
 function assertSupabaseClient() {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
@@ -98,4 +104,17 @@ export async function deleteSilverHolding(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export function buildSilverHoldingsSummary(holdings: SilverHolding[]): SilverHoldingsSummary {
+  return {
+    totalCurrentValue: holdings.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0),
+    totalQuantity: holdings.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0),
+    count: holdings.length,
+  };
+}
+
+export async function getSilverHoldingsSummary(): Promise<SilverHoldingsSummary> {
+  const holdings = await getSilverHoldings();
+  return buildSilverHoldingsSummary(holdings);
 }

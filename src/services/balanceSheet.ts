@@ -1,19 +1,19 @@
-import { getAssets } from "@/services/assets";
+import { buildAssetsSummary, getAssets } from "@/services/assets";
 import type { DashboardTrendPoint, FinanceSummarySnapshot } from "@/services/finance";
-import { getInvestments } from "@/services/investments";
-import { getLiabilities } from "@/services/liabilities";
-import { getBankAccounts } from "@/services/bankAccounts";
-import { getRetirementAccounts } from "@/services/retirement";
-import { getFixedDeposits } from "@/services/fixedDeposits";
-import { getGoldHoldings } from "@/services/goldHoldings";
-import { getSilverHoldings } from "@/services/silverHoldings";
-import { getRealEstateProperties } from "@/services/realEstateProperties";
+import { buildInvestmentBalanceSheetSummary, getInvestments } from "@/services/investments";
+import { buildLiabilitiesSummary, getLiabilities } from "@/services/liabilities";
+import { buildBankAccountsSummary, getBankAccounts } from "@/services/bankAccounts";
+import { buildRetirementSummary, getRetirementAccounts } from "@/services/retirement";
+import { buildFixedDepositsSummary, getFixedDeposits } from "@/services/fixedDeposits";
+import { buildGoldHoldingsSummary, getGoldHoldings } from "@/services/goldHoldings";
+import { buildSilverHoldingsSummary, getSilverHoldings } from "@/services/silverHoldings";
+import { buildRealEstateSummary, getRealEstateProperties } from "@/services/realEstateProperties";
 import type { Asset } from "@/types/asset";
 import type { BankAccount } from "@/types/bankAccount";
 import type { FixedDeposit } from "@/types/fixedDeposit";
 import type { GoldHolding } from "@/types/goldHolding";
-import type { Investment, InvestmentCategory } from "@/types/investment";
-import type { Liability, LiabilityType } from "@/types/liability";
+import type { Investment } from "@/types/investment";
+import type { Liability } from "@/types/liability";
 import type { RetirementAccount } from "@/types/retirementAccount";
 import type { SilverHolding } from "@/types/silverHolding";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
@@ -65,75 +65,6 @@ export interface BalanceSheetData {
   summary: BalanceSheetSummary;
 }
 
-const cashAssetTypes = new Set(["cash", "checking", "savings"]);
-const retirementInvestmentCategories = new Set<InvestmentCategory>(["EPF", "PPF", "NPS"]);
-const fixedDepositCategories = new Set<InvestmentCategory>(["Fixed Deposits"]);
-const goldAndSilverCategories = new Set<InvestmentCategory>(["Gold", "Silver", "Sovereign Gold Bonds"]);
-
-function sum(values: number[]) {
-  return values.reduce((total, value) => total + Number(value ?? 0), 0);
-}
-
-function calculateInvestmentBreakdown(
-  assets: Asset[],
-  investments: Investment[],
-  retirementAccounts: RetirementAccount[],
-  fixedDeposits: FixedDeposit[],
-  goldHoldings: GoldHolding[],
-  silverHoldings: SilverHolding[],
-) {
-  const assetInvestmentValue = sum(
-    assets.filter((asset) => asset.asset_type === "investment").map((asset) => Number(asset.current_value ?? 0)),
-  );
-
-  const investmentBreakdown = investments.reduce(
-    (acc, investment) => {
-      const currentValue = Number(investment.current_value ?? 0);
-
-      if (retirementInvestmentCategories.has(investment.category)) {
-        acc.retirement += currentValue;
-      } else if (fixedDepositCategories.has(investment.category)) {
-        acc.fixedDeposits += currentValue;
-      } else if (goldAndSilverCategories.has(investment.category)) {
-        acc.goldAndSilver += currentValue;
-      } else {
-        acc.investments += currentValue;
-      }
-
-      return acc;
-    },
-    {
-      investments: assetInvestmentValue,
-      retirement: sum(retirementAccounts.map((account) => Number(account.current_balance ?? 0))),
-      fixedDeposits: sum(fixedDeposits.map((account) => Number(account.current_value ?? 0))),
-      goldAndSilver:
-        sum(goldHoldings.map((holding) => Number(holding.current_value ?? 0))) +
-        sum(silverHoldings.map((holding) => Number(holding.current_value ?? 0))),
-    },
-  );
-
-  return investmentBreakdown;
-}
-
-function liabilityBucket(type: LiabilityType) {
-  switch (type) {
-    case "Home Loan":
-    case "Loan Against Property":
-      return "homeLoan" as const;
-    case "Car Loan":
-      return "carLoan" as const;
-    case "Credit Card":
-      return "creditCards" as const;
-    case "Personal Loan":
-    case "Overdraft / Line of Credit":
-      return "personalLoan" as const;
-    case "Education Loan":
-    case "Other Liability":
-    default:
-      return "otherLiabilities" as const;
-  }
-}
-
 export function buildBalanceSheetSummary(
   assets: Asset[],
   liabilities: Liability[],
@@ -145,28 +76,29 @@ export function buildBalanceSheetSummary(
   silverHoldings: SilverHolding[],
   realEstateProperties: RealEstateProperty[],
 ): BalanceSheetSummary {
-  const cashAndBank =
-    sum(assets.filter((asset) => cashAssetTypes.has(asset.asset_type)).map((asset) => Number(asset.current_value ?? 0))) +
-    sum(bankAccounts.filter((account) => account.status !== "closed").map((account) => Number(account.current_balance ?? 0)));
+  const assetsSummary = buildAssetsSummary(assets);
+  const liabilitiesSummary = buildLiabilitiesSummary(liabilities);
+  const investmentsSummary = buildInvestmentBalanceSheetSummary(investments);
+  const bankAccountsSummary = buildBankAccountsSummary(bankAccounts);
+  const retirementSummary = buildRetirementSummary(retirementAccounts);
+  const fixedDepositsSummary = buildFixedDepositsSummary(fixedDeposits);
+  const goldSummary = buildGoldHoldingsSummary(goldHoldings);
+  const silverSummary = buildSilverHoldingsSummary(silverHoldings);
+  const realEstateSummary = buildRealEstateSummary(realEstateProperties);
 
-  const legacyRealEstate = sum(assets.filter((asset) => asset.asset_type === "real_estate").map((asset) => Number(asset.current_value ?? 0)));
-  const moduleRealEstate = sum(realEstateProperties.map((property) => Number(property.current_market_value ?? 0)));
+  const cashAndBank = assetsSummary.totalCashLikeAssets + bankAccountsSummary.totalActiveBalance;
+  const legacyRealEstate = assetsSummary.totalRealEstateAssets;
+  const moduleRealEstate = realEstateSummary.totalCurrentMarketValue;
   const realEstate = moduleRealEstate > 0 ? moduleRealEstate : legacyRealEstate;
-  const vehicles = sum(assets.filter((asset) => asset.asset_type === "vehicle").map((asset) => Number(asset.current_value ?? 0)));
-  const otherAssets = sum(
-    assets
-      .filter((asset) => asset.asset_type === "business" || asset.asset_type === "other")
-      .map((asset) => Number(asset.current_value ?? 0)),
-  );
+  const vehicles = assetsSummary.totalVehicleAssets;
+  const otherAssets = assetsSummary.totalOtherAssets;
 
-  const investmentBreakdown = calculateInvestmentBreakdown(
-    assets,
-    investments,
-    retirementAccounts,
-    fixedDeposits,
-    goldHoldings,
-    silverHoldings,
-  );
+  const investmentBreakdown = {
+    investments: assetsSummary.totalInvestmentAssets + investmentsSummary.coreInvestmentsValue,
+    retirement: retirementSummary.totalRetirementAssets + investmentsSummary.retirementClassifiedValue,
+    fixedDeposits: fixedDepositsSummary.totalCurrentValue + investmentsSummary.fixedDepositClassifiedValue,
+    goldAndSilver: goldSummary.totalCurrentValue + silverSummary.totalCurrentValue + investmentsSummary.preciousMetalClassifiedValue,
+  };
 
   const initialLiabilityTotals: BalanceSheetCategoryTotals = {
     cashAndBank,
@@ -184,11 +116,10 @@ export function buildBalanceSheetSummary(
     otherLiabilities: 0,
   };
 
-  const categoryTotals = liabilities.reduce((acc, liability) => {
-    const bucket = liabilityBucket(liability.liability_type);
-    acc[bucket] += Number(liability.outstanding_amount ?? 0);
-    return acc;
-  }, initialLiabilityTotals);
+  const categoryTotals = {
+    ...initialLiabilityTotals,
+    ...liabilitiesSummary.buckets,
+  };
 
   const totalAssets = categoryTotals.cashAndBank + categoryTotals.realEstate + categoryTotals.vehicles + categoryTotals.otherAssets;
   const totalInvestments =
@@ -197,15 +128,10 @@ export function buildBalanceSheetSummary(
     categoryTotals.fixedDeposits +
     categoryTotals.goldAndSilver;
   const totalBalanceSheetAssets = totalAssets + totalInvestments;
-  const totalLiabilities =
-    categoryTotals.homeLoan +
-    categoryTotals.carLoan +
-    categoryTotals.creditCards +
-    categoryTotals.personalLoan +
-    categoryTotals.otherLiabilities;
+  const totalLiabilities = liabilitiesSummary.totalLiabilities;
   const netWorth = totalBalanceSheetAssets - totalLiabilities;
   const debtRatio = totalBalanceSheetAssets > 0 ? totalLiabilities / totalBalanceSheetAssets : 0;
-  const monthlyEmi = liabilities.reduce((total, liability) => total + Number(liability.emi ?? 0), 0);
+  const monthlyEmi = liabilitiesSummary.totalMonthlyEmi;
   const cashHoldings = categoryTotals.cashAndBank;
   const cashRatio = totalBalanceSheetAssets > 0 ? cashHoldings / totalBalanceSheetAssets : 0;
   const liquidityRatio = totalLiabilities > 0 ? cashHoldings / totalLiabilities : null;
@@ -300,19 +226,8 @@ export function buildBalanceSheetSummary(
   const assetAllocation = assetSections.filter((item) => item.value > 0).map((item) => ({ name: item.label, value: item.value }));
   const liabilityAllocation = liabilitySections.filter((item) => item.value > 0).map((item) => ({ name: item.label, value: item.value }));
 
-  const largestAsset = assets.reduce<Asset | null>((current, asset) => {
-    if (!current || Number(asset.current_value ?? 0) > Number(current.current_value ?? 0)) {
-      return asset;
-    }
-    return current;
-  }, null);
-
-  const largestLiability = liabilities.reduce<Liability | null>((current, liability) => {
-    if (!current || Number(liability.outstanding_amount ?? 0) > Number(current.outstanding_amount ?? 0)) {
-      return liability;
-    }
-    return current;
-  }, null);
+  const largestAsset = assetsSummary.largestAsset;
+  const largestLiability = liabilitiesSummary.largestLiability;
 
   return {
     totalAssets,
