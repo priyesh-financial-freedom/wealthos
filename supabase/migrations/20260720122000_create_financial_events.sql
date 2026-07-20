@@ -64,4 +64,3 @@ create table if not exists public.financial_events (
                                                                                                                                   for each row
                                                                                                                                   execute function public.handle_updated_at();
                                                                                                                                   
-)
