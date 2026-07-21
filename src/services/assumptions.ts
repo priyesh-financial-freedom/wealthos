@@ -353,3 +353,11 @@ export class AssumptionsService {
 }
 
 export const assumptionsService = new AssumptionsService();
+
+export {
+  assumptionService as assumptionEngineService,
+  AssumptionRepository,
+  AssumptionService,
+  ValidationService,
+  VersionService,
+} from "./assumptions/index";

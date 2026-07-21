@@ -83,10 +83,11 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const planningDashboardActive = activeHref === "/planning";
   const planningScenariosActive = activeHref === "/planning/scenarios";
   const planningGoalsActive = activeHref === "/planning/goals";
+  const planningDecisionCenterActive = activeHref === "/planning/decision-center";
   const planningRetirementActive = activeHref === "/planning/retirement";
   const planningCashFlowActive = activeHref === "/planning/cashflow";
   const planningEventsActive = activeHref === "/planning/events";
-  const planningActive = planningDashboardActive || planningScenariosActive || planningGoalsActive || planningRetirementActive || planningCashFlowActive || planningEventsActive;
+  const planningActive = planningDashboardActive || planningScenariosActive || planningGoalsActive || planningDecisionCenterActive || planningRetirementActive || planningCashFlowActive || planningEventsActive;
   const netWorthActive = activeHref === "/balance-sheet";
 
   const bankAccountsActive = activeHref === "/bank-accounts";
@@ -161,6 +162,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                   <Link href="/planning/goals" className={rowLinkClass({ active: planningGoalsActive, level: 2, collapsed })}>
                     <Target className="h-4 w-4 shrink-0" />
                     {!collapsed ? <span className="truncate">Goals</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/decision-center" className={rowLinkClass({ active: planningDecisionCenterActive, level: 2, collapsed })}>
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Decision Center</span> : null}
                   </Link>
                 </div>
 

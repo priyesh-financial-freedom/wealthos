@@ -85,6 +85,15 @@ const planningDashboardMockSummary: PlanningDashboardSummary = {
       actionHref: "/planning/events",
       icon: "CalendarClock",
     },
+    {
+      id: "decision-center",
+      title: "Decision Center",
+      description: "Generate deterministic recommendations using simulation and health outputs.",
+      status: "Rule engine ready",
+      actionLabel: "Open decision center",
+      actionHref: "/planning/decision-center",
+      icon: "Sparkles",
+    },
   ],
   recentActivity: [],
 };

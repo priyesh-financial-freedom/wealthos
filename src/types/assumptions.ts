@@ -1,5 +1,122 @@
 export type AssumptionSection = "income" | "investments" | "inflation" | "loans" | "retirement" | "tax" | "planning";
 
+export enum AssumptionCategoryKey {
+  Income = "INCOME",
+  Inflation = "INFLATION",
+  InvestmentReturns = "INVESTMENT_RETURNS",
+  Retirement = "RETIREMENT",
+  Tax = "TAX",
+  Loans = "LOANS",
+  EmergencyPlanning = "EMERGENCY_PLANNING",
+  Market = "MARKET",
+}
+
+export enum AssumptionDataType {
+  Number = "NUMBER",
+  Percentage = "PERCENTAGE",
+  Currency = "CURRENCY",
+  Integer = "INTEGER",
+  Boolean = "BOOLEAN",
+  Text = "TEXT",
+  Month = "MONTH",
+  Enum = "ENUM",
+}
+
+export enum AssumptionValueSource {
+  System = "SYSTEM",
+  User = "USER",
+  Imported = "IMPORTED",
+}
+
+export interface AssumptionCategory {
+  id: string;
+  key: AssumptionCategoryKey;
+  name: string;
+  description: string | null;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Assumption {
+  id: string;
+  categoryId: string;
+  key: string;
+  name: string;
+  description: string | null;
+  dataType: AssumptionDataType;
+  unit: string | null;
+  defaultValue: unknown;
+  minimum: number | null;
+  maximum: number | null;
+  helpText: string | null;
+  required: boolean;
+  isActive: boolean;
+  advancedOnly: boolean;
+  allowedValues: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssumptionProfile {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssumptionValue {
+  id: string;
+  userId: string;
+  profileId: string;
+  assumptionId: string;
+  value: unknown;
+  source: AssumptionValueSource;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PolicyVersion {
+  id: string;
+  userId: string;
+  profileId: string;
+  versionNumber: number;
+  versionName: string;
+  notes: string | null;
+  snapshot: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AssumptionWithValue extends Assumption {
+  category: AssumptionCategory;
+  currentValue: unknown;
+  valueId: string | null;
+}
+
+export interface ProfileComparisonItem {
+  assumptionId: string;
+  assumptionKey: string;
+  assumptionName: string;
+  categoryKey: AssumptionCategoryKey;
+  leftValue: unknown;
+  rightValue: unknown;
+}
+
+export interface ValidationIssue {
+  assumptionId: string;
+  assumptionKey: string;
+  message: string;
+}
+
+export interface ProfileValidationResult {
+  isValid: boolean;
+  issues: ValidationIssue[];
+}
+
 export interface IncomeAssumptions {
   monthlyIncome: number;
   annualIncrementRate: number;

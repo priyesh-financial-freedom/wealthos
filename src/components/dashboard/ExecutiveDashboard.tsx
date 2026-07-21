@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useId } from "react";
+import { memo } from "react";
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -17,77 +15,40 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   ArrowRight,
-  Banknote,
-  ChevronRight,
+  CheckCircle2,
   CircleDollarSign,
-  LineChart,
-  PiggyBank,
-  ShieldCheck,
-  Sparkles,
+  Landmark,
+  Shield,
+  Target,
   TrendingUp,
+  Wallet,
   Wallet2,
 } from "lucide-react";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/feedback";
-import { formatCurrency, truncateLabel } from "@/lib/formatters";
-import { calculateTotalAssetBase } from "@/services/finance";
-import type { HealthScore } from "@/services/health";
-import type { Asset } from "@/types/asset";
-import type { Investment } from "@/types/investment";
-import type {
-  DashboardTrendPoint,
-  ExecutiveInsight,
-  FinanceSummarySnapshot,
-} from "@/services/finance";
-import type { MonthlyHistoryModel } from "@/services/monthlySnapshots";
-import type { RetirementExecutiveSummary } from "@/types/retirementAccount";
-
-interface ActivityItem {
-  title: string;
-  detail: string;
-  time: string;
-}
+import { formatCurrency } from "@/lib/formatters";
+import type { ExecutiveAllocationItem, ExecutiveDashboardData } from "@/services/dashboard";
 
 interface ExecutiveDashboardProps {
   loading: boolean;
-  emptyState: boolean;
-  summary: FinanceSummarySnapshot;
-  health: HealthScore;
-  historyModel: MonthlyHistoryModel;
-  trendData: DashboardTrendPoint[];
-  topAssets: Asset[];
-  topInvestments: Investment[];
-  insights: ExecutiveInsight[];
-  activityItems: ActivityItem[];
-  retirementSummary?: RetirementExecutiveSummary | null;
+  data: ExecutiveDashboardData | null;
+  error?: string | null;
 }
 
 const COLORS = ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0"];
 
-const MetricCard = memo(function MetricCard({
-  title,
-  value,
-  detail,
-  icon: Icon,
-  tone = "default",
-}: {
+const KpiCard = memo(function KpiCard({ title, value, detail, icon: Icon }: {
   title: string;
   value: string;
   detail: string;
-  icon: typeof Banknote;
-  tone?: "default" | "positive" | "warning";
+  icon: typeof Wallet;
 }) {
-  const toneStyles = {
-    default: "border-slate-200 bg-white text-slate-900",
-    positive: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    warning: "border-amber-200 bg-amber-50 text-amber-900",
-  };
-
   return (
-    <DashboardCard className={`transition-all duration-300 hover:-translate-y-1 ${toneStyles[tone]}`}>
+    <DashboardCard className="transition-all duration-300 hover:-translate-y-1">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">{title}</p>
@@ -102,73 +63,251 @@ const MetricCard = memo(function MetricCard({
   );
 });
 
-const InsightCard = memo(function InsightCard({ insight }: { insight: ExecutiveInsight }) {
-  const toneStyles = {
-    positive: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    warning: "border-amber-200 bg-amber-50 text-amber-900",
-    neutral: "border-slate-200 bg-slate-50 text-slate-900",
-  };
+function priorityBadge(priority: string) {
+  if (priority === "Critical") {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  if (priority === "High") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  if (priority === "Medium") {
+    return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function goalStatusTone(status: string): string {
+  if (status === "COMPLETED" || status === "ON_TRACK") {
+    return "text-emerald-700";
+  }
+  if (status === "NEEDS_ATTENTION") {
+    return "text-amber-700";
+  }
+
+  return "text-rose-700";
+}
+
+const HeroFinancialHealth = memo(function HeroFinancialHealth({ data }: { data: ExecutiveDashboardData }) {
+  const topStrengths = data.health.strengths.slice(0, 2);
+  const topWatchItems = data.health.watchItems.slice(0, 2);
 
   return (
-    <div className={`rounded-2xl border p-4 shadow-sm transition-transform duration-300 hover:-translate-y-0.5 ${toneStyles[insight.tone]}`}>
-      <p className="text-sm font-semibold">{insight.title}</p>
-      <p className="mt-2 text-sm opacity-90">{insight.detail}</p>
-    </div>
-  );
-});
-
-const TimelineRow = memo(function TimelineRow({ item }: { item: ActivityItem }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 transition-colors hover:border-slate-300 hover:bg-white">
-      <div className="flex items-start justify-between gap-3">
+    <DashboardCard className="overflow-hidden border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.25),_transparent_35%),linear-gradient(135deg,#020617_0%,#0f172a_60%,#1e293b_100%)] text-white shadow-xl">
+      <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
         <div>
-          <p className="text-sm font-medium text-slate-900">{item.title}</p>
-          <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
+          <p className="text-sm font-medium text-slate-300">Hero Financial Health</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight">Score {data.health.overallScore}/100 · Grade {data.health.grade}</h2>
+          <p className="mt-3 text-sm text-slate-300">Deterministic score powered by liquidity, debt, goals, retirement, diversification, and emergency readiness.</p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
+              <Link href="/planning/decision-center">Open Decision Center</Link>
+            </Button>
+            <Button asChild variant="outline" className="border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white">
+              <Link href="/planning/goals">Review Goals</Link>
+            </Button>
+          </div>
         </div>
-        <span className="shrink-0 text-xs text-slate-400">{item.time}</span>
+        <div className="grid gap-3">
+          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">As Of</p>
+            <p className="mt-2 text-lg font-semibold">{data.asOfLabel || "Current period"}</p>
+          </div>
+          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Top Strengths</p>
+            {topStrengths.length === 0 ? <p className="mt-2 text-sm text-slate-200">No strengths available yet.</p> : topStrengths.map((item) => <p key={item} className="mt-2 text-sm text-slate-100">- {item}</p>)}
+          </div>
+          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Watch Items</p>
+            {topWatchItems.length === 0 ? <p className="mt-2 text-sm text-slate-200">No active watch items.</p> : topWatchItems.map((item) => <p key={item} className="mt-2 text-sm text-slate-100">- {item}</p>)}
+          </div>
+        </div>
       </div>
-    </div>
+    </DashboardCard>
   );
 });
 
-const TrendChartCard = memo(function TrendChartCard({ data }: { data: DashboardTrendPoint[] }) {
-  const gradientId = useId();
-
+const DecisionCenterPreview = memo(function DecisionCenterPreview({ data }: { data: ExecutiveDashboardData }) {
   return (
     <DashboardCard className="h-full">
-      <div className="mb-4 space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Net Worth Trend</h3>
-            <p className="text-sm text-slate-600">Monthly snapshots across assets, investments, and liabilities</p>
-          </div>
-          <LineChart className="h-4 w-4 text-slate-400" />
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">Decision Center Preview</h3>
+          <p className="text-sm text-slate-600">{data.decisionCenter.openCount} open recommendations · {data.decisionCenter.criticalCount} critical</p>
+        </div>
+        <AlertTriangle className="h-4 w-4 text-slate-400" />
+      </div>
+
+      {data.decisionCenter.items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No open recommendations right now.</div>
+      ) : (
+        <div className="space-y-3">
+          {data.decisionCenter.items.map((item) => (
+            <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                  <p className="mt-1 text-sm text-slate-600">{item.recommendedAction}</p>
+                </div>
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${priorityBadge(item.priority)}`}>{item.priority}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button asChild variant="outline" className="mt-4 w-full">
+        <Link href="/planning/decision-center">
+          Open Decision Center
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </Button>
+    </DashboardCard>
+  );
+});
+
+const GoalProgressWidget = memo(function GoalProgressWidget({ data }: { data: ExecutiveDashboardData }) {
+  return (
+    <DashboardCard className="h-full">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">Goal Progress</h3>
+          <p className="text-sm text-slate-600">{data.goals.onTrack} on-track · {data.goals.atRisk} at-risk · {data.goals.completed} completed</p>
+        </div>
+        <Target className="h-4 w-4 text-slate-400" />
+      </div>
+
+      {data.goals.items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No goals configured yet.</div>
+      ) : (
+        <div className="space-y-3">
+          {data.goals.items.map((goal) => (
+            <div key={goal.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{goal.name}</p>
+                  <p className="mt-1 text-xs text-slate-500">Projected {formatCurrency(goal.projectedAmount, { maximumFractionDigits: 0 })} of {formatCurrency(goal.targetAmount, { maximumFractionDigits: 0 })}</p>
+                </div>
+                <span className={`text-xs font-semibold ${goalStatusTone(goal.status)}`}>{goal.status.replaceAll("_", " ")}</span>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(100, Math.max(0, goal.progressPercent))}%` }} />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">{goal.progressPercent.toFixed(1)}% funded</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </DashboardCard>
+  );
+});
+
+function AllocationList({ title, items }: { title: string; items: ExecutiveAllocationItem[] }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</p>
+      {items.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">No data available.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {items.slice(0, 6).map((item, index) => (
+            <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                <span className="font-medium text-slate-700">{item.name}</span>
+              </div>
+              <span className="font-semibold text-slate-900">{item.sharePercent.toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WealthAllocationWidget = memo(function WealthAllocationWidget({ data }: { data: ExecutiveDashboardData }) {
+  return (
+    <DashboardCard className="h-full">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">Wealth Allocation</h3>
+          <p className="text-sm text-slate-600">Current split across balance-sheet categories</p>
+        </div>
+        <CircleDollarSign className="h-4 w-4 text-slate-400" />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="h-72 w-full">
+          {data.wealthAllocation.assets.length === 0 ? (
+            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-sm text-slate-500">Add assets to view allocation.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data.wealthAllocation.assets} dataKey="value" nameKey="name" innerRadius={64} outerRadius={98} paddingAngle={2} stroke="none">
+                  {data.wealthAllocation.assets.map((entry, index) => (
+                    <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        <div className="space-y-5">
+          <AllocationList title="Assets" items={data.wealthAllocation.assets} />
+          <AllocationList title="Liabilities" items={data.wealthAllocation.liabilities} />
         </div>
       </div>
-      {data.length === 0 ? (
-        <div className="flex h-80 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
-          Close a month to unlock this historical view.
+    </DashboardCard>
+  );
+});
+
+const CashFlowSummaryWidget = memo(function CashFlowSummaryWidget({ data }: { data: ExecutiveDashboardData }) {
+  return (
+    <DashboardCard className="h-full">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">Cash Flow Summary</h3>
+          <p className="text-sm text-slate-600">Forward six-month cash trajectory from simulation baseline</p>
         </div>
+        <TrendingUp className="h-4 w-4 text-slate-400" />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Current Cash</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(data.cashFlow.currentCash, { maximumFractionDigits: 0 })}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Avg Monthly Delta</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(data.cashFlow.averageMonthlyDelta, { maximumFractionDigits: 0 })}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Negative Months</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">{data.cashFlow.negativeMonths}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Projected Net Worth Change</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(data.cashFlow.projectedNetWorthChange, { maximumFractionDigits: 0 })}</p>
+        </div>
+      </div>
+
+      {data.cashFlow.points.length === 0 ? (
+        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">Run monthly projections to unlock cash flow preview.</div>
       ) : (
-        <div className="h-80 w-full">
+        <div className="mt-4 h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data}>
+            <AreaChart data={data.cashFlow.points}>
               <defs>
-                <linearGradient id={`${gradientId}-networth`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="#0f172a" stopOpacity={0.04} />
-                </linearGradient>
-                <linearGradient id={`${gradientId}-investments`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f766e" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="#0f766e" stopOpacity={0.03} />
+                <linearGradient id="executive-cash-flow" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.22} />
+                  <stop offset="100%" stopColor="#0f172a" stopOpacity={0.03} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} tickFormatter={(value) => truncateLabel(String(value), 10)} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
-              <Area type="monotone" dataKey="netWorth" stroke="#0f172a" fill={`url(#${gradientId}-networth)`} strokeWidth={2.5} />
-              <Area type="monotone" dataKey="investments" stroke="#0f766e" fill={`url(#${gradientId}-investments)`} strokeWidth={2} />
+              <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} />
+              <Area type="monotone" dataKey="value" stroke="#0f172a" fill="url(#executive-cash-flow)" strokeWidth={2.4} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -177,230 +316,29 @@ const TrendChartCard = memo(function TrendChartCard({ data }: { data: DashboardT
   );
 });
 
-const GrowthChartCard = memo(function GrowthChartCard({ data }: { data: MonthlyHistoryModel["records"] }) {
-  const growthData = [...data]
-    .slice()
-    .sort((left, right) => (left.snapshot.snapshot_year - right.snapshot.snapshot_year) || (left.snapshot.snapshot_month - right.snapshot.snapshot_month))
-    .map((record) => ({
-      month: record.monthLabel,
-      growth: record.snapshot.growth_from_previous_month,
-    }));
-
+const RecentActivityTimeline = memo(function RecentActivityTimeline({ data }: { data: ExecutiveDashboardData }) {
   return (
     <DashboardCard className="h-full">
-      <div className="mb-4 space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Monthly Growth</h3>
-            <p className="text-sm text-slate-600">Month-over-month change from monthly snapshot closes</p>
-          </div>
-          <TrendingUp className="h-4 w-4 text-slate-400" />
-        </div>
-      </div>
-      {growthData.length === 0 ? (
-        <div className="flex h-80 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
-          No monthly closes yet.
-        </div>
-      ) : (
-        <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={growthData}>
-              <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} interval={0} height={50} tickFormatter={(value) => truncateLabel(String(value), 10)} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
-              <Bar dataKey="growth" radius={[8, 8, 0, 0]} fill="#0f172a" barSize={18} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </DashboardCard>
-  );
-});
-
-const AllocationChartCard = memo(function AllocationChartCard({
-  title,
-  description,
-  data,
-  emptyLabel,
-}: {
-  title: string;
-  description: string;
-  data: Array<{ name: string; value: number }>;
-  emptyLabel: string;
-}) {
-  const gradientId = useId();
-
-  return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-            <p className="text-sm text-slate-600">{description}</p>
-          </div>
-          <CircleDollarSign className="h-4 w-4 text-slate-400" />
-        </div>
-      </div>
-      {data.length === 0 ? (
-        <div className="flex h-80 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
-          {emptyLabel}
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={data} dataKey="value" nameKey="name" innerRadius={68} outerRadius={102} paddingAngle={3} stroke="none">
-                  {data.map((entry, index) => (
-                    <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} labelFormatter={(value) => String(value)} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="space-y-3">
-            {data.map((item, index) => (
-              <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                  <span className="font-medium text-slate-700">{item.name}</span>
-                </div>
-                <span className="font-semibold text-slate-900">{formatCurrency(item.value, { maximumFractionDigits: 0 })}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-slate-900 to-slate-500 transition-all duration-700" />
-      </div>
-      <span className="sr-only" id={gradientId} />
-    </DashboardCard>
-  );
-});
-
-const HealthScoreCard = memo(function HealthScoreCard({ health }: { health: HealthScore }) {
-  const circumference = 2 * Math.PI * 48;
-  const progress = circumference - (health.overallScore / 100) * circumference;
-
-  return (
-    <DashboardCard className="h-full overflow-hidden border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white shadow-xl">
-      <div className="flex items-start justify-between gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-300">Financial Health</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight">Grade {health.grade}</h3>
-          <p className="mt-3 max-w-md text-sm text-slate-300">Deterministic score across liquidity, debt, goals, retirement, diversification, and emergency coverage.</p>
+          <h3 className="text-base font-semibold text-slate-900">Recent Activity Timeline</h3>
+          <p className="text-sm text-slate-600">Most recent changes across review, goals, decisions, and simulation</p>
         </div>
-        <ShieldCheck className="h-5 w-5 text-slate-300" />
+        <Landmark className="h-4 w-4 text-slate-400" />
       </div>
 
-      <div className="mt-6 flex items-center gap-5">
-        <div className="relative h-32 w-32 shrink-0">
-          <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="10" />
-            <circle
-              cx="60"
-              cy="60"
-              r="48"
-              fill="none"
-              stroke="white"
-              strokeWidth="10"
-              strokeDasharray={circumference}
-              strokeDashoffset={progress}
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-4xl font-semibold leading-none">{health.overallScore}</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.28em] text-slate-300">/100</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {health.components.map((component) => (
-            <div key={component.key} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-sm text-slate-300">{component.label} ({component.weight}%)</p>
-                <p className={`text-sm font-semibold ${component.score >= 80 ? "text-emerald-300" : component.score >= 70 ? "text-amber-300" : "text-rose-300"}`}>{component.score}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Trend</p>
-          {health.trend.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-300">Trend will appear after monthly closes are available.</p>
-          ) : (
-            <div className="mt-3 h-28 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={health.trend}>
-                  <CartesianGrid stroke="rgba(148,163,184,0.25)" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
-                  <Tooltip formatter={(value) => `${Number(value ?? 0)} / 100`} />
-                  <Area dataKey="score" type="monotone" stroke="#e2e8f0" fill="rgba(226,232,240,0.18)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Recommendations</p>
-          {health.recommendations.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-300">No recommendations right now. Keep monitoring monthly trends.</p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {health.recommendations.slice(0, 3).map((recommendation) => (
-                <p key={recommendation} className="text-sm text-slate-200">- {recommendation}</p>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </DashboardCard>
-  );
-});
-
-const HoldingListCard = memo(function HoldingListCard({
-  title,
-  subtitle,
-  holdings,
-  emptyLabel,
-}: {
-  title: string;
-  subtitle: string;
-  holdings: Array<{ name: string; value: number; detail: string }>;
-  emptyLabel: string;
-}) {
-  return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-          <p className="text-sm text-slate-600">{subtitle}</p>
-        </div>
-        <ChevronRight className="mt-1 h-4 w-4 text-slate-400" />
-      </div>
-      {holdings.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">{emptyLabel}</div>
+      {data.recentActivity.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No recent activity yet.</div>
       ) : (
         <div className="space-y-3">
-          {holdings.map((holding, index) => (
-            <div key={`${holding.name}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
+          {data.recentActivity.map((item) => (
+            <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">{holding.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">{holding.detail}</p>
+                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                  <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-900">{formatCurrency(holding.value, { maximumFractionDigits: 0 })}</p>
+                <span className="shrink-0 text-xs text-slate-400">{item.timeLabel}</span>
               </div>
             </div>
           ))}
@@ -410,187 +348,125 @@ const HoldingListCard = memo(function HoldingListCard({
   );
 });
 
-export const ExecutiveDashboard = memo(function ExecutiveDashboard({
-  loading,
-  emptyState,
-  summary,
-  health,
-  historyModel,
-  trendData,
-  topAssets,
-  topInvestments,
-  insights,
-  activityItems,
-  retirementSummary,
-}: ExecutiveDashboardProps) {
+function ExecutiveEmptyState() {
+  return (
+    <DashboardCard className="overflow-hidden border-slate-200 bg-gradient-to-br from-slate-950 to-slate-800 p-0 text-white shadow-xl">
+      <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
+        <div>
+          <p className="text-sm font-medium text-slate-300">Executive command center</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight">Capture your first holdings to unlock this command center.</h3>
+          <p className="mt-3 max-w-2xl text-sm text-slate-300">Add assets, liabilities, and goals to activate health scoring, decision intelligence, and simulation-backed executive insights.</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
+              <Link href="/assets">Add Asset</Link>
+            </Button>
+            <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
+              <Link href="/liabilities">Add Liability</Link>
+            </Button>
+            <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
+              <Link href="/planning/goals">Add Goal</Link>
+            </Button>
+          </div>
+        </div>
+        <div className="grid gap-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+            <p className="text-sm text-slate-300">Financial Health</p>
+            <p className="mt-2 text-2xl font-semibold text-white">0 / 100</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+            <p className="text-sm text-slate-300">Open Decisions</p>
+            <p className="mt-2 text-2xl font-semibold text-white">0</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+            <p className="text-sm text-slate-300">Goals On Track</p>
+            <p className="mt-2 text-2xl font-semibold text-white">0</p>
+          </div>
+        </div>
+      </div>
+    </DashboardCard>
+  );
+}
+
+export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, data, error }: ExecutiveDashboardProps) {
   if (loading) {
     return <DashboardSkeleton />;
   }
 
-  const latestClose = historyModel.latest;
-  const totalAssetBase = calculateTotalAssetBase(summary);
+  if (error) {
+    return <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>;
+  }
+
+  if (!data) {
+    return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">Dashboard data is unavailable.</div>;
+  }
 
   return (
     <div className="space-y-8">
-      {emptyState ? (
-        <DashboardCard className="overflow-hidden border-slate-200 bg-gradient-to-br from-slate-950 to-slate-800 p-0 text-white shadow-xl">
-          <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
-            <div>
-              <p className="text-sm font-medium text-slate-300">Executive empty state</p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-tight">Capture your first holdings to unlock the wealth cockpit.</h3>
-              <p className="mt-3 max-w-2xl text-sm text-slate-300">Add assets, investments, and liabilities so WealthOS can compute net worth, cash position, concentration, and monthly momentum.</p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
-                  <Link href="/assets">Add Asset</Link>
-                </Button>
-                <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
-                  <Link href="/investments">Add Investment</Link>
-                </Button>
-                <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
-                  <Link href="/liabilities">Add Liability</Link>
-                </Button>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                { label: "Net Worth", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
-                { label: "Assets", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
-                { label: "Investments", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
-                { label: "Liabilities", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
-                { label: "Cash", value: formatCurrency(0, { maximumFractionDigits: 0 }) },
-                { label: "Health Score", value: "0/100" },
-              ].map((item) => (
-                <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-                  <p className="text-sm text-slate-300">{item.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-white">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </DashboardCard>
+      {data.emptyState ? (
+        <ExecutiveEmptyState />
       ) : (
         <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <MetricCard title="Net Worth" value={formatCurrency(summary.netWorth, { maximumFractionDigits: 0 })} detail="Total assets minus liabilities" icon={Wallet2} tone={summary.netWorth >= 0 ? "positive" : "warning"} />
-            <MetricCard title="Assets" value={formatCurrency(totalAssetBase, { maximumFractionDigits: 0 })} detail="Bank, investments, fixed deposits, metals, retirement, and real estate" icon={CircleDollarSign} />
-            <MetricCard title="Investments" value={formatCurrency(summary.totalInvestments, { maximumFractionDigits: 0 })} detail="Market value of the portfolio" icon={TrendingUp} tone={summary.totalInvestments > 0 ? "positive" : "default"} />
-            <MetricCard title="Liabilities" value={formatCurrency(summary.totalLiabilities, { maximumFractionDigits: 0 })} detail="Outstanding debt obligations" icon={Banknote} tone={summary.totalLiabilities > totalAssetBase * 0.5 ? "warning" : "default"} />
-            <MetricCard title="Cash" value={formatCurrency(summary.cashHoldings, { maximumFractionDigits: 0 })} detail="Liquid balances and cash equivalents" icon={PiggyBank} tone={summary.cashRatio >= 0.1 ? "positive" : "warning"} />
-          </section>
+          <HeroFinancialHealth data={data} />
 
-          <section className="grid gap-4 xl:grid-cols-2">
-            <DashboardCard className="overflow-hidden border-[#2b2414] bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.22),_transparent_35%),linear-gradient(135deg,#09090b_0%,#111827_55%,#1f2937_100%)] text-white shadow-xl">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-amber-200/80">Retirement Corpus</p>
-                  <p className="mt-3 text-3xl font-semibold tracking-tight">{formatCurrency(retirementSummary?.totalRetirementAssets ?? 0, { maximumFractionDigits: 0 })}</p>
-                  <p className="mt-3 max-w-md text-sm text-slate-300">Dedicated EPF, PPF, and NPS holdings tracked outside the legacy modules.</p>
-                </div>
-                <PiggyBank className="h-5 w-5 text-slate-300" />
-              </div>
-            </DashboardCard>
-
-            <DashboardCard>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-slate-500">Retirement Coverage</p>
-                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
-                    {retirementSummary?.totalRetirementAssets && summary.netWorth > 0
-                      ? `${((retirementSummary.totalRetirementAssets / summary.netWorth) * 100).toFixed(1)}%`
-                      : "0.0%"}
-                  </p>
-                  <p className="mt-3 text-sm text-slate-600">
-                    Retirement module now tracks balances with standardized recurring contribution schedules across PPF, EPF, and NPS.
-                  </p>
-                </div>
-                <ShieldCheck className="h-5 w-5 text-slate-400" />
-              </div>
-            </DashboardCard>
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-            <TrendChartCard data={trendData.length > 0 ? trendData : historyModel.trendData} />
-            <HealthScoreCard health={health} />
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              title="Net Worth"
+              value={formatCurrency(data.kpis.netWorth, { maximumFractionDigits: 0 })}
+              detail="Current household net worth"
+              icon={Wallet2}
+            />
+            <KpiCard
+              title="Goals"
+              value={`${data.kpis.goalsOnTrack}/${data.kpis.totalGoals}`}
+              detail="On-track and completed goals"
+              icon={Target}
+            />
+            <KpiCard
+              title="Decisions"
+              value={`${data.kpis.openDecisions}`}
+              detail={`${data.kpis.criticalDecisions} critical recommendations`}
+              icon={Shield}
+            />
+            <KpiCard
+              title="Retirement"
+              value={`${data.kpis.retirementCoveragePercent.toFixed(1)}%`}
+              detail={formatCurrency(data.kpis.retirementAssets, { maximumFractionDigits: 0 }) + " in retirement assets"}
+              icon={CheckCircle2}
+            />
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <AllocationChartCard
-              title="Asset Allocation"
-              description="Current mix of owned assets by type"
-              data={summary.assetAllocation}
-              emptyLabel="No assets yet. Add holdings to view allocation."
-            />
-            <GrowthChartCard data={historyModel.records} />
+            <DecisionCenterPreview data={data} />
+            <GoalProgressWidget data={data} />
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <DashboardCard className="h-full">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">Recent Activity Timeline</h3>
-                  <p className="text-sm text-slate-600">Latest closings and record updates across the family office</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-slate-400" />
-              </div>
-              {activityItems.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No recent activity yet.</div>
-              ) : (
-                <div className="space-y-3">
-                  {activityItems.map((item) => (
-                    <TimelineRow key={`${item.title}-${item.time}`} item={item} />
-                  ))}
-                </div>
-              )}
-              {latestClose ? (
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
-                  <p className="text-sm text-slate-300">Latest snapshot</p>
-                  <p className="mt-2 text-xl font-semibold">{latestClose.monthLabel}</p>
-                  <p className="mt-2 text-sm text-slate-300">Net worth {formatCurrency(latestClose.snapshot.net_worth, { maximumFractionDigits: 0 })} with month-over-month growth of {formatCurrency(latestClose.snapshot.growth_from_previous_month, { maximumFractionDigits: 0 })}.</p>
-                </div>
-              ) : null}
-            </DashboardCard>
-
-            <DashboardCard className="h-full">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">AI Insight Cards</h3>
-                  <p className="text-sm text-slate-600">Key changes and executive observations</p>
-                </div>
-                <Sparkles className="h-4 w-4 text-slate-400" />
-              </div>
-              {insights.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No insights yet.</div>
-              ) : (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                  {insights.map((insight) => (
-                    <InsightCard key={insight.title} insight={insight} />
-                  ))}
-                </div>
-              )}
-            </DashboardCard>
+            <WealthAllocationWidget data={data} />
+            <CashFlowSummaryWidget data={data} />
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <HoldingListCard
-              title="Top Assets"
-              subtitle="Largest asset holdings by current value"
-              holdings={topAssets.map((asset) => ({
-                name: asset.asset_name,
-                value: asset.current_value,
-                detail: asset.institution ?? asset.asset_type.replaceAll("_", " "),
-              }))}
-              emptyLabel="No assets yet."
-            />
-            <HoldingListCard
-              title="Top Investments"
-              subtitle="Largest investment holdings by current value"
-              holdings={topInvestments.map((investment) => ({
-                name: investment.investment_name,
-                value: investment.current_value,
-                detail: `${investment.category} • ${investment.region}`,
-              }))}
-              emptyLabel="No investments yet."
-            />
+            <RecentActivityTimeline data={data} />
+            <DashboardCard className="h-full bg-slate-50">
+              <div className="flex h-full flex-col justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Executive Notes</h3>
+                  <p className="mt-2 text-sm text-slate-600">Health recommendations from the decision stack.</p>
+                  <div className="mt-4 space-y-2">
+                    {data.health.recommendations.slice(0, 4).map((recommendation) => (
+                      <p key={recommendation} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700">- {recommendation}</p>
+                    ))}
+                    {data.health.recommendations.length === 0 ? <p className="text-sm text-slate-500">No recommendations right now.</p> : null}
+                  </div>
+                </div>
+                <Button asChild variant="outline" className="mt-4 w-full">
+                  <Link href="/planning">
+                    Open Planning Workspace
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </DashboardCard>
           </section>
         </>
       )}
@@ -601,8 +477,10 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({
 function DashboardSkeleton() {
   return (
     <div className="animate-pulse space-y-8">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, index) => (
+      <div className="h-56 rounded-2xl border border-slate-200 bg-slate-100" />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
           <div key={index} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="h-4 w-24 rounded bg-slate-200" />
             <div className="mt-4 h-8 w-32 rounded bg-slate-200" />
@@ -611,7 +489,7 @@ function DashboardSkeleton() {
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <div className="h-[24rem] rounded-2xl border border-slate-200 bg-slate-100" />
         <div className="h-[24rem] rounded-2xl border border-slate-200 bg-slate-100" />
       </div>
