@@ -34,13 +34,13 @@ import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/feedback";
 import { formatCurrency, truncateLabel } from "@/lib/formatters";
 import { calculateTotalAssetBase } from "@/services/finance";
+import type { HealthScore } from "@/services/health";
 import type { Asset } from "@/types/asset";
 import type { Investment } from "@/types/investment";
 import type {
   DashboardTrendPoint,
   ExecutiveInsight,
   FinanceSummarySnapshot,
-  FinancialHealthSnapshot,
 } from "@/services/finance";
 import type { MonthlyHistoryModel } from "@/services/monthlySnapshots";
 import type { RetirementExecutiveSummary } from "@/types/retirementAccount";
@@ -55,7 +55,7 @@ interface ExecutiveDashboardProps {
   loading: boolean;
   emptyState: boolean;
   summary: FinanceSummarySnapshot;
-  health: FinancialHealthSnapshot;
+  health: HealthScore;
   historyModel: MonthlyHistoryModel;
   trendData: DashboardTrendPoint[];
   topAssets: Asset[];
@@ -281,17 +281,17 @@ const AllocationChartCard = memo(function AllocationChartCard({
   );
 });
 
-const HealthScoreCard = memo(function HealthScoreCard({ health }: { health: FinancialHealthSnapshot }) {
+const HealthScoreCard = memo(function HealthScoreCard({ health }: { health: HealthScore }) {
   const circumference = 2 * Math.PI * 48;
-  const progress = circumference - (health.score / 100) * circumference;
+  const progress = circumference - (health.overallScore / 100) * circumference;
 
   return (
     <DashboardCard className="h-full overflow-hidden border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white shadow-xl">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-300">Financial Health Score</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight">{health.label}</h3>
-          <p className="mt-3 max-w-md text-sm text-slate-300">{health.detail}</p>
+          <p className="text-sm font-medium text-slate-300">Financial Health</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight">Grade {health.grade}</h3>
+          <p className="mt-3 max-w-md text-sm text-slate-300">Deterministic score across liquidity, debt, goals, retirement, diversification, and emergency coverage.</p>
         </div>
         <ShieldCheck className="h-5 w-5 text-slate-300" />
       </div>
@@ -314,21 +314,55 @@ const HealthScoreCard = memo(function HealthScoreCard({ health }: { health: Fina
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl font-semibold leading-none">{health.score}</div>
+              <div className="text-4xl font-semibold leading-none">{health.overallScore}</div>
               <div className="mt-1 text-xs uppercase tracking-[0.28em] text-slate-300">/100</div>
             </div>
           </div>
         </div>
 
         <div className="space-y-3">
-          {health.factors.map((factor) => (
-            <div key={factor.label} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
+          {health.components.map((component) => (
+            <div key={component.key} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
               <div className="flex items-center justify-between gap-4">
-                <p className="text-sm text-slate-300">{factor.label}</p>
-                <p className={`text-sm font-semibold ${factor.tone === "positive" ? "text-emerald-300" : factor.tone === "warning" ? "text-amber-300" : "text-slate-100"}`}>{factor.value}</p>
+                <p className="text-sm text-slate-300">{component.label} ({component.weight}%)</p>
+                <p className={`text-sm font-semibold ${component.score >= 80 ? "text-emerald-300" : component.score >= 70 ? "text-amber-300" : "text-rose-300"}`}>{component.score}</p>
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Trend</p>
+          {health.trend.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-300">Trend will appear after monthly closes are available.</p>
+          ) : (
+            <div className="mt-3 h-28 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={health.trend}>
+                  <CartesianGrid stroke="rgba(148,163,184,0.25)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                  <Tooltip formatter={(value) => `${Number(value ?? 0)} / 100`} />
+                  <Area dataKey="score" type="monotone" stroke="#e2e8f0" fill="rgba(226,232,240,0.18)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Recommendations</p>
+          {health.recommendations.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-300">No recommendations right now. Keep monitoring monthly trends.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {health.recommendations.slice(0, 3).map((recommendation) => (
+                <p key={recommendation} className="text-sm text-slate-200">- {recommendation}</p>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </DashboardCard>

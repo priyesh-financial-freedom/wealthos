@@ -11,7 +11,6 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { formatCurrency } from "@/lib/formatters";
 import {
   buildExecutiveInsights,
-  buildFinancialHealthScore,
   getRecentAssets,
   getRecentLiabilities,
   getTopAssets,
@@ -21,6 +20,7 @@ import { buildMonthlyHistoryModel, getMonthlyHistory } from "@/services/monthlyS
 import { buildBalanceSheetTrendFallback, getBalanceSheetData, type BalanceSheetSummary } from "@/services/balanceSheet";
 import { buildRetirementDashboardModel, buildRetirementExecutiveSummary } from "@/services/retirement";
 import { getUniversalDashboardSummary } from "@/services/universalAccounts";
+import { healthScoreService, type HealthScore } from "@/services/health";
 import type { Asset } from "@/types/asset";
 import type { Liability } from "@/types/liability";
 import type { Investment } from "@/types/investment";
@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<BalanceSheetSummary | null>(null);
   const [retirementSummary, setRetirementSummary] = useState<RetirementExecutiveSummary | null>(null);
   const [universalSummary, setUniversalSummary] = useState<UniversalDashboardSummary | null>(null);
+  const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +50,12 @@ export default function DashboardPage() {
           getMonthlyHistory(),
           getUniversalDashboardSummary().catch(() => null),
         ]);
+        const historyModel = buildMonthlyHistoryModel(history);
+        const calculatedHealthScore = await healthScoreService.calculateHealthScore({
+          summary: balanceSheetData.summary,
+          monthlyHistory: historyModel,
+        });
+
         if (isMounted) {
           const retirementModel = buildRetirementDashboardModel(balanceSheetData.retirementAccounts);
 
@@ -59,6 +66,7 @@ export default function DashboardPage() {
           setSummary(balanceSheetData.summary);
           setRetirementSummary(buildRetirementExecutiveSummary(retirementModel));
           setUniversalSummary(universal);
+          setHealthScore(calculatedHealthScore);
           setError(null);
         }
       } catch (error) {
@@ -122,15 +130,7 @@ export default function DashboardPage() {
   const recentAssets = useMemo(() => getRecentAssets(assets), [assets]);
   const recentInvestments = useMemo(() => getRecentInvestments(investments), [investments]);
   const recentLiabilities = useMemo(() => getRecentLiabilities(liabilities), [liabilities]);
-  const latestGrowth = historyModel.latest?.snapshot.growth_from_previous_month ?? 0;
   const activeSummary = summary;
-  const overallCapital = Math.max((activeSummary?.totalAssets ?? 0) + (activeSummary?.totalInvestments ?? 0), 1);
-  const largestAssetShare = activeSummary?.largestAsset ? Number(activeSummary.largestAsset.current_value ?? 0) / overallCapital : 0;
-  const largestInvestmentShare = investmentSummary.largestHolding ? Number(investmentSummary.largestHolding.current_value ?? 0) / overallCapital : 0;
-  const health = useMemo(
-    () => buildFinancialHealthScore({ summary: activeSummary ?? { totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, debtRatio: 0, monthlyEmi: 0, cashHoldings: 0, cashRatio: 0, assetAllocation: [], liabilityAllocation: [], largestAsset: null, largestLiability: null }, latestMonthlyGrowth: latestGrowth, largestAssetShare, largestInvestmentShare }),
-    [activeSummary, largestAssetShare, largestInvestmentShare, latestGrowth],
-  );
   const insights = useMemo(
     () => {
       if (!activeSummary) {
@@ -200,7 +200,7 @@ export default function DashboardPage() {
             emptyState={!hasFinancialData && !hasUniversalData}
             summary={activeSummary ?? { totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, debtRatio: 0, monthlyEmi: 0, cashHoldings: 0, cashRatio: 0, assetAllocation: [], liabilityAllocation: [], largestAsset: null, largestLiability: null }}
             trendData={trendData}
-            health={health}
+            health={healthScore ?? { overallScore: 0, grade: "Needs Attention", components: [], strengths: [], watchItems: [], recommendations: [], trend: [] }}
             topAssets={topAssets}
             topInvestments={topInvestments}
             insights={insights}
