@@ -3,3 +3,4 @@ export const placeholderService = {
 };
 
 export * from "@/services/contributions";
+export * from "@/services/core/event-engine";

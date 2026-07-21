@@ -4,3 +4,4 @@ export type AppConfig = {
 };
 
 export * from "@/types/contributionPolicy";
+export * from "@/types/financialEvent";
