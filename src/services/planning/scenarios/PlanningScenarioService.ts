@@ -65,15 +65,171 @@ function assertSupabaseClient() {
   return supabase;
 }
 
+function extractSupabaseError(error: unknown): {
+  code: string | null;
+  message: string | null;
+  details: string | null;
+  hint: string | null;
+} {
+  if (!error || typeof error !== "object") {
+    return {
+      code: null,
+      message: null,
+      details: null,
+      hint: null,
+    };
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+
+  return {
+    code: typeof maybeError.code === "string" ? maybeError.code : null,
+    message: typeof maybeError.message === "string" ? maybeError.message : null,
+    details: typeof maybeError.details === "string" ? maybeError.details : null,
+    hint: typeof maybeError.hint === "string" ? maybeError.hint : null,
+  };
+}
+
+async function getSupabaseSessionDiagnostics(client: ReturnType<typeof assertSupabaseClient>, operationName: string) {
+  const requestStart = new Date().toISOString();
+  console.info("[PlanningScenarioService][SupabaseRequest]", {
+    operationName: `${operationName}.auth.getSession`,
+    table: "auth.sessions",
+    authenticatedUserId: null,
+    requestStart,
+  });
+
+  try {
+    const response = await client.auth.getSession();
+    const session = response.data.session ?? null;
+    const sessionUserId = session?.user?.id ?? null;
+    const hasActiveSession = Boolean(session);
+    const errorDetails = extractSupabaseError(response.error);
+
+    console.info("[PlanningScenarioService][SupabaseResponse]", {
+      operationName: `${operationName}.auth.getSession`,
+      table: "auth.sessions",
+      authenticatedUserId: sessionUserId,
+      requestStart,
+      hasActiveSession,
+      response,
+      error: response.error ?? null,
+      errorCode: errorDetails.code,
+      errorMessage: errorDetails.message,
+      errorDetails: errorDetails.details,
+      errorHint: errorDetails.hint,
+    });
+
+    return {
+      hasActiveSession,
+      sessionUserId,
+    };
+  } catch (sessionError) {
+    const errorDetails = extractSupabaseError(sessionError);
+
+    console.error("[PlanningScenarioService][SupabaseResponse]", {
+      operationName: `${operationName}.auth.getSession`,
+      table: "auth.sessions",
+      authenticatedUserId: null,
+      requestStart,
+      hasActiveSession: false,
+      response: null,
+      error: sessionError,
+      errorCode: errorDetails.code,
+      errorMessage: errorDetails.message,
+      errorDetails: errorDetails.details,
+      errorHint: errorDetails.hint,
+    });
+
+    return {
+      hasActiveSession: false,
+      sessionUserId: null,
+    };
+  }
+}
+
+async function runSupabaseRequest<TResponse extends { error?: unknown }>(params: {
+  client: ReturnType<typeof assertSupabaseClient>;
+  operationName: string;
+  table: string;
+  authenticatedUserId: string | null;
+  requestFactory: () => Promise<TResponse>;
+}): Promise<TResponse> {
+  const { client, operationName, table, authenticatedUserId, requestFactory } = params;
+  const sessionDiagnostics = await getSupabaseSessionDiagnostics(client, operationName);
+  const requestStart = new Date().toISOString();
+
+  console.info("[PlanningScenarioService][SupabaseRequest]", {
+    operationName,
+    table,
+    authenticatedUserId: authenticatedUserId ?? sessionDiagnostics.sessionUserId,
+    requestStart,
+    hasActiveSession: sessionDiagnostics.hasActiveSession,
+  });
+
+  try {
+    const response = await requestFactory();
+    const responseError = response.error ?? null;
+    const errorDetails = extractSupabaseError(responseError);
+
+    console.info("[PlanningScenarioService][SupabaseResponse]", {
+      operationName,
+      table,
+      authenticatedUserId: authenticatedUserId ?? sessionDiagnostics.sessionUserId,
+      requestStart,
+      hasActiveSession: sessionDiagnostics.hasActiveSession,
+      response,
+      error: responseError,
+      errorCode: errorDetails.code,
+      errorMessage: errorDetails.message,
+      errorDetails: errorDetails.details,
+      errorHint: errorDetails.hint,
+    });
+
+    if (responseError) {
+      throw new Error(errorDetails.message ?? "Supabase request failed.");
+    }
+
+    return response;
+  } catch (requestError) {
+    const errorDetails = extractSupabaseError(requestError);
+
+    console.error("[PlanningScenarioService][SupabaseResponse]", {
+      operationName,
+      table,
+      authenticatedUserId: authenticatedUserId ?? sessionDiagnostics.sessionUserId,
+      requestStart,
+      hasActiveSession: sessionDiagnostics.hasActiveSession,
+      response: null,
+      error: requestError,
+      errorCode: errorDetails.code,
+      errorMessage: errorDetails.message,
+      errorDetails: errorDetails.details,
+      errorHint: errorDetails.hint,
+    });
+
+    throw requestError;
+  }
+}
+
 async function requireAuthenticatedUser() {
   const client = assertSupabaseClient();
 
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser();
+  const response = await runSupabaseRequest({
+    client,
+    operationName: "requireAuthenticatedUser.getUser",
+    table: "auth.users",
+    authenticatedUserId: null,
+    requestFactory: async () => client.auth.getUser(),
+  });
 
-  if (error || !user) {
+  const user = response.data.user;
+  if (!user) {
     if (typeof window !== "undefined") {
       window.location.assign("/login");
     }
@@ -221,19 +377,22 @@ class SupabasePlanningScenarioStore implements PlanningScenarioStore {
 
   private async queryScenarioRows(userId: string) {
     const client = assertSupabaseClient();
-    const { data, error } = await client
-      .from("planning_scenarios")
-      .select("*")
-      .eq("user_id", userId)
-      .order("is_default", { ascending: false })
-      .order("is_active", { ascending: false })
-      .order("updated_at", { ascending: false });
+    const response = await runSupabaseRequest({
+      client,
+      operationName: "planningScenarios.queryScenarioRows.select",
+      table: "planning_scenarios",
+      authenticatedUserId: userId,
+      requestFactory: async () =>
+        client
+          .from("planning_scenarios")
+          .select("*")
+          .eq("user_id", userId)
+          .order("is_default", { ascending: false })
+          .order("is_active", { ascending: false })
+          .order("updated_at", { ascending: false }),
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return (data ?? []) as PlanningScenario[];
+    return (response.data ?? []) as PlanningScenario[];
   }
 
   async listScenarios(userId: string): Promise<PlanningScenarioWithOverrides[]> {
@@ -243,13 +402,15 @@ class SupabasePlanningScenarioStore implements PlanningScenarioStore {
 
   async getScenario(userId: string, scenarioId: string): Promise<PlanningScenarioWithOverrides | null> {
     const client = assertSupabaseClient();
-    const { data, error } = await client.from("planning_scenarios").select("*").eq("user_id", userId).eq("id", scenarioId).limit(1);
+    const response = await runSupabaseRequest({
+      client,
+      operationName: "planningScenarios.getScenario.select",
+      table: "planning_scenarios",
+      authenticatedUserId: userId,
+      requestFactory: async () => client.from("planning_scenarios").select("*").eq("user_id", userId).eq("id", scenarioId).limit(1),
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const row = (data?.[0] ?? null) as PlanningScenario | null;
+    const row = (response.data?.[0] ?? null) as PlanningScenario | null;
     if (!row) {
       return null;
     }
@@ -262,102 +423,118 @@ class SupabasePlanningScenarioStore implements PlanningScenarioStore {
 
   async createScenario(userId: string, input: PlanningScenarioInsert): Promise<PlanningScenario> {
     const client = assertSupabaseClient();
-    const { data, error } = await client
-      .from("planning_scenarios")
-      .insert({
-        user_id: userId,
-        name: input.name,
-        description: input.description ?? null,
-        type: input.type ?? "CUSTOM",
-        is_default: Boolean(input.is_default),
-        is_active: Boolean(input.is_active),
-      })
-      .select("*")
-      .single();
+    const response = await runSupabaseRequest({
+      client,
+      operationName: "planningScenarios.createScenario.insert",
+      table: "planning_scenarios",
+      authenticatedUserId: userId,
+      requestFactory: async () =>
+        client
+          .from("planning_scenarios")
+          .insert({
+            user_id: userId,
+            name: input.name,
+            description: input.description ?? null,
+            type: input.type ?? "CUSTOM",
+            is_default: Boolean(input.is_default),
+            is_active: Boolean(input.is_active),
+          })
+          .select("*")
+          .single(),
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data as PlanningScenario;
+    return response.data as PlanningScenario;
   }
 
   async updateScenario(userId: string, input: PlanningScenarioUpdate): Promise<PlanningScenario> {
     const client = assertSupabaseClient();
     const { id, ...updates } = input;
-    const { data, error } = await client
-      .from("planning_scenarios")
-      .update({
-        name: updates.name,
-        description: updates.description ?? null,
-        type: updates.type,
-        is_default: updates.is_default,
-        is_active: updates.is_active,
-      })
-      .eq("user_id", userId)
-      .eq("id", id)
-      .select("*")
-      .single();
+    const response = await runSupabaseRequest({
+      client,
+      operationName: "planningScenarios.updateScenario.update",
+      table: "planning_scenarios",
+      authenticatedUserId: userId,
+      requestFactory: async () =>
+        client
+          .from("planning_scenarios")
+          .update({
+            name: updates.name,
+            description: updates.description ?? null,
+            type: updates.type,
+            is_default: updates.is_default,
+            is_active: updates.is_active,
+          })
+          .eq("user_id", userId)
+          .eq("id", id)
+          .select("*")
+          .single(),
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data as PlanningScenario;
+    return response.data as PlanningScenario;
   }
 
   async deleteScenario(userId: string, scenarioId: string): Promise<void> {
     const client = assertSupabaseClient();
-    const { error } = await client.from("planning_scenarios").delete().eq("user_id", userId).eq("id", scenarioId);
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    await runSupabaseRequest({
+      client,
+      operationName: "planningScenarios.deleteScenario.delete",
+      table: "planning_scenarios",
+      authenticatedUserId: userId,
+      requestFactory: async () => client.from("planning_scenarios").delete().eq("user_id", userId).eq("id", scenarioId),
+    });
   }
 
   async saveOverrides(userId: string, scenarioId: string, overrides: PlanningScenarioOverrideInput[]): Promise<void> {
     const client = assertSupabaseClient();
     const normalized = overrides.filter((override) => isEditableKey(override.assumption_key));
 
-    const { error: deleteError } = await client.from("planning_scenario_overrides").delete().eq("user_id", userId).eq("scenario_id", scenarioId);
-
-    if (deleteError) {
-      throw new Error(deleteError.message);
-    }
+    await runSupabaseRequest({
+      client,
+      operationName: "planningScenarioOverrides.saveOverrides.delete",
+      table: "planning_scenario_overrides",
+      authenticatedUserId: userId,
+      requestFactory: async () => client.from("planning_scenario_overrides").delete().eq("user_id", userId).eq("scenario_id", scenarioId),
+    });
 
     if (normalized.length === 0) {
       return;
     }
 
-    const { error } = await client.from("planning_scenario_overrides").upsert(
-      normalized.map((override) => ({
-        user_id: userId,
-        scenario_id: scenarioId,
-        assumption_key: override.assumption_key,
-        override_value: override.override_value,
-      })),
-      { onConflict: "scenario_id,assumption_key" },
-    );
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    await runSupabaseRequest({
+      client,
+      operationName: "planningScenarioOverrides.saveOverrides.upsert",
+      table: "planning_scenario_overrides",
+      authenticatedUserId: userId,
+      requestFactory: async () =>
+        client.from("planning_scenario_overrides").upsert(
+          normalized.map((override) => ({
+            user_id: userId,
+            scenario_id: scenarioId,
+            assumption_key: override.assumption_key,
+            override_value: override.override_value,
+          })),
+          { onConflict: "scenario_id,assumption_key" },
+        ),
+    });
   }
 
   async loadOverrides(userId: string, scenarioId: string): Promise<PlanningScenarioOverride[]> {
     const client = assertSupabaseClient();
-    const { data, error } = await client
-      .from("planning_scenario_overrides")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("scenario_id", scenarioId)
-      .order("created_at", { ascending: true });
+    const response = await runSupabaseRequest({
+      client,
+      operationName: "planningScenarioOverrides.loadOverrides.select",
+      table: "planning_scenario_overrides",
+      authenticatedUserId: userId,
+      requestFactory: async () =>
+        client
+          .from("planning_scenario_overrides")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("scenario_id", scenarioId)
+          .order("created_at", { ascending: true }),
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return (data ?? []) as PlanningScenarioOverride[];
+    return (response.data ?? []) as PlanningScenarioOverride[];
   }
 }
 
@@ -409,37 +586,43 @@ function buildSimulationRequest(scenarioId: string, baseAssumptions: Assumptions
 async function buildSnapshotFromLatestMonthEnd(): Promise<{ id: string; month: string; openingBalances: ProjectionBalanceState; openingEntities: ProjectedEntity[] } | null> {
   const { client, user } = await requireAuthenticatedUser();
 
-  const { data: closeRows, error: closeError } = await client
-    .from("month_end_closes")
-    .select("id, close_month, close_year")
-    .eq("user_id", user.id)
-    .eq("status", "closed")
-    .order("close_year", { ascending: false })
-    .order("close_month", { ascending: false })
-    .order("version_number", { ascending: false })
-    .limit(1);
+  const closeResponse = await runSupabaseRequest({
+    client,
+    operationName: "monthEndCloses.buildSnapshot.selectLatestClosed",
+    table: "month_end_closes",
+    authenticatedUserId: user.id,
+    requestFactory: async () =>
+      client
+        .from("month_end_closes")
+        .select("id, close_month, close_year")
+        .eq("user_id", user.id)
+        .eq("status", "closed")
+        .order("close_year", { ascending: false })
+        .order("close_month", { ascending: false })
+        .order("version_number", { ascending: false })
+        .limit(1),
+  });
 
-  if (closeError) {
-    throw new Error(closeError.message);
-  }
-
-  const closeRow = closeRows?.[0];
+  const closeRow = closeResponse.data?.[0];
   if (!closeRow) {
     return null;
   }
 
-  const { data: items, error: itemsError } = await client
-    .from("month_end_close_items")
-    .select("*")
-    .eq("close_id", closeRow.id)
-    .order("sort_order", { ascending: true });
-
-  if (itemsError) {
-    throw new Error(itemsError.message);
-  }
+  const itemsResponse = await runSupabaseRequest({
+    client,
+    operationName: "monthEndCloseItems.buildSnapshot.selectByCloseId",
+    table: "month_end_close_items",
+    authenticatedUserId: user.id,
+    requestFactory: async () =>
+      client
+        .from("month_end_close_items")
+        .select("*")
+        .eq("close_id", closeRow.id)
+        .order("sort_order", { ascending: true }),
+  });
 
   const month = `${closeRow.close_year}-${String(closeRow.close_month).padStart(2, "0")}`;
-  const projectedEntities = ((items ?? []) as MonthEndCloseItem[]).map((item) => mapMonthEndCloseItemToProjectedEntity(item, month));
+  const projectedEntities = ((itemsResponse.data ?? []) as MonthEndCloseItem[]).map((item) => mapMonthEndCloseItemToProjectedEntity(item, month));
   const openingBalances = summarizeProjectedEntities(projectedEntities);
 
   return {

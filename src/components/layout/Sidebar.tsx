@@ -25,6 +25,7 @@ import {
   Upload,
   Wallet,
   Search,
+  Repeat,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -87,7 +88,8 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const planningRetirementActive = activeHref === "/planning/retirement";
   const planningCashFlowActive = activeHref === "/planning/cashflow";
   const planningEventsActive = activeHref === "/planning/events";
-  const planningActive = planningDashboardActive || planningScenariosActive || planningGoalsActive || planningDecisionCenterActive || planningRetirementActive || planningCashFlowActive || planningEventsActive;
+  const planningContributionPoliciesActive = activeHref === "/planning/contribution-policies";
+  const planningActive = planningDashboardActive || planningScenariosActive || planningGoalsActive || planningDecisionCenterActive || planningRetirementActive || planningCashFlowActive || planningEventsActive || planningContributionPoliciesActive;
   const netWorthActive = activeHref === "/balance-sheet";
 
   const bankAccountsActive = activeHref === "/bank-accounts";
@@ -190,6 +192,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                   <Link href="/planning/events" className={rowLinkClass({ active: planningEventsActive, level: 2, collapsed })}>
                     <CalendarClock className="h-4 w-4 shrink-0" />
                     {!collapsed ? <span className="truncate">Financial Events</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/contribution-policies" className={rowLinkClass({ active: planningContributionPoliciesActive, level: 2, collapsed })}>
+                    <Repeat className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Contribution Policies</span> : null}
                   </Link>
                 </div>
               </div>

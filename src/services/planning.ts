@@ -86,6 +86,15 @@ const planningDashboardMockSummary: PlanningDashboardSummary = {
       icon: "CalendarClock",
     },
     {
+      id: "contribution-policies",
+      title: "Contribution Policies",
+      description: "Define reusable recurring contribution rules for long-term investing and policy-based execution.",
+      status: "Policy engine ready",
+      actionLabel: "Manage policies",
+      actionHref: "/planning/contribution-policies",
+      icon: "Repeat",
+    },
+    {
       id: "decision-center",
       title: "Decision Center",
       description: "Generate deterministic recommendations using simulation and health outputs.",
