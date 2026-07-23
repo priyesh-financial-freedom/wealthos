@@ -619,11 +619,24 @@ export class GoalService {
   }
 
   async listGoals(options?: { includeProgress?: boolean }): Promise<FinancialGoalWithProgress[]> {
+    const startedAt = Date.now();
+    console.log("[GoalService] listGoals start", { options });
     const userId = await this.userId();
+    console.log("[GoalService] listGoals after userId", { userId, durationMs: Date.now() - startedAt });
     const [goals, scenarioNames] = await Promise.all([this.store.listGoals(userId), this.store.listScenarioNames(userId)]);
+    console.log("[GoalService] listGoals fetched base records", {
+      goalsCount: goals.length,
+      scenarioNamesCount: scenarioNames.size,
+      durationMs: Date.now() - startedAt,
+    });
 
     const includeProgress = options?.includeProgress ?? true;
+    console.log("[GoalService] listGoals before enrich", { includeProgress, goalsCount: goals.length });
     const enriched = await Promise.all(goals.map((goal) => this.enrichGoal(goal, userId, includeProgress, scenarioNames)));
+    console.log("[GoalService] listGoals complete", {
+      goalsCount: enriched.length,
+      durationMs: Date.now() - startedAt,
+    });
 
     return enriched;
   }
@@ -701,8 +714,31 @@ export class GoalService {
   }
 
   private async enrichGoal(goal: FinancialGoal, userId: string, includeProgress: boolean, scenarioNames?: Map<string, string>): Promise<FinancialGoalWithProgress> {
+    const startedAt = Date.now();
+    console.log("[GoalService] enrichGoal start", {
+      goalId: goal.id,
+      includeProgress,
+      linkedScenarioId: goal.linked_scenario_id ?? null,
+    });
     const linkedScenarioName = goal.linked_scenario_id ? (scenarioNames ?? (await this.store.listScenarioNames(userId))).get(goal.linked_scenario_id) ?? null : null;
+    if (goal.linked_scenario_id) {
+      console.log("[GoalService] enrichGoal resolved scenario name", {
+        goalId: goal.id,
+        linkedScenarioId: goal.linked_scenario_id,
+        linkedScenarioName,
+      });
+    }
+
+    console.log("[GoalService] enrichGoal before progress calculation", {
+      goalId: goal.id,
+      includeProgress,
+    });
     const progress = includeProgress ? await this.calculateGoalProgressForRecord(goal, userId) : null;
+    console.log("[GoalService] enrichGoal after progress calculation", {
+      goalId: goal.id,
+      hasProgress: Boolean(progress),
+      durationMs: Date.now() - startedAt,
+    });
 
     return {
       ...goal,
@@ -733,17 +769,50 @@ export class GoalService {
   }
 
   private async runGoalSimulation(goal: FinancialGoal, userId: string): Promise<SimulationResult> {
+    const startedAt = Date.now();
+    console.log("[GoalService] runGoalSimulation start", {
+      goalId: goal.id,
+      userId,
+      linkedScenarioId: goal.linked_scenario_id ?? null,
+    });
+
     if (goal.linked_scenario_id) {
+      console.log("[GoalService] runGoalSimulation before hasScenario", {
+        goalId: goal.id,
+        linkedScenarioId: goal.linked_scenario_id,
+      });
       const hasScenario = await this.store.hasScenario(userId, goal.linked_scenario_id);
+      console.log("[GoalService] runGoalSimulation after hasScenario", {
+        goalId: goal.id,
+        linkedScenarioId: goal.linked_scenario_id,
+        hasScenario,
+      });
       if (!hasScenario) {
         throw new Error("Linked scenario was not found.");
       }
 
-      return this.scenarioSimulation(goal.linked_scenario_id);
+      console.log("[GoalService] runGoalSimulation before scenarioSimulation", {
+        goalId: goal.id,
+        linkedScenarioId: goal.linked_scenario_id,
+      });
+      const scenarioResult = await this.scenarioSimulation(goal.linked_scenario_id);
+      console.log("[GoalService] runGoalSimulation after scenarioSimulation", {
+        goalId: goal.id,
+        durationMs: Date.now() - startedAt,
+      });
+      return scenarioResult;
     }
 
+    console.log("[GoalService] runGoalSimulation before simulationEngine.run", {
+      goalId: goal.id,
+    });
     const outcome = await this.simulationEngine.run({
       snapshotId: goal.id,
+    });
+    console.log("[GoalService] runGoalSimulation after simulationEngine.run", {
+      goalId: goal.id,
+      ok: outcome.ok,
+      durationMs: Date.now() - startedAt,
     });
 
     if (!outcome.ok) {

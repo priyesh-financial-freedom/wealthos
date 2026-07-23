@@ -17,12 +17,20 @@ export function TopNavigation({ onMenuClick }: TopNavigationProps) {
   useEffect(() => {
     async function loadUser() {
       if (!supabase) {
+        console.warn("[TopNavigation] Supabase client not configured; skipping loadUser");
         return;
       }
 
+      const startedAt = Date.now();
+      console.log("[TopNavigation] before getSession");
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      console.log("[TopNavigation] after getSession", {
+        durationMs: Date.now() - startedAt,
+        hasSession: Boolean(session),
+        userId: session?.user?.id ?? null,
+      });
       setEmail(session?.user?.email ?? null);
     }
 

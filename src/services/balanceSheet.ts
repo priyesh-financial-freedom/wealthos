@@ -254,19 +254,45 @@ export function buildBalanceSheetSummary(
 }
 
 export async function getBalanceSheetData(): Promise<BalanceSheetData> {
+  const startedAt = Date.now();
+  console.log("[balanceSheet] getBalanceSheetData start");
+
+  const trace = async <T>(label: string, operation: () => Promise<T>, fallback?: T): Promise<T> => {
+    const opStartedAt = Date.now();
+    console.log(`[balanceSheet] ${label} start`);
+    try {
+      const value = await operation();
+      console.log(`[balanceSheet] ${label} complete`, {
+        durationMs: Date.now() - opStartedAt,
+        count: Array.isArray(value) ? value.length : undefined,
+      });
+      return value;
+    } catch (error) {
+      console.error(`[balanceSheet] ${label} error`, {
+        durationMs: Date.now() - opStartedAt,
+        error,
+      });
+      if (typeof fallback !== "undefined") {
+        console.log(`[balanceSheet] ${label} fallback used`);
+        return fallback;
+      }
+      throw error;
+    }
+  };
+
   const [assets, liabilities, investments, bankAccounts, retirementAccounts, fixedDeposits, goldHoldings, silverHoldings, realEstateProperties] = await Promise.all([
-    getAssets(),
-    getLiabilities(),
-    getInvestments(),
-    getBankAccounts().catch(() => []),
-    getRetirementAccounts().catch(() => []),
-    getFixedDeposits().catch(() => []),
-    getGoldHoldings().catch(() => []),
-    getSilverHoldings().catch(() => []),
-    getRealEstateProperties().catch(() => []),
+    trace("getAssets", () => getAssets()),
+    trace("getLiabilities", () => getLiabilities()),
+    trace("getInvestments", () => getInvestments()),
+    trace("getBankAccounts", () => getBankAccounts(), [] as BankAccount[]),
+    trace("getRetirementAccounts", () => getRetirementAccounts(), [] as RetirementAccount[]),
+    trace("getFixedDeposits", () => getFixedDeposits(), [] as FixedDeposit[]),
+    trace("getGoldHoldings", () => getGoldHoldings(), [] as GoldHolding[]),
+    trace("getSilverHoldings", () => getSilverHoldings(), [] as SilverHolding[]),
+    trace("getRealEstateProperties", () => getRealEstateProperties(), [] as RealEstateProperty[]),
   ]);
 
-  return {
+  const payload: BalanceSheetData = {
     assets,
     liabilities,
     investments,
@@ -288,6 +314,15 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
       realEstateProperties,
     ),
   };
+
+  console.log("[balanceSheet] getBalanceSheetData complete", {
+    durationMs: Date.now() - startedAt,
+    assets: payload.assets.length,
+    liabilities: payload.liabilities.length,
+    investments: payload.investments.length,
+  });
+
+  return payload;
 }
 
 export function buildBalanceSheetTrendFallback(summary: BalanceSheetSummary): DashboardTrendPoint[] {

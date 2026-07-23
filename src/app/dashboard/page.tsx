@@ -19,15 +19,28 @@ export default function DashboardPage() {
     let isMounted = true;
 
     async function loadDashboard() {
+      const startedAt = Date.now();
+      console.log("[DashboardPage] loadDashboard start", { startedAt });
       try {
+        console.log("[DashboardPage] before executiveDashboardService.getDashboard");
         const response = await executiveDashboardService.getDashboard();
+        console.log("[DashboardPage] after executiveDashboardService.getDashboard", {
+          durationMs: Date.now() - startedAt,
+          hasData: Boolean(response),
+          emptyState: response.emptyState,
+        });
         if (!isMounted) {
+          console.log("[DashboardPage] loadDashboard ignored result because component unmounted");
           return;
         }
 
         setData(response);
         setError(null);
       } catch (loadError) {
+        console.error("[DashboardPage] loadDashboard error", {
+          durationMs: Date.now() - startedAt,
+          loadError,
+        });
         if (!isMounted) {
           return;
         }
@@ -35,6 +48,9 @@ export default function DashboardPage() {
         setError(loadError instanceof Error ? loadError.message : "Unable to refresh dashboard");
       } finally {
         if (isMounted) {
+          console.log("[DashboardPage] loadDashboard finished", {
+            durationMs: Date.now() - startedAt,
+          });
           setLoading(false);
         }
       }
