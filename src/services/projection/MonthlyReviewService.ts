@@ -421,23 +421,10 @@ export class MonthlyReviewService {
   }
 
   async getMonthlyReviewWorkspace(selectedCloseId?: string): Promise<MonthlyReviewWorkspace> {
-    const startedAt = Date.now();
-    console.log("[MonthlyReviewService] getMonthlyReviewWorkspace start", { selectedCloseId: selectedCloseId ?? null });
     const { client, user } = await requireAuthenticatedUser();
-    console.log("[MonthlyReviewService] after requireAuthenticatedUser", {
-      userId: user.id,
-      durationMs: Date.now() - startedAt,
-    });
-
-    console.log("[MonthlyReviewService] before listClosedPeriods");
     const periods = await listClosedPeriods(client, user.id);
-    console.log("[MonthlyReviewService] after listClosedPeriods", {
-      periodsCount: periods.length,
-      durationMs: Date.now() - startedAt,
-    });
 
     if (periods.length === 0) {
-      console.log("[MonthlyReviewService] no periods available; returning empty workspace");
       return {
         periods: [],
         selectedPeriod: null,
@@ -448,12 +435,6 @@ export class MonthlyReviewService {
     }
 
     const selectedPeriod = periods.find((period) => period.closeId === selectedCloseId) ?? periods[0];
-    console.log("[MonthlyReviewService] selectedPeriod resolved", {
-      selectedCloseId: selectedPeriod.closeId,
-      monthKey: selectedPeriod.monthKey,
-    });
-
-    console.log("[MonthlyReviewService] before loading selected/previous/ytd items");
     const [selectedItems, previousItems, ytdBaselineItems] = await Promise.all([
       getCloseItems(client, selectedPeriod.closeId),
       (async () => {
@@ -462,12 +443,6 @@ export class MonthlyReviewService {
       })(),
       getYearToDateBaselineItems(client, periods, selectedPeriod),
     ]);
-    console.log("[MonthlyReviewService] after loading selected/previous/ytd items", {
-      selectedItems: selectedItems.length,
-      previousItems: previousItems?.length ?? 0,
-      ytdBaselineItems: ytdBaselineItems?.length ?? 0,
-      durationMs: Date.now() - startedAt,
-    });
 
     const entities = buildEntityComparisons(selectedItems).sort((left, right) => {
       const definitionIndex = MONTH_END_CLOSE_ITEM_DEFINITIONS.findIndex((item) => item.key === left.itemKey) - MONTH_END_CLOSE_ITEM_DEFINITIONS.findIndex((item) => item.key === right.itemKey);
@@ -517,13 +492,6 @@ export class MonthlyReviewService {
         topContributors,
       },
     };
-
-    console.log("[MonthlyReviewService] getMonthlyReviewWorkspace complete", {
-      durationMs: Date.now() - startedAt,
-      entities: workspace.entities.length,
-      kpis: workspace.kpis.length,
-      hasSummary: Boolean(workspace.summary),
-    });
 
     return workspace;
   }

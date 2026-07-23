@@ -124,46 +124,21 @@ function shareOf(value: number, total: number): number {
 }
 
 async function traceAsync<T>(label: string, operation: () => Promise<T>): Promise<T> {
-  const startedAt = Date.now();
-  console.log(`[ExecutiveDashboardService] ${label} - start`);
-
   try {
-    const result = await operation();
-    console.log(`[ExecutiveDashboardService] ${label} - complete`, {
-      durationMs: Date.now() - startedAt,
-    });
-    return result;
+    return await operation();
   } catch (error) {
-    console.error(`[ExecutiveDashboardService] ${label} - error`, {
-      durationMs: Date.now() - startedAt,
-      error,
-    });
     throw error;
   }
 }
 
 async function loadSimulation(): Promise<SimulationResult | null> {
-  const startedAt = Date.now();
-  console.log("[ExecutiveDashboardService] loadSimulation helper start");
   const simulationEngine = createPlanningScenarioSimulationEngine();
-  console.log("[ExecutiveDashboardService] loadSimulation helper before simulationEngine.run");
   const outcome = await simulationEngine.run({ snapshotId: "executive-dashboard" });
-  console.log("[ExecutiveDashboardService] loadSimulation helper after simulationEngine.run", {
-    durationMs: Date.now() - startedAt,
-    ok: outcome.ok,
-  });
 
   if (!outcome.ok) {
-    console.warn("[ExecutiveDashboardService] loadSimulation helper returning null because outcome is not ok", {
-      code: outcome.error.code,
-      message: outcome.error.message,
-    });
     return null;
   }
 
-  console.log("[ExecutiveDashboardService] loadSimulation helper complete", {
-    durationMs: Date.now() - startedAt,
-  });
   return outcome.result;
 }
 
@@ -174,14 +149,8 @@ async function loadDecisionPreview(input: {
   monthlyReview: MonthlyReviewWorkspace | null;
   simulation: SimulationResult | null;
 }): Promise<DecisionRecommendation[]> {
-  const startedAt = Date.now();
-  console.log("[ExecutiveDashboardService] loadDecisionPreview start", {
-    hasSimulation: Boolean(input.simulation),
-    goalsCount: input.goals.length,
-  });
   const simulation = input.simulation;
   if (!simulation) {
-    console.log("[ExecutiveDashboardService] loadDecisionPreview skip because simulation is unavailable");
     return [];
   }
 
@@ -200,20 +169,7 @@ async function loadDecisionPreview(input: {
     baselineSimulationLoader: async () => simulation,
   });
 
-  console.log("[ExecutiveDashboardService] loadDecisionPreview before generateRecommendations");
-  const recommendations = await decisionPreviewEngine.generateRecommendations().catch((error) => {
-    console.error("[ExecutiveDashboardService] loadDecisionPreview generateRecommendations failed; returning []", {
-      error,
-      durationMs: Date.now() - startedAt,
-    });
-    return [];
-  });
-  console.log("[ExecutiveDashboardService] loadDecisionPreview complete", {
-    durationMs: Date.now() - startedAt,
-    recommendations: recommendations.length,
-  });
-
-  return recommendations;
+  return decisionPreviewEngine.generateRecommendations().catch(() => []);
 }
 
 function buildGoalProgressItems(goals: FinancialGoalWithProgress[]): ExecutiveGoalProgressItem[] {
@@ -280,34 +236,12 @@ function buildRecentActivity(params: {
 
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const startedAt = Date.now();
-    console.log("[ExecutiveDashboardService] getDashboard start");
-
     const [balanceSheetData, goals, monthlyReview, simulation] = await Promise.all([
       traceAsync("getBalanceSheetData", () => getBalanceSheetData()),
-      traceAsync("goalService.listGoals(includeProgress=true)", () => goalService.listGoals({ includeProgress: true }))
-        .catch((error) => {
-          console.error("[ExecutiveDashboardService] goalService.listGoals fallback to []", { error });
-          return [];
-        }),
-      traceAsync("monthlyReviewService.getMonthlyReviewWorkspace", () => monthlyReviewService.getMonthlyReviewWorkspace())
-        .catch((error) => {
-          console.error("[ExecutiveDashboardService] monthlyReviewService.getMonthlyReviewWorkspace fallback to null", { error });
-          return null;
-        }),
-      traceAsync("loadSimulation", () => loadSimulation())
-        .catch((error) => {
-          console.error("[ExecutiveDashboardService] loadSimulation fallback to null", { error });
-          return null;
-        }),
+      traceAsync("goalService.listGoals(includeProgress=true)", () => goalService.listGoals({ includeProgress: true })).catch(() => []),
+      traceAsync("monthlyReviewService.getMonthlyReviewWorkspace", () => monthlyReviewService.getMonthlyReviewWorkspace()).catch(() => null),
+      traceAsync("loadSimulation", () => loadSimulation()).catch(() => null),
     ]);
-
-    console.log("[ExecutiveDashboardService] base data loaded", {
-      durationMs: Date.now() - startedAt,
-      goalsCount: goals.length,
-      hasMonthlyReview: Boolean(monthlyReview),
-      hasSimulation: Boolean(simulation),
-    });
 
     const health = await traceAsync("healthScoreService.calculateHealthScore", () =>
       healthScoreService.calculateHealthScore({
@@ -318,15 +252,7 @@ export class ExecutiveDashboardService {
       }),
     );
 
-    const decisions = await traceAsync("loadDecisionPreview", () =>
-      loadDecisionPreview({
-        balanceSheet: balanceSheetData,
-        health,
-        goals,
-        monthlyReview,
-        simulation,
-      }),
-    );
+    const decisions = await traceAsync("loadDecisionPreview", () => loadDecisionPreview({ balanceSheet: balanceSheetData, health, goals, monthlyReview, simulation }));
 
     const totalAssetBase = Number(balanceSheetData.summary.totalBalanceSheetAssets ?? 0);
     const totalLiabilities = Number(balanceSheetData.summary.totalLiabilities ?? 0);
@@ -396,12 +322,6 @@ export class ExecutiveDashboardService {
         simulation,
       }),
     };
-
-    console.log("[ExecutiveDashboardService] getDashboard complete", {
-      durationMs: Date.now() - startedAt,
-      emptyState: output.emptyState,
-      decisions: output.decisionCenter.openCount,
-    });
 
     return output;
   }

@@ -96,56 +96,17 @@ function extractSupabaseError(error: unknown): {
 }
 
 async function getSupabaseSessionDiagnostics(client: ReturnType<typeof assertSupabaseClient>, operationName: string) {
-  const requestStart = new Date().toISOString();
-  console.info("[PlanningScenarioService][SupabaseRequest]", {
-    operationName: `${operationName}.auth.getSession`,
-    table: "auth.sessions",
-    authenticatedUserId: null,
-    requestStart,
-  });
-
   try {
     const response = await client.auth.getSession();
     const session = response.data.session ?? null;
     const sessionUserId = session?.user?.id ?? null;
     const hasActiveSession = Boolean(session);
-    const errorDetails = extractSupabaseError(response.error);
-
-    console.info("[PlanningScenarioService][SupabaseResponse]", {
-      operationName: `${operationName}.auth.getSession`,
-      table: "auth.sessions",
-      authenticatedUserId: sessionUserId,
-      requestStart,
-      hasActiveSession,
-      response,
-      error: response.error ?? null,
-      errorCode: errorDetails.code,
-      errorMessage: errorDetails.message,
-      errorDetails: errorDetails.details,
-      errorHint: errorDetails.hint,
-    });
 
     return {
       hasActiveSession,
       sessionUserId,
     };
   } catch (sessionError) {
-    const errorDetails = extractSupabaseError(sessionError);
-
-    console.error("[PlanningScenarioService][SupabaseResponse]", {
-      operationName: `${operationName}.auth.getSession`,
-      table: "auth.sessions",
-      authenticatedUserId: null,
-      requestStart,
-      hasActiveSession: false,
-      response: null,
-      error: sessionError,
-      errorCode: errorDetails.code,
-      errorMessage: errorDetails.message,
-      errorDetails: errorDetails.details,
-      errorHint: errorDetails.hint,
-    });
-
     return {
       hasActiveSession: false,
       sessionUserId: null,
@@ -162,34 +123,11 @@ async function runSupabaseRequest<TResponse extends { error?: unknown }>(params:
 }): Promise<TResponse> {
   const { client, operationName, table, authenticatedUserId, requestFactory } = params;
   const sessionDiagnostics = await getSupabaseSessionDiagnostics(client, operationName);
-  const requestStart = new Date().toISOString();
-
-  console.info("[PlanningScenarioService][SupabaseRequest]", {
-    operationName,
-    table,
-    authenticatedUserId: authenticatedUserId ?? sessionDiagnostics.sessionUserId,
-    requestStart,
-    hasActiveSession: sessionDiagnostics.hasActiveSession,
-  });
 
   try {
     const response = await requestFactory();
     const responseError = response.error ?? null;
     const errorDetails = extractSupabaseError(responseError);
-
-    console.info("[PlanningScenarioService][SupabaseResponse]", {
-      operationName,
-      table,
-      authenticatedUserId: authenticatedUserId ?? sessionDiagnostics.sessionUserId,
-      requestStart,
-      hasActiveSession: sessionDiagnostics.hasActiveSession,
-      response,
-      error: responseError,
-      errorCode: errorDetails.code,
-      errorMessage: errorDetails.message,
-      errorDetails: errorDetails.details,
-      errorHint: errorDetails.hint,
-    });
 
     if (responseError) {
       throw new Error(errorDetails.message ?? "Supabase request failed.");
@@ -197,22 +135,6 @@ async function runSupabaseRequest<TResponse extends { error?: unknown }>(params:
 
     return response;
   } catch (requestError) {
-    const errorDetails = extractSupabaseError(requestError);
-
-    console.error("[PlanningScenarioService][SupabaseResponse]", {
-      operationName,
-      table,
-      authenticatedUserId: authenticatedUserId ?? sessionDiagnostics.sessionUserId,
-      requestStart,
-      hasActiveSession: sessionDiagnostics.hasActiveSession,
-      response: null,
-      error: requestError,
-      errorCode: errorDetails.code,
-      errorMessage: errorDetails.message,
-      errorDetails: errorDetails.details,
-      errorHint: errorDetails.hint,
-    });
-
     throw requestError;
   }
 }
@@ -670,79 +592,30 @@ export class PlanningScenarioService {
 
   async listScenarios(): Promise<PlanningScenarioWithOverrides[]> {
     const userId = await this.userId();
-    console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.listScenarios] start", {
-      userId,
-    });
-
-    try {
-      const scenarios = await this.ensureDefaultScenario(userId);
-      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.listScenarios] complete", {
-        userId,
-        scenarioCount: scenarios.length,
-        defaultScenarioId: scenarios.find((scenario) => scenario.is_default)?.id ?? null,
-      });
-      return scenarios;
-    } catch (error) {
-      console.error("[TEMP][GoalCreateDebug][PlanningScenarioService.listScenarios] error", {
-        userId,
-        error,
-      });
-      throw error;
-    }
+    return this.ensureDefaultScenario(userId);
   }
 
   private async ensureDefaultScenario(userId: string): Promise<PlanningScenarioWithOverrides[]> {
-    console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] check", {
-      userId,
+    const scenarios = await this.store.listScenarios(userId);
+
+    if (scenarios.length > 0) {
+      return scenarios;
+    }
+
+    const created = await this.store.createScenario(userId, {
+      name: this.bootstrapScenarioName,
+      description: this.bootstrapScenarioDescription,
+      type: "BASE",
+      is_default: true,
+      is_active: true,
     });
 
-    try {
-      const scenarios = await this.store.listScenarios(userId);
-      const defaultScenarioId = scenarios.find((scenario) => scenario.is_default)?.id ?? null;
+    const createdWithOverrides: PlanningScenarioWithOverrides = {
+      ...created,
+      overrides: [],
+    };
 
-      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] existing", {
-        userId,
-        scenarioCount: scenarios.length,
-        defaultScenarioId,
-      });
-
-      if (scenarios.length > 0) {
-        return scenarios;
-      }
-
-      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] creatingDefault", {
-        userId,
-        name: this.bootstrapScenarioName,
-      });
-
-      const created = await this.store.createScenario(userId, {
-        name: this.bootstrapScenarioName,
-        description: this.bootstrapScenarioDescription,
-        type: "BASE",
-        is_default: true,
-        is_active: true,
-      });
-
-      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] createdDefault", {
-        userId,
-        defaultScenarioId: created.id,
-        isDefault: created.is_default,
-        isActive: created.is_active,
-      });
-
-      const createdWithOverrides: PlanningScenarioWithOverrides = {
-        ...created,
-        overrides: [],
-      };
-
-      return [createdWithOverrides];
-    } catch (error) {
-      console.error("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] error", {
-        userId,
-        error,
-      });
-      throw error;
-    }
+    return [createdWithOverrides];
   }
 
   async getScenario(scenarioId: string): Promise<PlanningScenarioWithOverrides | null> {

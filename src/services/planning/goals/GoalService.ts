@@ -336,24 +336,6 @@ class SupabaseGoalStore implements GoalStore {
       is_completed: false,
     };
 
-    console.info("[TEMP][GoalCreateDebug][SupabaseGoalStore.createGoal] beforeInsert", {
-      userId,
-      linkedScenarioId: insertPayload.linked_scenario_id,
-      goalType: insertPayload.goal_type,
-      customGoalType: insertPayload.custom_goal_type,
-      payload: insertPayload,
-    });
-
-    console.info("[TEMP][GoalCreateDebug][SupabaseGoalStore.createGoal] insertPayloadRaw", insertPayload);
-
-    const {
-      data: { session },
-    } = await client.auth.getSession();
-
-    console.log("[TEMP] Session User:", session?.user?.id);
-    console.log("[TEMP] GoalService userId:", userId);
-    console.log("[TEMP] Payload userId:", insertPayload.user_id);
-
     const result = await client
       .from("financial_goals")
       .insert(insertPayload)
@@ -488,18 +470,6 @@ export class GoalService {
     const userId = await this.userId();
     let linkedScenarioId: string | null = input.linked_scenario_id ?? null;
 
-    console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] inputPayload", {
-      userId,
-      input,
-    });
-
-    console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] start", {
-      userId,
-      providedLinkedScenarioId: input.linked_scenario_id ?? null,
-      goalType: input.goal_type,
-      customGoalType: input.custom_goal_type ?? null,
-    });
-
     try {
       if (linkedScenarioId) {
         const hasLinkedScenario = await this.store.hasScenario(userId, linkedScenarioId);
@@ -508,66 +478,19 @@ export class GoalService {
         }
       } else {
         const scenarios = await planningScenarioService.listScenarios();
-        console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] listScenariosResult", {
-          userId,
-          scenarios,
-        });
         const defaultScenario = scenarios.find((scenario) => scenario.is_default) ?? scenarios[0] ?? null;
         linkedScenarioId = defaultScenario?.id ?? null;
-
-        console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] resolvedDefaultScenario", {
-          userId,
-          scenarioCount: scenarios.length,
-          defaultScenarioId: defaultScenario?.id ?? null,
-          linkedScenarioId,
-        });
       }
-
-      console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] resolvedLinkedScenarioId", {
-        userId,
-        linkedScenarioId,
-      });
 
       const createPayload: FinancialGoalInsert = {
         ...input,
         linked_scenario_id: linkedScenarioId,
       };
 
-      console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] beforeStoreCreate", {
-        userId,
-        linkedScenarioId: createPayload.linked_scenario_id ?? null,
-        goalType: createPayload.goal_type,
-        customGoalType: createPayload.custom_goal_type ?? null,
-      });
-
       const created = await this.store.createGoal(userId, createPayload);
-
-      console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] success", {
-        userId,
-        goalId: created.id,
-        linkedScenarioId: created.linked_scenario_id,
-      });
 
       return this.enrichGoal(created, userId, true);
     } catch (error) {
-      const supabaseError = extractSupabaseErrorFields(error);
-      console.error("[TEMP][GoalCreateDebug][GoalService.createGoal] error", {
-        userId,
-        linkedScenarioId,
-        goalType: input.goal_type,
-        customGoalType: input.custom_goal_type ?? null,
-        supabaseError,
-        error,
-      });
-
-      if (error instanceof Error) {
-        console.error("[TEMP][GoalCreateDebug][GoalService.createGoal] errorJavaScript", {
-          userId,
-          message: error.message,
-          stack: error.stack,
-        });
-      }
-
       throw error;
     }
   }
@@ -619,24 +542,11 @@ export class GoalService {
   }
 
   async listGoals(options?: { includeProgress?: boolean }): Promise<FinancialGoalWithProgress[]> {
-    const startedAt = Date.now();
-    console.log("[GoalService] listGoals start", { options });
     const userId = await this.userId();
-    console.log("[GoalService] listGoals after userId", { userId, durationMs: Date.now() - startedAt });
     const [goals, scenarioNames] = await Promise.all([this.store.listGoals(userId), this.store.listScenarioNames(userId)]);
-    console.log("[GoalService] listGoals fetched base records", {
-      goalsCount: goals.length,
-      scenarioNamesCount: scenarioNames.size,
-      durationMs: Date.now() - startedAt,
-    });
 
     const includeProgress = options?.includeProgress ?? true;
-    console.log("[GoalService] listGoals before enrich", { includeProgress, goalsCount: goals.length });
     const enriched = await Promise.all(goals.map((goal) => this.enrichGoal(goal, userId, includeProgress, scenarioNames)));
-    console.log("[GoalService] listGoals complete", {
-      goalsCount: enriched.length,
-      durationMs: Date.now() - startedAt,
-    });
 
     return enriched;
   }
@@ -714,31 +624,8 @@ export class GoalService {
   }
 
   private async enrichGoal(goal: FinancialGoal, userId: string, includeProgress: boolean, scenarioNames?: Map<string, string>): Promise<FinancialGoalWithProgress> {
-    const startedAt = Date.now();
-    console.log("[GoalService] enrichGoal start", {
-      goalId: goal.id,
-      includeProgress,
-      linkedScenarioId: goal.linked_scenario_id ?? null,
-    });
     const linkedScenarioName = goal.linked_scenario_id ? (scenarioNames ?? (await this.store.listScenarioNames(userId))).get(goal.linked_scenario_id) ?? null : null;
-    if (goal.linked_scenario_id) {
-      console.log("[GoalService] enrichGoal resolved scenario name", {
-        goalId: goal.id,
-        linkedScenarioId: goal.linked_scenario_id,
-        linkedScenarioName,
-      });
-    }
-
-    console.log("[GoalService] enrichGoal before progress calculation", {
-      goalId: goal.id,
-      includeProgress,
-    });
     const progress = includeProgress ? await this.calculateGoalProgressForRecord(goal, userId) : null;
-    console.log("[GoalService] enrichGoal after progress calculation", {
-      goalId: goal.id,
-      hasProgress: Boolean(progress),
-      durationMs: Date.now() - startedAt,
-    });
 
     return {
       ...goal,
@@ -769,50 +656,17 @@ export class GoalService {
   }
 
   private async runGoalSimulation(goal: FinancialGoal, userId: string): Promise<SimulationResult> {
-    const startedAt = Date.now();
-    console.log("[GoalService] runGoalSimulation start", {
-      goalId: goal.id,
-      userId,
-      linkedScenarioId: goal.linked_scenario_id ?? null,
-    });
-
     if (goal.linked_scenario_id) {
-      console.log("[GoalService] runGoalSimulation before hasScenario", {
-        goalId: goal.id,
-        linkedScenarioId: goal.linked_scenario_id,
-      });
       const hasScenario = await this.store.hasScenario(userId, goal.linked_scenario_id);
-      console.log("[GoalService] runGoalSimulation after hasScenario", {
-        goalId: goal.id,
-        linkedScenarioId: goal.linked_scenario_id,
-        hasScenario,
-      });
       if (!hasScenario) {
         throw new Error("Linked scenario was not found.");
       }
 
-      console.log("[GoalService] runGoalSimulation before scenarioSimulation", {
-        goalId: goal.id,
-        linkedScenarioId: goal.linked_scenario_id,
-      });
-      const scenarioResult = await this.scenarioSimulation(goal.linked_scenario_id);
-      console.log("[GoalService] runGoalSimulation after scenarioSimulation", {
-        goalId: goal.id,
-        durationMs: Date.now() - startedAt,
-      });
-      return scenarioResult;
+      return this.scenarioSimulation(goal.linked_scenario_id);
     }
 
-    console.log("[GoalService] runGoalSimulation before simulationEngine.run", {
-      goalId: goal.id,
-    });
     const outcome = await this.simulationEngine.run({
       snapshotId: goal.id,
-    });
-    console.log("[GoalService] runGoalSimulation after simulationEngine.run", {
-      goalId: goal.id,
-      ok: outcome.ok,
-      durationMs: Date.now() - startedAt,
     });
 
     if (!outcome.ok) {

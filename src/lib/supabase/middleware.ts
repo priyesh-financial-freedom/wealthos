@@ -6,23 +6,8 @@ const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-passwor
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
-  const cookieNames = request.cookies
-    .getAll()
-    .map(({ name }) => name)
-    .filter((name, index, names) => names.indexOf(name) === index)
-    .filter((name) => name.startsWith("sb-") || name.includes("supabase") || name.includes("auth"));
-
-  console.log("[middleware] request", {
-    pathname,
-    cookieNames,
-  });
 
   if (publicRoutes.includes(pathname)) {
-    console.log("[middleware] redirected", {
-      pathname,
-      redirected: false,
-      reason: "public-route",
-    });
     return response;
   }
 
@@ -53,38 +38,15 @@ export async function middleware(request: NextRequest) {
   });
 
   const {
-    data,
-    error,
-  } = await supabase.auth.getUser();
-
-  console.log("[middleware] getUser result", {
-    pathname,
-    hasUser: Boolean(data.user),
-    userId: data.user?.id ?? null,
-    error: error?.message ?? null,
-  });
-
-  const {
     data: { user },
-  } = { data };
+  } = await supabase.auth.getUser();
 
   if (!user && pathname !== "/") {
     const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("next", pathname);
-    console.log("[middleware] redirected", {
-      pathname,
-      redirected: true,
-      to: redirectUrl.pathname,
-      next: pathname,
-    });
     return NextResponse.redirect(redirectUrl);
   }
 
-  console.log("[middleware] redirected", {
-    pathname,
-    redirected: false,
-    reason: "authenticated-or-root",
-  });
   return response;
 }
 

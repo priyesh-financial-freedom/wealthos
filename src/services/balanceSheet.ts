@@ -254,26 +254,11 @@ export function buildBalanceSheetSummary(
 }
 
 export async function getBalanceSheetData(): Promise<BalanceSheetData> {
-  const startedAt = Date.now();
-  console.log("[balanceSheet] getBalanceSheetData start");
-
   const trace = async <T>(label: string, operation: () => Promise<T>, fallback?: T): Promise<T> => {
-    const opStartedAt = Date.now();
-    console.log(`[balanceSheet] ${label} start`);
     try {
-      const value = await operation();
-      console.log(`[balanceSheet] ${label} complete`, {
-        durationMs: Date.now() - opStartedAt,
-        count: Array.isArray(value) ? value.length : undefined,
-      });
-      return value;
+      return await operation();
     } catch (error) {
-      console.error(`[balanceSheet] ${label} error`, {
-        durationMs: Date.now() - opStartedAt,
-        error,
-      });
       if (typeof fallback !== "undefined") {
-        console.log(`[balanceSheet] ${label} fallback used`);
         return fallback;
       }
       throw error;
@@ -314,13 +299,6 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
       realEstateProperties,
     ),
   };
-
-  console.log("[balanceSheet] getBalanceSheetData complete", {
-    durationMs: Date.now() - startedAt,
-    assets: payload.assets.length,
-    liabilities: payload.liabilities.length,
-    investments: payload.investments.length,
-  });
 
   return payload;
 }

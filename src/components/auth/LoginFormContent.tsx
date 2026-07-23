@@ -42,12 +42,10 @@ export function LoginFormContent() {
     }
 
     try {
-      console.log("1 - before signIn", { email: values.email });
       const result = await supabase.auth.signInWithPassword({
         email: values.email,
         password: values.password,
       });
-      console.log("2 - signIn complete", result);
 
       if (result.error) {
         setFormMessage(result.error.message || "Unable to log in right now.");
@@ -55,24 +53,17 @@ export function LoginFormContent() {
         return;
       }
 
-      console.log("3 - before getSession");
       const sessionResult = await supabase.auth.getSession();
-      console.log("4 - after getSession", sessionResult);
 
-      console.log("5 - before profile fetch");
       const userId = sessionResult.data.session?.user?.id;
-      const profileResult = userId
-        ? await supabase.from("profiles").select("id").eq("id", userId).maybeSingle()
-        : { data: null, error: null };
-      console.log("6 - profile loaded", profileResult);
+      if (userId) {
+        await supabase.from("profiles").select("id").eq("id", userId).maybeSingle();
+      }
 
       const nextPath = searchParams.get("next") ?? "/dashboard";
-      console.log("7 - before router.push", { nextPath, userId });
       router.push(nextPath);
-      console.log("8 - after router.push");
       router.refresh();
     } catch (error) {
-      console.error("Login flow failed", error);
       setFormMessage(error instanceof Error ? error.message : "Unexpected login error.");
       setIsSubmitting(false);
     }

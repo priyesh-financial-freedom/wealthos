@@ -19,26 +19,16 @@ export function Header() {
         return;
       }
 
-      console.log("[Header] before getSession");
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      console.log("[Header] after getSession", {
-        hasSession: Boolean(session),
-        userId: session?.user?.id ?? null,
-      });
       setEmail(session?.user?.email ?? null);
       setLoading(false);
     }
 
     loadUser();
 
-    const { data: authListener } = supabase?.auth.onAuthStateChange((event, session) => {
-      console.log("[Header] onAuthStateChange", {
-        event,
-        hasSession: Boolean(session),
-        userId: session?.user?.id ?? null,
-      });
+    const { data: authListener } = supabase?.auth.onAuthStateChange((_event, session) => {
       setEmail(session?.user?.email ?? null);
     }) ?? { data: { subscription: { unsubscribe() {} } } };
 
