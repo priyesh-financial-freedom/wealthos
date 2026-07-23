@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowRightLeft, CalendarClock, FolderKanban, PiggyBank, Repeat, Target, type LucideIcon } from "lucide-react";
+import { ArrowRight, ArrowRightLeft, CalendarClock, FolderKanban, PiggyBank, Repeat, SlidersHorizontal, Target, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
@@ -20,6 +20,7 @@ const iconMap: Record<string, LucideIcon> = {
   ArrowRightLeft,
   CalendarClock,
   Repeat,
+  SlidersHorizontal,
 };
 
 export function PlanningModuleCard({ title, description, statusMessage, actionLabel, href, icon }: PlanningModuleCardProps) {

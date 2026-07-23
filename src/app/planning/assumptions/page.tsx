@@ -1,5 +1,5 @@
 import { PlanningAssumptionPage } from "@/components/planning/assumptions/AssumptionPage";
 
-export default function AssumptionsRoutePage() {
+export default function PlanningAssumptionsRoutePage() {
   return <PlanningAssumptionPage />;
 }

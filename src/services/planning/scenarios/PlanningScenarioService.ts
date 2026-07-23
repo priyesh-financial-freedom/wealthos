@@ -558,8 +558,8 @@ async function buildSnapshotFromLatestMonthEnd(): Promise<{ id: string; month: s
 export class PlanningScenarioService {
   constructor(private readonly dependencies: PlanningScenarioServiceDependencies = {}) {}
 
-  private readonly bootstrapScenarioName = "Base Projection";
-  private readonly bootstrapScenarioDescription = "System generated default planning scenario";
+  private readonly bootstrapScenarioName = "Base";
+  private readonly bootstrapScenarioDescription = "System generated default planning scenario aligned to the planning assumptions baseline.";
 
   private get store(): PlanningScenarioStore {
     return this.dependencies.store ?? new SupabasePlanningScenarioStore();

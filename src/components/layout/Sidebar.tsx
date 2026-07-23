@@ -26,6 +26,7 @@ import {
   Wallet,
   Search,
   Repeat,
+  SlidersHorizontal,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -83,13 +84,14 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const dashboardActive = activeHref === "/dashboard";
   const planningDashboardActive = activeHref === "/planning";
   const planningScenariosActive = activeHref === "/planning/scenarios";
+  const planningAssumptionsActive = activeHref === "/planning/assumptions";
   const planningGoalsActive = activeHref === "/planning/goals";
   const planningDecisionCenterActive = activeHref === "/planning/decision-center";
   const planningRetirementActive = activeHref === "/planning/retirement";
   const planningCashFlowActive = activeHref === "/planning/cashflow";
   const planningEventsActive = activeHref === "/planning/events";
   const planningContributionPoliciesActive = activeHref === "/planning/contribution-policies";
-  const planningActive = planningDashboardActive || planningScenariosActive || planningGoalsActive || planningDecisionCenterActive || planningRetirementActive || planningCashFlowActive || planningEventsActive || planningContributionPoliciesActive;
+  const planningActive = planningDashboardActive || planningScenariosActive || planningAssumptionsActive || planningGoalsActive || planningDecisionCenterActive || planningRetirementActive || planningCashFlowActive || planningEventsActive || planningContributionPoliciesActive;
   const netWorthActive = activeHref === "/balance-sheet";
 
   const bankAccountsActive = activeHref === "/bank-accounts";
@@ -157,6 +159,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                   <Link href="/planning/scenarios" className={rowLinkClass({ active: planningScenariosActive, level: 2, collapsed })}>
                     <Compass className="h-4 w-4 shrink-0" />
                     {!collapsed ? <span className="truncate">Scenarios</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/assumptions" className={rowLinkClass({ active: planningAssumptionsActive, level: 2, collapsed })}>
+                    <SlidersHorizontal className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Assumptions</span> : null}
                   </Link>
                 </div>
 

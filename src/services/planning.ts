@@ -45,6 +45,15 @@ function buildBaseSummary(): PlanningDashboardSummary {
 		},
 		modules: [
 			{
+				id: "assumptions",
+				title: "Assumptions",
+				description: "Control the single source of truth for inflation, returns, taxes and retirement policy inputs.",
+				status: "Central planning foundation",
+				actionLabel: "Open assumptions",
+				actionHref: "/planning/assumptions",
+				icon: "SlidersHorizontal",
+			},
+			{
 				id: "scenarios",
 				title: "Scenarios",
 				description: "Organize assumptions and compare future paths before you commit.",
