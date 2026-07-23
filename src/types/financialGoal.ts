@@ -9,6 +9,7 @@ export interface FinancialGoal {
   user_id: string;
   name: string;
   goal_type: GoalType;
+  custom_goal_type: string | null;
   target_amount: number;
   target_date: string;
   priority: GoalPriority;
@@ -24,6 +25,7 @@ export interface FinancialGoal {
 export interface FinancialGoalInsert {
   name: string;
   goal_type: GoalType;
+  custom_goal_type?: string | null;
   target_amount: number;
   target_date: string;
   priority: GoalPriority;
@@ -36,6 +38,7 @@ export interface FinancialGoalUpdate {
   id: string;
   name?: string;
   goal_type?: GoalType;
+  custom_goal_type?: string | null;
   target_amount?: number;
   target_date?: string;
   priority?: GoalPriority;

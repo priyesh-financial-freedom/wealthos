@@ -636,6 +636,9 @@ async function buildSnapshotFromLatestMonthEnd(): Promise<{ id: string; month: s
 export class PlanningScenarioService {
   constructor(private readonly dependencies: PlanningScenarioServiceDependencies = {}) {}
 
+  private readonly bootstrapScenarioName = "Base Projection";
+  private readonly bootstrapScenarioDescription = "System generated default planning scenario";
+
   private get store(): PlanningScenarioStore {
     return this.dependencies.store ?? new SupabasePlanningScenarioStore();
   }
@@ -667,7 +670,79 @@ export class PlanningScenarioService {
 
   async listScenarios(): Promise<PlanningScenarioWithOverrides[]> {
     const userId = await this.userId();
-    return this.store.listScenarios(userId);
+    console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.listScenarios] start", {
+      userId,
+    });
+
+    try {
+      const scenarios = await this.ensureDefaultScenario(userId);
+      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.listScenarios] complete", {
+        userId,
+        scenarioCount: scenarios.length,
+        defaultScenarioId: scenarios.find((scenario) => scenario.is_default)?.id ?? null,
+      });
+      return scenarios;
+    } catch (error) {
+      console.error("[TEMP][GoalCreateDebug][PlanningScenarioService.listScenarios] error", {
+        userId,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  private async ensureDefaultScenario(userId: string): Promise<PlanningScenarioWithOverrides[]> {
+    console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] check", {
+      userId,
+    });
+
+    try {
+      const scenarios = await this.store.listScenarios(userId);
+      const defaultScenarioId = scenarios.find((scenario) => scenario.is_default)?.id ?? null;
+
+      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] existing", {
+        userId,
+        scenarioCount: scenarios.length,
+        defaultScenarioId,
+      });
+
+      if (scenarios.length > 0) {
+        return scenarios;
+      }
+
+      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] creatingDefault", {
+        userId,
+        name: this.bootstrapScenarioName,
+      });
+
+      const created = await this.store.createScenario(userId, {
+        name: this.bootstrapScenarioName,
+        description: this.bootstrapScenarioDescription,
+        type: "BASE",
+        is_default: true,
+        is_active: true,
+      });
+
+      console.info("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] createdDefault", {
+        userId,
+        defaultScenarioId: created.id,
+        isDefault: created.is_default,
+        isActive: created.is_active,
+      });
+
+      const createdWithOverrides: PlanningScenarioWithOverrides = {
+        ...created,
+        overrides: [],
+      };
+
+      return [createdWithOverrides];
+    } catch (error) {
+      console.error("[TEMP][GoalCreateDebug][PlanningScenarioService.ensureDefaultScenario] error", {
+        userId,
+        error,
+      });
+      throw error;
+    }
   }
 
   async getScenario(scenarioId: string): Promise<PlanningScenarioWithOverrides | null> {

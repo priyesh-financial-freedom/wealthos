@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -17,8 +20,22 @@ const statMeta: Record<keyof PlanningDashboardSummary["stats"], { label: string;
   cashFlowStatus: { label: "Cash Flow Status", detail: "Forecasting setup for planning cash flow." },
 };
 
-export default async function PlanningPage() {
-  const summary = await PlanningDashboardService.getSummary();
+export default function PlanningPage() {
+  const [summary, setSummary] = useState<PlanningDashboardSummary>(PlanningDashboardService.getInitialSummary());
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void PlanningDashboardService.getSummary().then((nextSummary) => {
+      if (isMounted) {
+        setSummary(nextSummary);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <AppLayout>

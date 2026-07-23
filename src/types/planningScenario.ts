@@ -61,12 +61,25 @@ export interface PlanningScenarioOverrideInput {
   override_value: JsonValue;
 }
 
+export interface PlanningScenarioSummaryComparison {
+  projectedNetWorth: number;
+  goalReadiness: string;
+  cashFlow: number;
+  simulationDate: string;
+}
+
 export interface PlanningScenarioComparisonScenario {
   scenario: PlanningScenarioWithOverrides;
   simulation: SimulationResult;
+  summary: PlanningScenarioSummaryComparison;
 }
 
 export interface PlanningScenarioComparison {
+  left: PlanningScenarioComparisonScenario;
+  right: PlanningScenarioComparisonScenario;
+}
+
+export interface PlanningScenarioComparisonResult {
   left: PlanningScenarioComparisonScenario;
   right: PlanningScenarioComparisonScenario;
 }

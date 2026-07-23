@@ -24,6 +24,7 @@ const GOAL_PRIORITY_OPTIONS: GoalPriority[] = ["HIGH", "MEDIUM", "LOW"];
 interface GoalFormValues {
   name: string;
   goal_type: GoalType;
+  custom_goal_type: string;
   target_amount: string;
   target_date: string;
   priority: GoalPriority;
@@ -35,6 +36,7 @@ interface GoalFormValues {
 const EMPTY_FORM: GoalFormValues = {
   name: "",
   goal_type: "CUSTOM",
+  custom_goal_type: "",
   target_amount: "",
   target_date: "",
   priority: "MEDIUM",
@@ -51,6 +53,7 @@ function toFormValues(goal: FinancialGoalWithProgress | null): GoalFormValues {
   return {
     name: goal.name,
     goal_type: goal.goal_type,
+    custom_goal_type: goal.custom_goal_type ?? "",
     target_amount: String(goal.target_amount),
     target_date: goal.target_date,
     priority: goal.priority,
@@ -74,6 +77,14 @@ function statusBadgeClass(status: FinancialGoalWithProgress["status"]) {
     default:
       return "border-slate-200 bg-slate-50 text-slate-700";
   }
+}
+
+function goalTypeLabel(goal: FinancialGoalWithProgress): string {
+  if (goal.goal_type === "CUSTOM") {
+    return goal.custom_goal_type ?? "CUSTOM";
+  }
+
+  return goal.goal_type.replaceAll("_", " ");
 }
 
 export default function PlanningGoalsPage() {
@@ -152,6 +163,7 @@ export default function PlanningGoalsPage() {
       const matchesQuery =
         !normalizedQuery ||
         `${goal.name} ${goal.goal_type} ${goal.funding_source ?? ""} ${goal.notes ?? ""}`
+          .concat(` ${goal.custom_goal_type ?? ""}`)
           .toLowerCase()
           .includes(normalizedQuery);
       const matchesStatus = statusFilter === "all" || goal.status === statusFilter;
@@ -186,7 +198,7 @@ export default function PlanningGoalsPage() {
       cell: (goal) => (
         <div className="space-y-1">
           <p className="font-medium text-slate-900">{goal.name}</p>
-          <p className="text-xs uppercase tracking-[0.12em] text-slate-500">{goal.goal_type.replaceAll("_", " ")}</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-slate-500">{goalTypeLabel(goal)}</p>
         </div>
       ),
     },
@@ -224,7 +236,7 @@ export default function PlanningGoalsPage() {
     {
       key: "scenario",
       header: "Scenario",
-      cell: (goal) => <span className="text-sm text-slate-700">{goal.linked_scenario_name ?? "Base Projection"}</span>,
+      cell: (goal) => <span className="text-sm text-slate-700">{goal.linked_scenario_name ?? "Base Projection (Default)"}</span>,
     },
     {
       key: "target_date",
@@ -336,9 +348,14 @@ export default function PlanningGoalsPage() {
         throw new Error("Target amount must be a valid positive number.");
       }
 
+      if (formValues.goal_type === "CUSTOM" && !formValues.custom_goal_type.trim()) {
+        throw new Error("Custom goal type is required when goal type is CUSTOM.");
+      }
+
       const payload = {
         name: formValues.name.trim(),
         goal_type: formValues.goal_type,
+        custom_goal_type: formValues.goal_type === "CUSTOM" ? formValues.custom_goal_type.trim() : null,
         target_amount: targetAmount,
         target_date: formValues.target_date,
         priority: formValues.priority,
@@ -477,13 +494,31 @@ export default function PlanningGoalsPage() {
                   id="goal-type"
                   className="h-10 rounded-md border border-slate-300 px-3 text-sm"
                   value={formValues.goal_type}
-                  onChange={(event) => setFormValues((current) => ({ ...current, goal_type: event.target.value as GoalType }))}
+                  onChange={(event) =>
+                    setFormValues((current) => ({
+                      ...current,
+                      goal_type: event.target.value as GoalType,
+                      custom_goal_type: event.target.value === "CUSTOM" ? current.custom_goal_type : "",
+                    }))
+                  }
                 >
                   {GOAL_TYPE_OPTIONS.map((type) => (
                     <option key={type} value={type}>{type.replaceAll("_", " ")}</option>
                   ))}
                 </select>
               </FormField>
+              {formValues.goal_type === "CUSTOM" ? (
+                <FormField>
+                  <Label htmlFor="goal-custom-type">Custom Goal Type</Label>
+                  <Input
+                    id="goal-custom-type"
+                    value={formValues.custom_goal_type}
+                    onChange={(event) => setFormValues((current) => ({ ...current, custom_goal_type: event.target.value }))}
+                    placeholder="Weekend home"
+                    required
+                  />
+                </FormField>
+              ) : null}
               <FormField>
                 <Label htmlFor="goal-target-amount">Target Amount</Label>
                 <Input
@@ -537,7 +572,7 @@ export default function PlanningGoalsPage() {
                   value={formValues.linked_scenario_id}
                   onChange={(event) => setFormValues((current) => ({ ...current, linked_scenario_id: event.target.value }))}
                 >
-                  <option value="">None (Base Projection)</option>
+                  <option value="">Base Projection (Default)</option>
                   {scenarios.map((scenario) => (
                     <option key={scenario.id} value={scenario.id}>{scenario.name}</option>
                   ))}

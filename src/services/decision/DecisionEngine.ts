@@ -3,6 +3,7 @@ import { healthScoreService } from "@/services/health";
 import { goalService } from "@/services/planning/goals";
 import { planningScenarioService, createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService } from "@/services/projection";
+import type { MonthlyReviewWorkspace } from "@/services/projection";
 import type { SimulationResult } from "@/services/simulation";
 
 import { decisionRepository, DecisionRepository } from "./DecisionRepository";
@@ -16,7 +17,7 @@ interface DecisionEngineDependencies {
   goalsLoader?: typeof goalService.listGoals;
   scenarioLoader?: typeof planningScenarioService.listScenarios;
   scenarioSimulationLoader?: typeof planningScenarioService.runSimulation;
-  monthlyReviewLoader?: typeof monthlyReviewService.getMonthlyReviewWorkspace;
+  monthlyReviewLoader?: (selectedCloseId?: string) => Promise<MonthlyReviewWorkspace | null>;
   baselineSimulationLoader?: () => Promise<SimulationResult>;
   now?: () => Date;
 }

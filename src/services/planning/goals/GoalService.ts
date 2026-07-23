@@ -78,6 +78,45 @@ function normalizeDate(dateValue: string): string {
   return normalized.toISOString().slice(0, 10);
 }
 
+function normalizeCustomGoalType(goalType: FinancialGoal["goal_type"], customGoalType: string | null | undefined): string | null {
+  if (goalType !== "CUSTOM") {
+    return null;
+  }
+
+  const normalized = customGoalType?.trim() ?? "";
+  return normalized || null;
+}
+
+function extractSupabaseErrorFields(error: unknown): {
+  message: string | null;
+  details: string | null;
+  hint: string | null;
+  code: string | null;
+} {
+  if (!error || typeof error !== "object") {
+    return {
+      message: null,
+      details: null,
+      hint: null,
+      code: null,
+    };
+  }
+
+  const maybeError = error as {
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    code?: unknown;
+  };
+
+  return {
+    message: typeof maybeError.message === "string" ? maybeError.message : null,
+    details: typeof maybeError.details === "string" ? maybeError.details : null,
+    hint: typeof maybeError.hint === "string" ? maybeError.hint : null,
+    code: typeof maybeError.code === "string" ? maybeError.code : null,
+  };
+}
+
 function pickProjectionValue(simulation: SimulationResult, targetMonth: string): { month: string; value: number } {
   const points = simulation.netWorthProjection.points;
   if (points.length === 0) {
@@ -276,37 +315,81 @@ class SupabaseGoalStore implements GoalStore {
 
   async createGoal(userId: string, input: FinancialGoalInsert): Promise<FinancialGoal> {
     const client = assertSupabaseClient();
-    const { data, error } = await client
+    const customGoalType = normalizeCustomGoalType(input.goal_type, input.custom_goal_type);
+
+    if (input.goal_type === "CUSTOM" && !customGoalType) {
+      throw new Error("Custom goal type is required when goal type is CUSTOM.");
+    }
+
+    const insertPayload = {
+      user_id: userId,
+      name: input.name,
+      goal_type: input.goal_type,
+      custom_goal_type: customGoalType,
+      target_amount: Number(input.target_amount ?? 0),
+      target_date: normalizeDate(input.target_date),
+      priority: input.priority,
+      status: "NOT_STARTED",
+      funding_source: input.funding_source ?? null,
+      linked_scenario_id: input.linked_scenario_id ?? null,
+      notes: input.notes ?? null,
+      is_completed: false,
+    };
+
+    console.info("[TEMP][GoalCreateDebug][SupabaseGoalStore.createGoal] beforeInsert", {
+      userId,
+      linkedScenarioId: insertPayload.linked_scenario_id,
+      goalType: insertPayload.goal_type,
+      customGoalType: insertPayload.custom_goal_type,
+      payload: insertPayload,
+    });
+
+    console.info("[TEMP][GoalCreateDebug][SupabaseGoalStore.createGoal] insertPayloadRaw", insertPayload);
+
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+
+    console.log("[TEMP] Session User:", session?.user?.id);
+    console.log("[TEMP] GoalService userId:", userId);
+    console.log("[TEMP] Payload userId:", insertPayload.user_id);
+
+    const result = await client
       .from("financial_goals")
-      .insert({
-        user_id: userId,
-        name: input.name,
-        goal_type: input.goal_type,
-        target_amount: Number(input.target_amount ?? 0),
-        target_date: normalizeDate(input.target_date),
-        priority: input.priority,
-        status: "NOT_STARTED",
-        funding_source: input.funding_source ?? null,
-        linked_scenario_id: input.linked_scenario_id ?? null,
-        notes: input.notes ?? null,
-        is_completed: false,
-      })
+      .insert(insertPayload)
       .select("*")
       .single();
 
-    if (error) {
-      throw new Error(error.message);
+    console.dir(result, { depth: null });
+
+    if (result.error) {
+      throw result.error;
     }
 
-    return data as FinancialGoal;
+    return result.data as FinancialGoal;
   }
 
   async updateGoal(userId: string, input: FinancialGoalUpdate): Promise<FinancialGoal> {
     const client = assertSupabaseClient();
     const { id, ...updates } = input;
+    const existingGoal = await this.getGoal(userId, id);
+
+    if (!existingGoal) {
+      throw new Error("Goal not found.");
+    }
+
+    const resolvedGoalType = updates.goal_type ?? existingGoal.goal_type;
+    const customGoalTypeInput =
+      typeof updates.custom_goal_type !== "undefined" ? updates.custom_goal_type : existingGoal.custom_goal_type;
+    const normalizedCustomGoalType = normalizeCustomGoalType(resolvedGoalType, customGoalTypeInput);
+
+    if (resolvedGoalType === "CUSTOM" && !normalizedCustomGoalType) {
+      throw new Error("Custom goal type is required when goal type is CUSTOM.");
+    }
 
     const payload: Record<string, unknown> = {
       ...updates,
+      custom_goal_type: normalizedCustomGoalType,
     };
 
     if (typeof updates.target_amount !== "undefined") {
@@ -403,16 +486,90 @@ export class GoalService {
 
   async createGoal(input: FinancialGoalInsert): Promise<FinancialGoalWithProgress> {
     const userId = await this.userId();
+    let linkedScenarioId: string | null = input.linked_scenario_id ?? null;
 
-    if (input.linked_scenario_id) {
-      const hasLinkedScenario = await this.store.hasScenario(userId, input.linked_scenario_id);
-      if (!hasLinkedScenario) {
-        throw new Error("Linked scenario was not found.");
+    console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] inputPayload", {
+      userId,
+      input,
+    });
+
+    console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] start", {
+      userId,
+      providedLinkedScenarioId: input.linked_scenario_id ?? null,
+      goalType: input.goal_type,
+      customGoalType: input.custom_goal_type ?? null,
+    });
+
+    try {
+      if (linkedScenarioId) {
+        const hasLinkedScenario = await this.store.hasScenario(userId, linkedScenarioId);
+        if (!hasLinkedScenario) {
+          throw new Error("Linked scenario was not found.");
+        }
+      } else {
+        const scenarios = await planningScenarioService.listScenarios();
+        console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] listScenariosResult", {
+          userId,
+          scenarios,
+        });
+        const defaultScenario = scenarios.find((scenario) => scenario.is_default) ?? scenarios[0] ?? null;
+        linkedScenarioId = defaultScenario?.id ?? null;
+
+        console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] resolvedDefaultScenario", {
+          userId,
+          scenarioCount: scenarios.length,
+          defaultScenarioId: defaultScenario?.id ?? null,
+          linkedScenarioId,
+        });
       }
-    }
 
-    const created = await this.store.createGoal(userId, input);
-    return this.enrichGoal(created, userId, true);
+      console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] resolvedLinkedScenarioId", {
+        userId,
+        linkedScenarioId,
+      });
+
+      const createPayload: FinancialGoalInsert = {
+        ...input,
+        linked_scenario_id: linkedScenarioId,
+      };
+
+      console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] beforeStoreCreate", {
+        userId,
+        linkedScenarioId: createPayload.linked_scenario_id ?? null,
+        goalType: createPayload.goal_type,
+        customGoalType: createPayload.custom_goal_type ?? null,
+      });
+
+      const created = await this.store.createGoal(userId, createPayload);
+
+      console.info("[TEMP][GoalCreateDebug][GoalService.createGoal] success", {
+        userId,
+        goalId: created.id,
+        linkedScenarioId: created.linked_scenario_id,
+      });
+
+      return this.enrichGoal(created, userId, true);
+    } catch (error) {
+      const supabaseError = extractSupabaseErrorFields(error);
+      console.error("[TEMP][GoalCreateDebug][GoalService.createGoal] error", {
+        userId,
+        linkedScenarioId,
+        goalType: input.goal_type,
+        customGoalType: input.custom_goal_type ?? null,
+        supabaseError,
+        error,
+      });
+
+      if (error instanceof Error) {
+        console.error("[TEMP][GoalCreateDebug][GoalService.createGoal] errorJavaScript", {
+          userId,
+          message: error.message,
+          stack: error.stack,
+        });
+      }
+
+      throw error;
+    }
   }
 
   async updateGoal(input: FinancialGoalUpdate): Promise<FinancialGoalWithProgress> {

@@ -1,5 +1,6 @@
 import type { AssumptionsBundle } from "@/types/assumptions";
-import type { MonthlySnapshot, ProjectedEntity, ProjectionBalanceState, ProjectionScenario, ProjectionTimelinePoint, FinancialEvent } from "@/types/projection";
+import type { ProjectionTimelinePoint } from "@/services/projection";
+import type { MonthlySnapshot, ProjectedEntity, ProjectionBalanceState, ProjectionScenario, FinancialEvent } from "@/types/projection";
 
 export interface SimulationSnapshot {
   id: string;

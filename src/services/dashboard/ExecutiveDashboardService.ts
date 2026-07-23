@@ -7,6 +7,13 @@ import { monthlyReviewService, type MonthlyReviewWorkspace } from "@/services/pr
 import type { FinancialGoalWithProgress } from "@/types/financialGoal";
 import type { SimulationResult } from "@/services/simulation";
 
+class MissingMonthlyReviewWorkspaceError extends Error {
+  constructor() {
+    super("Monthly review workspace is unavailable.");
+    this.name = "MissingMonthlyReviewWorkspaceError";
+  }
+}
+
 export interface ExecutiveTimelineItem {
   id: string;
   title: string;
@@ -134,7 +141,8 @@ async function loadDecisionPreview(input: {
   monthlyReview: MonthlyReviewWorkspace | null;
   simulation: SimulationResult | null;
 }): Promise<DecisionRecommendation[]> {
-  if (!input.simulation) {
+  const simulation = input.simulation;
+  if (!simulation) {
     return [];
   }
 
@@ -143,8 +151,14 @@ async function loadDecisionPreview(input: {
     healthScoreLoader: async () => input.health,
     goalsLoader: async () => input.goals,
     scenarioLoader: async () => [],
-    monthlyReviewLoader: async () => input.monthlyReview,
-    baselineSimulationLoader: async () => input.simulation as SimulationResult,
+    monthlyReviewLoader: async () => {
+      if (!input.monthlyReview) {
+        throw new MissingMonthlyReviewWorkspaceError();
+      }
+
+      return input.monthlyReview;
+    },
+    baselineSimulationLoader: async () => simulation,
   });
 
   return decisionPreviewEngine.generateRecommendations().catch(() => []);

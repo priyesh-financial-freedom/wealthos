@@ -141,7 +141,7 @@ function createEngine(overrides?: {
       executionTime: 1,
       simulationVersion: "test",
     })),
-    monthlyReviewLoader: vi.fn(async () => ({ summary: { projectionVariance: 100000 } } as never)),
+    monthlyReviewLoader: vi.fn(async () => null),
     baselineSimulationLoader: vi.fn(async () => ({
       summary: {
         snapshotId: "baseline",

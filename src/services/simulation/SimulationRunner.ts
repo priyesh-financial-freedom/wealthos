@@ -5,11 +5,18 @@ import type {
   ProjectionCalculator,
   ProjectionCalculatorResult,
   SimulationContext,
-  SimulationError,
-  SimulationResult,
-  SimulationSeriesPoint,
 } from "./SimulationTypes";
-import type { SimulationCashFlowForecast, SimulationMetadata, SimulationNetWorthProjection, SimulationAssetProjection, SimulationLiabilityProjection, SimulationGoalReadiness, SimulationSummary } from "./SimulationOutputs";
+import type {
+  SimulationAssetProjection,
+  SimulationCashFlowForecast,
+  SimulationError,
+  SimulationGoalReadiness,
+  SimulationLiabilityProjection,
+  SimulationMetadata,
+  SimulationNetWorthProjection,
+  SimulationResult,
+  SimulationSummary,
+} from "./SimulationOutputs";
 
 const SIMULATION_VERSION = "1.0.0";
 
