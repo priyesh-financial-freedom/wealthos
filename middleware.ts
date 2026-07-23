@@ -7,7 +7,10 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: request.headers } });
   const pathname = request.nextUrl.pathname;
 
+  console.log("[middleware] request", { pathname });
+
   if (publicRoutes.includes(pathname)) {
+    console.log("[middleware] public route allowed", { pathname });
     return response;
   }
 
@@ -29,16 +32,30 @@ export async function middleware(request: NextRequest) {
     },
   );
 
+  console.log("[middleware] before getUser", { pathname });
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+  console.log("[middleware] after getUser", {
+    pathname,
+    hasUser: Boolean(user),
+    userId: user?.id ?? null,
+    error: error?.message ?? null,
+  });
 
   if (!user && pathname !== "/") {
     const redirectUrl = new URL("/login", request.url);
     redirectUrl.searchParams.set("next", pathname);
+    console.log("[middleware] redirect to login", {
+      from: pathname,
+      to: redirectUrl.pathname,
+      next: pathname,
+    });
     return NextResponse.redirect(redirectUrl);
   }
 
+  console.log("[middleware] allowing request", { pathname, hasUser: Boolean(user) });
   return response;
 }
 
