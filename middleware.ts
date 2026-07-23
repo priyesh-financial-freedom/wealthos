@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password"]; 
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({ request: { headers: request.headers } });
+  let response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
 
   console.log("[middleware] request", { pathname });
@@ -25,6 +25,11 @@ export async function middleware(request: NextRequest) {
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
             request.cookies.set(name, value);
+          });
+
+          response = NextResponse.next({ request });
+
+          cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
           });
         },
