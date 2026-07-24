@@ -22,6 +22,7 @@ export type {
   PlanningAssumptionCategoryKey,
   PlanningAssumptionEditorState,
   PlanningAssumptionFieldDefinition,
+  PlanningAssumptionHelpContent,
   PlanningAssumptionInputKind,
   PlanningAssumptionKey,
   PlanningAssumptionOverrides,

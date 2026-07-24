@@ -158,9 +158,21 @@ export interface PlanningAssumptionDocumentationItem {
   category: PlanningAssumptionCategoryKey;
   description: string;
   tooltip: string;
+  helpContent: PlanningAssumptionHelpContent;
   unit: PlanningAssumptionUnit;
   dependencies: readonly PlanningAssumptionDependency[];
   affectedEngines: readonly PlanningAssumptionEngineId[];
+}
+
+export interface PlanningAssumptionHelpContent {
+  shortDescription: string;
+  detailedExplanation: string;
+  whyItMatters: string;
+  recommendedRange: string;
+  defaultValue: string;
+  exampleCalculation?: string;
+  effectOfIncrease: string;
+  effectOfDecrease: string;
 }
 
 export interface PlanningAssumptionEditorState {
@@ -189,6 +201,7 @@ export interface PlanningAssumptionFieldDefinition {
   label: string;
   description: string;
   tooltip: string;
+  helpContent: PlanningAssumptionHelpContent;
   inputKind: PlanningAssumptionInputKind;
   unit: PlanningAssumptionUnit;
   min?: number;

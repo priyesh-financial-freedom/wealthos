@@ -2,13 +2,18 @@ import type {
   EffectivePlanningAssumptions,
   PlanningAssumptionDocumentationItem,
   PlanningAssumptionFieldDefinition,
+  PlanningAssumptionHelpContent,
   PlanningAssumptionKey,
   PlanningAssumptionRegistryItem,
   PlanningAssumptionSectionDefinition,
   PlanningScenarioPreset,
 } from "./AssumptionTypes";
 
-export const ASSUMPTION_REGISTRY: readonly PlanningAssumptionRegistryItem[] = [
+type RawAssumptionRegistryItem = Omit<PlanningAssumptionRegistryItem, "helpContent"> & {
+  helpContent?: Partial<PlanningAssumptionHelpContent>;
+};
+
+const RAW_ASSUMPTION_REGISTRY: readonly RawAssumptionRegistryItem[] = [
   {
     key: "currentAge",
     category: "PERSONAL",
@@ -624,6 +629,87 @@ export const ASSUMPTION_REGISTRY: readonly PlanningAssumptionRegistryItem[] = [
   },
 ] as const;
 
+function formatUnitLabel(item: { unit: PlanningAssumptionRegistryItem["unit"] }) {
+  if (item.unit === "percent") {
+    return "%";
+  }
+
+  if (item.unit === "currency") {
+    return "currency";
+  }
+
+  return item.unit;
+}
+
+function formatRecommendedRange(item: Pick<PlanningAssumptionRegistryItem, "min" | "max" | "unit">) {
+  const unit = formatUnitLabel(item);
+  if (typeof item.min === "number" && typeof item.max === "number") {
+    return `${item.min} to ${item.max} ${unit}`;
+  }
+
+  if (typeof item.min === "number") {
+    return `At least ${item.min} ${unit}`;
+  }
+
+  if (typeof item.max === "number") {
+    return `Up to ${item.max} ${unit}`;
+  }
+
+  return "Use the suggested system baseline for your profile.";
+}
+
+function formatDefaultValue(item: Pick<PlanningAssumptionRegistryItem, "defaultValue" | "unit">) {
+  const unit = formatUnitLabel(item);
+  return `${String(item.defaultValue)} ${unit}`;
+}
+
+function buildExampleCalculation(item: Pick<PlanningAssumptionRegistryItem, "inputKind" | "label" | "recommendedValue" | "unit">) {
+  if (item.inputKind === "percentage") {
+    return `If ${item.label} is ${item.recommendedValue}%, a base value of 100 becomes ${100 + Number(item.recommendedValue)} after one year.`;
+  }
+
+  if (item.inputKind === "currency") {
+    return `A target of ${item.recommendedValue} means plans will reserve at least that amount in absolute currency terms.`;
+  }
+
+  if (item.inputKind === "integer" && item.unit === "years") {
+    return `Setting ${item.label} to ${item.recommendedValue} adjusts the projection horizon and timeline milestones.`;
+  }
+
+  return undefined;
+}
+
+function buildSensitivityText(item: Pick<PlanningAssumptionRegistryItem, "category" | "label">) {
+  const categoryLabel = item.category.toLowerCase();
+
+  return {
+    increase: `Increasing ${item.label} generally raises modeled impact in ${categoryLabel} planning outcomes and can change goal feasibility timelines.`,
+    decrease: `Decreasing ${item.label} generally lowers modeled impact in ${categoryLabel} planning outcomes and may require offsetting assumptions elsewhere.`,
+  };
+}
+
+function buildHelpContent(item: RawAssumptionRegistryItem): PlanningAssumptionHelpContent {
+  const sensitivity = buildSensitivityText(item);
+
+  return {
+    shortDescription: item.helpContent?.shortDescription ?? item.description,
+    detailedExplanation: item.helpContent?.detailedExplanation ?? item.tooltip,
+    whyItMatters:
+      item.helpContent?.whyItMatters ??
+      `${item.label} is used by ${item.affectedEngines.length} planning engines and impacts downstream scenario calculations.`,
+    recommendedRange: item.helpContent?.recommendedRange ?? formatRecommendedRange(item),
+    defaultValue: item.helpContent?.defaultValue ?? formatDefaultValue(item),
+    exampleCalculation: item.helpContent?.exampleCalculation ?? buildExampleCalculation(item),
+    effectOfIncrease: item.helpContent?.effectOfIncrease ?? sensitivity.increase,
+    effectOfDecrease: item.helpContent?.effectOfDecrease ?? sensitivity.decrease,
+  };
+}
+
+export const ASSUMPTION_REGISTRY: readonly PlanningAssumptionRegistryItem[] = RAW_ASSUMPTION_REGISTRY.map((item) => ({
+  ...item,
+  helpContent: buildHelpContent(item),
+}));
+
 const SECTION_ORDER: ReadonlyArray<PlanningAssumptionSectionDefinition["category"]> = [
   "PERSONAL",
   "INCOME",
@@ -669,6 +755,7 @@ export const PLANNING_ASSUMPTION_DOCUMENTATION: readonly PlanningAssumptionDocum
   category: item.category,
   description: item.description,
   tooltip: item.tooltip,
+  helpContent: item.helpContent,
   unit: item.unit,
   dependencies: item.dependencies,
   affectedEngines: item.affectedEngines,

@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronDown, ChevronRight, CircleHelp, RotateCcw, Save } from "lucide-react";
+import { ChevronDown, ChevronRight, RotateCcw, Save } from "lucide-react";
 
+import { AssumptionHelpPopover } from "@/components/planning/assumptions/AssumptionHelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/formatters";
@@ -195,9 +196,7 @@ export function AssumptionForm({
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-slate-900">{definition.label}</p>
-                            <span title={definition.tooltip} className="cursor-help text-slate-400">
-                              <CircleHelp className="h-4 w-4" />
-                            </span>
+                            <AssumptionHelpPopover label={definition.label} helpContent={definition.helpContent} />
                           </div>
                           <p className="mt-1 text-xs leading-5 text-slate-600">{definition.description}</p>
                         </div>
