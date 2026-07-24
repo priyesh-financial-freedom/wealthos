@@ -8,9 +8,10 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { formatDate } from "@/lib/formatters";
-import { planningScenarioService } from "@/services/planning/scenarios";
+import { createPlanningScenarioServerService } from "@/services/planning/scenarios/server";
 
 export default async function PlanningScenariosPage() {
+  const planningScenarioService = createPlanningScenarioServerService();
   let scenarioCount = 0;
   let scenarios: Array<{ id: string; name: string; description: string | null; updated_at: string; is_default: boolean; is_active: boolean }> = [];
   let error: string | null = null;

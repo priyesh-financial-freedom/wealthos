@@ -154,6 +154,7 @@ function createStore(initial: ScenarioState = []) {
   }
 
   const store = {
+    getAuthenticatedUserId: vi.fn(async () => runtime.authUser.id),
     listScenarios: vi.fn(async () => state.scenarios.map((scenario) => ({ ...scenario, overrides: [...(state.overridesByScenario.get(scenario.id) ?? [])] }))),
     getScenario: vi.fn(async (_userId: string, scenarioId: string) => {
       const scenario = state.scenarios.find((item) => item.id === scenarioId);
@@ -217,6 +218,7 @@ function createStore(initial: ScenarioState = []) {
       );
     }),
     loadOverrides: vi.fn(async (_userId: string, scenarioId: string) => state.overridesByScenario.get(scenarioId) ?? []),
+    loadLatestMonthEndSnapshot: vi.fn(async () => null),
   };
 
   return { state, store };

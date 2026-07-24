@@ -1,10 +1,11 @@
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { healthScoreService } from "@/services/health";
 import { goalService } from "@/services/planning/goals";
-import { planningScenarioService, createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
+import { createPlanningScenarioBrowserService, createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService } from "@/services/projection";
 import type { MonthlyReviewWorkspace } from "@/services/projection";
 import type { SimulationResult } from "@/services/simulation";
+import type { PlanningScenarioService } from "@/services/planning/scenarios";
 
 import { decisionRepository, DecisionRepository } from "./DecisionRepository";
 import { evaluateDecisionRules } from "./DecisionRules";
@@ -15,8 +16,8 @@ interface DecisionEngineDependencies {
   balanceSheetLoader?: typeof getBalanceSheetData;
   healthScoreLoader?: typeof healthScoreService.calculateHealthScore;
   goalsLoader?: typeof goalService.listGoals;
-  scenarioLoader?: typeof planningScenarioService.listScenarios;
-  scenarioSimulationLoader?: typeof planningScenarioService.runSimulation;
+  scenarioLoader?: PlanningScenarioService["listScenarios"];
+  scenarioSimulationLoader?: PlanningScenarioService["runSimulation"];
   monthlyReviewLoader?: (selectedCloseId?: string) => Promise<MonthlyReviewWorkspace | null>;
   baselineSimulationLoader?: () => Promise<SimulationResult>;
   now?: () => Date;
@@ -31,6 +32,7 @@ const PRIORITY_WEIGHT: Record<DecisionPriority, number> = {
 
 export class DecisionEngine {
   private readonly baselineSimulationEngine = createPlanningScenarioSimulationEngine();
+  private readonly planningScenarioService = createPlanningScenarioBrowserService();
 
   constructor(private readonly dependencies: DecisionEngineDependencies = {}) {}
 
@@ -140,11 +142,11 @@ export class DecisionEngine {
   }
 
   private async loadScenarios() {
-    return (this.dependencies.scenarioLoader ?? planningScenarioService.listScenarios.bind(planningScenarioService))();
+    return (this.dependencies.scenarioLoader ?? this.planningScenarioService.listScenarios.bind(this.planningScenarioService))();
   }
 
   private async loadScenarioSimulation(scenarioId: string) {
-    return (this.dependencies.scenarioSimulationLoader ?? planningScenarioService.runSimulation.bind(planningScenarioService))(scenarioId);
+    return (this.dependencies.scenarioSimulationLoader ?? this.planningScenarioService.runSimulation.bind(this.planningScenarioService))(scenarioId);
   }
 
   private async loadMonthlyReview() {

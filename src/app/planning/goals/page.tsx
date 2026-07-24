@@ -16,10 +16,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { goalService, type FinancialGoalWithProgress, type GoalPriority, type GoalType } from "@/services/planning/goals";
-import { planningScenarioService } from "@/services/planning/scenarios";
+import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios";
 
 const GOAL_TYPE_OPTIONS: GoalType[] = ["RETIREMENT", "EDUCATION", "HOME_PURCHASE", "WEALTH_TARGET", "CUSTOM"];
 const GOAL_PRIORITY_OPTIONS: GoalPriority[] = ["HIGH", "MEDIUM", "LOW"];
+const planningScenarioService = createPlanningScenarioBrowserService();
 
 interface GoalFormValues {
   name: string;

@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
-import { planningScenarioService } from "@/services/planning/scenarios";
+import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios";
 import { projectionEventsService } from "@/services/projection";
 import { FinancialSimulationEngine } from "@/services/simulation";
 import type { SimulationResult } from "@/services/simulation";
@@ -431,6 +431,10 @@ class SupabaseGoalStore implements GoalStore {
 export class GoalService {
   constructor(private readonly dependencies: GoalServiceDependencies = {}) {}
 
+  private get planningScenarioService() {
+    return createPlanningScenarioBrowserService();
+  }
+
   private get store(): GoalStore {
     return this.dependencies.store ?? new SupabaseGoalStore();
   }
@@ -454,7 +458,7 @@ export class GoalService {
   }
 
   private get scenarioSimulation() {
-    return this.dependencies.scenarioSimulation ?? ((scenarioId: string) => planningScenarioService.runSimulation(scenarioId));
+    return this.dependencies.scenarioSimulation ?? ((scenarioId: string) => this.planningScenarioService.runSimulation(scenarioId));
   }
 
   private get now() {
@@ -477,7 +481,7 @@ export class GoalService {
           throw new Error("Linked scenario was not found.");
         }
       } else {
-        const scenarios = await planningScenarioService.listScenarios();
+        const scenarios = await this.planningScenarioService.listScenarios();
         const defaultScenario = scenarios.find((scenario) => scenario.is_default) ?? scenarios[0] ?? null;
         linkedScenarioId = defaultScenario?.id ?? null;
       }

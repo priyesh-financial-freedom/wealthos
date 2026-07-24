@@ -1,5 +1,5 @@
 import { goalService } from "@/services/planning/goals";
-import { planningScenarioService } from "@/services/planning/scenarios";
+import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios";
 
 export interface PlanningDashboardSummary {
 	hero: {
@@ -140,6 +140,7 @@ export const PlanningDashboardService = {
 
 	async getSummary(): Promise<PlanningDashboardSummary> {
 		const summary = buildBaseSummary();
+		const planningScenarioService = createPlanningScenarioBrowserService();
 
 		const [goalsResult, scenariosResult] = await Promise.allSettled([
 			goalService.listGoals({ includeProgress: true }),
