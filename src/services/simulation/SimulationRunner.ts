@@ -1,4 +1,6 @@
-import { buildContributionEventsFromAssumptions, buildGrowthEventsFromAssumptions, projectionEngine } from "@/services/projection";
+import { CURRENT_PLANNING_ASSUMPTION_BASELINE } from "@/services/assumptions";
+import { createMonthlyLedgerRecord, type ProjectionContext, type ProjectionMonthState } from "@/services/projection/ProjectionContext";
+import { projectionEngine } from "@/services/projection";
 import type { MonthlySnapshot, ProjectionScenario } from "@/types/projection";
 
 import type {
@@ -20,6 +22,99 @@ import type {
 
 const SIMULATION_VERSION = "1.0.0";
 
+function deriveOpeningState(snapshot: SimulationContext["snapshot"]): ProjectionMonthState {
+  return snapshot.openingEntities.reduce<ProjectionMonthState>(
+    (accumulator, entity) => {
+      const amount = Number(entity.closingBalance ?? entity.openingBalance ?? 0);
+
+      if (entity.dimensions.cash) {
+        accumulator.cash += amount;
+      }
+
+      if (entity.dimensions.investments) {
+        if (entity.dimensions.retirement) {
+          accumulator.retirementCorpus += amount;
+        } else {
+          accumulator.investments += amount;
+        }
+      }
+
+      if (entity.dimensions.assets && !entity.dimensions.cash) {
+        accumulator.assets += amount;
+      }
+
+      if (entity.dimensions.liabilities) {
+        accumulator.liabilities += amount;
+      }
+
+      return accumulator;
+    },
+    { cash: 0, investments: 0, assets: 0, liabilities: 0, retirementCorpus: 0 },
+  );
+}
+
+function buildEffectiveAssumptions(context: SimulationContext) {
+  return {
+    ...CURRENT_PLANNING_ASSUMPTION_BASELINE,
+    currentAge: CURRENT_PLANNING_ASSUMPTION_BASELINE.currentAge,
+    retirementAge: Number(context.resolvedAssumptions.retirement.retirementTargetAge ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.retirementAge),
+    salaryGrowthRate: Number(context.resolvedAssumptions.income.salaryGrowthRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.salaryGrowthRate),
+    generalInflation: Number(context.resolvedAssumptions.inflation.generalInflationRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.generalInflation),
+    medicalInflation: Number(context.resolvedAssumptions.inflation.healthcareInflationRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.medicalInflation),
+    educationInflation: Number(context.resolvedAssumptions.inflation.educationInflationRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.educationInflation),
+    lifestyleInflation: Number(context.resolvedAssumptions.inflation.retirementInflationRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.lifestyleInflation),
+    equityReturn: Number(context.resolvedAssumptions.investments.expectedReturnRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.equityReturn),
+    debtReturn: Number(context.resolvedAssumptions.investments.fixedDepositRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.debtReturn),
+    goldReturn: Number(context.resolvedAssumptions.investments.goldAppreciationRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.goldReturn),
+    realEstateReturn: Number(context.resolvedAssumptions.investments.realEstateAppreciationRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.realEstateReturn),
+    homeLoanInterest: Number(context.resolvedAssumptions.loans.averageInterestRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.homeLoanInterest),
+    incomeTaxRate: Number(context.resolvedAssumptions.tax.effectiveTaxRate ?? CURRENT_PLANNING_ASSUMPTION_BASELINE.incomeTaxRate),
+  };
+}
+
+function buildProjectionContext(context: SimulationContext, scenario: ProjectionScenario): ProjectionContext {
+  const openingState = deriveOpeningState(context.snapshot);
+  const effectiveAssumptions = buildEffectiveAssumptions(context);
+
+  return {
+    scenario,
+    assumptions: context.resolvedAssumptions,
+    effectiveAssumptions,
+    assets: [],
+    liabilities: [],
+    bankAccounts: [],
+    investments: [],
+    realEstate: [],
+    retirementAccounts: [],
+    fixedDeposits: [],
+    goldHoldings: [],
+    silverHoldings: [],
+    insurancePolicies: [],
+    insuranceAccounts: [],
+    incomeSources: [],
+    expenses: [],
+    goals: [],
+    taxes: {
+      regime: context.resolvedAssumptions.tax.regime,
+      effectiveTaxRate: Number(context.resolvedAssumptions.tax.effectiveTaxRate ?? 0),
+      surchargeRate: Number(context.resolvedAssumptions.tax.surchargeRate ?? 0),
+      cessRate: Number(context.resolvedAssumptions.tax.cessRate ?? 0),
+      note: context.resolvedAssumptions.tax.note,
+    },
+    familyMembers: [],
+    planningHorizon: context.resolvedAssumptions.planning,
+    currentDate: new Date(),
+    projectionStartDate: context.projectionStart,
+    currentMonth: context.projectionStart,
+    monthIndex: 0,
+    openingSource: { kind: "live-balance-sheet", asOfMonth: context.snapshot.month },
+    financialEvents: context.resolvedEvents,
+    monthlyLedger: [],
+    currentRecord: createMonthlyLedgerRecord(context.projectionStart, effectiveAssumptions.currentAge, openingState),
+    currentState: openingState,
+  };
+}
+
 export class ProjectionEngineSimulationCalculator implements ProjectionCalculator {
   async calculate(context: SimulationContext): Promise<ProjectionCalculatorResult> {
     const scenario: ProjectionScenario = {
@@ -33,19 +128,10 @@ export class ProjectionEngineSimulationCalculator implements ProjectionCalculato
       isDefault: false,
     };
 
-    const timeline = projectionEngine.generateTimeline(scenario);
-    const assumptionEvents = [
-      ...buildContributionEventsFromAssumptions(context.resolvedAssumptions),
-      ...buildGrowthEventsFromAssumptions(context.resolvedAssumptions),
-    ];
-    const monthlySnapshots = projectionEngine.buildMonthlySnapshots(
-      scenario,
-      [...assumptionEvents, ...context.resolvedEvents],
-      timeline,
-      context.snapshot.openingEntities,
-    );
+    const projectionContext = buildProjectionContext(context, scenario);
+    const result = await projectionEngine.run(projectionContext);
 
-    return { timeline, monthlySnapshots, scenario };
+    return { timeline: result.timeline, monthlySnapshots: result.snapshots, scenario };
   }
 }
 

@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase/client";
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { projectionEngine } from "@/services/projection/ProjectionEngine";
-import { projectionEventsService } from "@/services/projection/events";
+import { projectionInputService } from "@/services/projection/ProjectionInputService";
 import type { Asset } from "@/types/asset";
 import type { BankAccount } from "@/types/bankAccount";
 import type { FixedDeposit } from "@/types/fixedDeposit";
@@ -660,21 +660,19 @@ async function getCloseById(client: ReturnType<typeof assertSupabaseClient>, use
 }
 
 async function getProjectedBucketTotals(targetMonth: MonthReference): Promise<ValueMap> {
-  const assumptionsBundle = await assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY);
-  const events = await projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => []);
-
   const scenario: ProjectionScenario = {
     id: DEFAULT_SCENARIO_KEY,
     name: "Default projection",
     description: "Month-end close projection baseline.",
     startMonth: targetMonth.monthKey,
-    planningHorizonYear: Math.max(assumptionsBundle.planning.endYear, targetMonth.year),
+    planningHorizonYear: targetMonth.year,
     assumptions: [],
-    events,
+    events: [],
     isDefault: true,
   };
 
-  const result = await projectionEngine.runProjection(scenario);
+  const context = await projectionInputService.buildContext({ scenario });
+  const result = await projectionEngine.run(context);
   const snapshot = result.snapshots.find((item) => item.month === targetMonth.monthKey) ?? result.snapshots[0] ?? null;
 
   return (snapshot?.projectedEntities ?? []).reduce((acc, entity) => {

@@ -10,8 +10,8 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
-import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
-import { projectionEventsService, projectionEngine, type ProjectionResult } from "@/services/projection";
+import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
+import { projectionEngine, projectionInputService, type ProjectionResult } from "@/services/projection";
 import type { MonthlyLedgerEntry, MonthlySnapshot, ProjectedEntity, ProjectionScenario } from "@/types/projection";
 
 function formatInr(value: number) {
@@ -147,21 +147,19 @@ export default function ProjectionViewerPage() {
       setLoading(true);
       setError(null);
 
-      const assumptionsBundle = await assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY);
-      const events = await projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => []);
-
       const scenario: ProjectionScenario = {
         id: DEFAULT_SCENARIO_KEY,
         name: "Default projection",
         description: "In-memory projection viewer for debugging.",
-        startMonth: assumptionsBundle.planning.startMonth,
-        planningHorizonYear: assumptionsBundle.planning.endYear,
+        startMonth: "",
+        planningHorizonYear: 0,
         assumptions: [],
-        events,
+        events: [],
         isDefault: true,
       };
 
-      const result = await projectionEngine.runProjection(scenario);
+      const context = await projectionInputService.buildContext({ scenario });
+      const result = await projectionEngine.run(context);
       setProjection(result);
 
       const latest = result.snapshots[result.snapshots.length - 1];

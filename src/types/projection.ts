@@ -201,3 +201,120 @@ export interface ProjectionScenario {
   events: FinancialEvent[];
   isDefault: boolean;
 }
+
+export interface ProjectionIncomeSource {
+  id: string;
+  name: string;
+  monthlyAmount: number;
+  bonusAmount: number;
+  bonusMonth: number | null;
+  rentalIncome: number;
+  businessIncome: number;
+  otherIncome: number;
+  annualGrowthRate: number;
+}
+
+export interface ProjectionExpenseItem {
+  id: string;
+  name: string;
+  monthlyAmount: number;
+  category: string;
+  annualInflationRate: number;
+}
+
+export interface ProjectionInsurancePolicy {
+  id: string;
+  name: string;
+  owner: string | null;
+  monthlyPremium: number;
+  annualPremium: number;
+  coverageAmount: number;
+}
+
+export interface ProjectionTaxProfile {
+  regime: "old" | "new" | "custom";
+  effectiveTaxRate: number;
+  surchargeRate: number;
+  cessRate: number;
+  note: string;
+}
+
+export interface ProjectionFamilyMember {
+  id: string;
+  name: string;
+  relationship: string;
+  birthDate: string | null;
+  currentAge: number | null;
+  isDependent: boolean;
+}
+
+export interface ProjectionGoalFundingItem {
+  goalId: string;
+  goalName: string;
+  targetAmount: number;
+  fundedAmount: number;
+  remainingAmount: number;
+  targetDate: string;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+}
+
+export interface ProjectionCurvePoint {
+  month: string;
+  value: number;
+}
+
+export interface ProjectionGoalFundingSummary {
+  totalGoals: number;
+  fundedGoals: number;
+  totalGoalFunding: number;
+  remainingGoalFunding: number;
+  items: ProjectionGoalFundingItem[];
+}
+
+export interface ProjectionRetirementReadiness {
+  status: "not-evaluated";
+  message: string;
+}
+
+export interface MonthlyLedgerRecord {
+  month: string;
+  age: number;
+  openingCash: number;
+  openingInvestments: number;
+  openingAssets: number;
+  openingLiabilities: number;
+  salary: number;
+  bonus: number;
+  rentalIncome: number;
+  businessIncome: number;
+  otherIncome: number;
+  livingExpenses: number;
+  insurancePremium: number;
+  taxes: number;
+  emis: number;
+  loanPrincipal: number;
+  loanInterest: number;
+  investmentContributions: number;
+  investmentReturns: number;
+  goalFunding: number;
+  emergencyFund: number;
+  closingCash: number;
+  closingInvestments: number;
+  closingAssets: number;
+  closingLiabilities: number;
+  closingNetWorth: number;
+  liquidity: number;
+  retirementCorpus: number;
+}
+
+export type MonthlyLedger = readonly Readonly<MonthlyLedgerRecord>[];
+
+export interface ProjectionRunResult {
+  monthlyLedger: MonthlyLedger;
+  netWorthCurve: ProjectionCurvePoint[];
+  investmentCurve: ProjectionCurvePoint[];
+  cashCurve: ProjectionCurvePoint[];
+  loanCurve: ProjectionCurvePoint[];
+  goalFundingSummary: ProjectionGoalFundingSummary;
+  retirementReadiness: ProjectionRetirementReadiness;
+}
