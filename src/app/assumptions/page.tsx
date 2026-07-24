@@ -1,5 +1,5 @@
-import { PlanningAssumptionPage } from "@/components/planning/assumptions/AssumptionPage";
+import { redirect } from "next/navigation";
 
 export default function AssumptionsRoutePage() {
-  return <PlanningAssumptionPage />;
+  redirect("/planning/assumptions");
 }

@@ -115,7 +115,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const assetsActive = activeHref === "/assets" || bankAccountsActive || investmentsActive || fixedDepositsActive || goldActive || silverActive || realEstateActive || retirementActive;
 
   const liabilitiesActive = activeHref === "/liabilities";
-  const goalsActive = activeHref === "/goals";
   const insuranceActive = activeHref === "/insurance";
   const reportsActive = ["/reports", "/history", "/income", "/expenses", "/documents"].includes(activeHref);
   const monthEndCloseActive = activeHref === "/month-end-close";
@@ -156,13 +155,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
 
             {planningOpen ? (
               <div className="space-y-1">
-                <div className={rowWrapClass(2)}>
-                  <Link href="/planning" className={rowLinkClass({ active: planningDashboardActive, level: 2, collapsed })}>
-                    <LayoutDashboard className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Dashboard</span> : null}
-                  </Link>
-                </div>
-
                 <div className={rowWrapClass(2)}>
                   <Link href="/planning/scenarios" className={rowLinkClass({ active: planningScenariosActive, level: 2, collapsed })}>
                     <Compass className="h-4 w-4 shrink-0" />
@@ -338,13 +330,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/liabilities" className={rowLinkClass({ active: liabilitiesActive, level: 1, collapsed })}>
               <CreditCard className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Liabilities</span> : null}
-            </Link>
-          </div>
-
-          <div className={rowWrapClass(1)}>
-            <Link href="/goals" className={rowLinkClass({ active: goalsActive, level: 1, collapsed })}>
-              <Target className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Goals</span> : null}
             </Link>
           </div>
 
