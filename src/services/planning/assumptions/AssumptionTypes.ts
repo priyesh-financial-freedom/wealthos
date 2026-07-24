@@ -13,6 +13,27 @@ export type PlanningScenarioPreset = "BASE" | "CONSERVATIVE" | "OPTIMISTIC" | "C
 
 export type LoanPrepaymentStrategy = "NONE" | "AVALANCHE" | "SNOWBALL" | "HYBRID";
 
+export type PlanningAssumptionUnit = "years" | "percent" | "currency" | "months" | "strategy" | "priority";
+
+export type PlanningAssumptionEngineId =
+  | "PROJECTION_ENGINE"
+  | "RETIREMENT_PLANNING"
+  | "GOAL_PROBABILITY_ANALYSIS"
+  | "CASH_FLOW_FORECASTING"
+  | "FAMILY_WEALTH_TIMELINE"
+  | "AI_FINANCIAL_ADVISOR"
+  | "EXECUTIVE_DASHBOARD";
+
+export type PlanningAssumptionDependency =
+  | "longevity"
+  | "salary"
+  | "goal-cost-escalation"
+  | "retirement-corpus"
+  | "tax-drag"
+  | "debt-cost"
+  | "asset-return"
+  | "liquidity-buffer";
+
 export interface EffectivePlanningAssumptions {
   currentAge: number;
   retirementAge: number;
@@ -90,15 +111,60 @@ export type PlanningAssumptionScopeSelection =
   | { level: "SCENARIO"; scenarioId: string }
   | { level: "GOAL"; goalId: string; scenarioId?: string | null };
 
+export type PlanningAssumptionInheritanceLevel = 1 | 2 | 3 | 4;
+
+export type PlanningAssumptionProvenanceSource =
+  | "SYSTEM_DEFAULT"
+  | "USER_DEFAULT"
+  | "SCENARIO_OVERRIDE"
+  | "GOAL_OVERRIDE";
+
+export interface PlanningAssumptionProvenance<Key extends PlanningAssumptionKey = PlanningAssumptionKey> {
+  key: Key;
+  source: PlanningAssumptionProvenanceSource;
+  inheritanceLevel: PlanningAssumptionInheritanceLevel;
+  overrideActive: boolean;
+  inheritedFromKey: Key | null;
+  scopeId: string | null;
+  category: PlanningAssumptionCategoryKey;
+  unit: PlanningAssumptionUnit;
+  dependencies: readonly PlanningAssumptionDependency[];
+  affectedEngines: readonly PlanningAssumptionEngineId[];
+}
+
+export type ResolvedPlanningAssumptionFieldMap = {
+  [Key in PlanningAssumptionKey]: {
+    value: EffectivePlanningAssumptions[Key];
+    provenance: PlanningAssumptionProvenance<Key>;
+  };
+};
+
+export interface EffectivePlanningAssumptionResult {
+  values: EffectivePlanningAssumptions;
+  fields: ResolvedPlanningAssumptionFieldMap;
+}
+
+export interface PlanningAssumptionDocumentationItem {
+  key: PlanningAssumptionKey;
+  label: string;
+  category: PlanningAssumptionCategoryKey;
+  description: string;
+  tooltip: string;
+  unit: PlanningAssumptionUnit;
+  dependencies: readonly PlanningAssumptionDependency[];
+  affectedEngines: readonly PlanningAssumptionEngineId[];
+}
+
 export interface PlanningAssumptionEditorState {
   scope: PlanningAssumptionScopeSelection;
   scenarios: PlanningScenarioSummary[];
   activeScenarioId: string | null;
   goal: PlanningGoalSummary | null;
-  effective: EffectivePlanningAssumptions;
+  effective: EffectivePlanningAssumptionResult;
   inherited: EffectivePlanningAssumptions;
   recommended: EffectivePlanningAssumptions;
   overrides: PlanningAssumptionOverrides;
+  documentation: readonly PlanningAssumptionDocumentationItem[];
 }
 
 export interface PlanningAssumptionFieldOption {
@@ -115,10 +181,18 @@ export interface PlanningAssumptionFieldDefinition {
   description: string;
   tooltip: string;
   inputKind: PlanningAssumptionInputKind;
+  unit: PlanningAssumptionUnit;
   min?: number;
   max?: number;
   step?: number;
   options?: readonly PlanningAssumptionFieldOption[];
+}
+
+export interface PlanningAssumptionRegistryItem extends PlanningAssumptionFieldDefinition {
+  defaultValue: EffectivePlanningAssumptions[PlanningAssumptionKey];
+  recommendedValue: EffectivePlanningAssumptions[PlanningAssumptionKey];
+  dependencies: readonly PlanningAssumptionDependency[];
+  affectedEngines: readonly PlanningAssumptionEngineId[];
 }
 
 export interface PlanningAssumptionSectionDefinition {

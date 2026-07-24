@@ -383,6 +383,7 @@ export default function ImportDataPage() {
                 pagination={{ page: detectedPage, pageSize: 10, totalRows: detectedRows.length, onPageChange: setDetectedPage }}
                 emptyTitle="No importable sheets found"
                 emptyDescription="This workbook does not contain any supported import sheets."
+                selection={{ enabled: false }}
               />
 
               {parsedWorkbook.detectedSheets.some((sheet) => sheet.columnMapping.length > 0) ? (
@@ -434,6 +435,7 @@ export default function ImportDataPage() {
                     emptyTitle="No reference sheets"
                     emptyDescription="No reference or calculation sheets were detected."
                     maxBodyHeightClassName="max-h-[24rem]"
+                    selection={{ enabled: false }}
                   />
                 </div>
               ) : null}
@@ -470,6 +472,7 @@ export default function ImportDataPage() {
                 emptyTitle="No validation results"
                 emptyDescription="Run validation on the selected sheets to populate this preview."
                 maxBodyHeightClassName="max-h-[28rem]"
+                selection={{ enabled: false }}
               />
 
               {preview.issues.length > 0 ? (
@@ -523,6 +526,7 @@ export default function ImportDataPage() {
                 emptyTitle="No execution results"
                 emptyDescription="Execute a validated import plan to populate this summary."
                 maxBodyHeightClassName="max-h-[28rem]"
+                selection={{ enabled: false }}
               />
 
               {execution.issues.length > 0 ? (

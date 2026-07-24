@@ -7,8 +7,9 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { DataGrid } from "@/components/ui/data-grid";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
+import { ToastViewport } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -158,6 +159,18 @@ export default function RealEstatePage() {
     };
   }, [filteredProperties]);
 
+  const ownerOptions = useMemo(() => {
+    const owners = new Set<string>();
+
+    for (const property of properties) {
+      if (property.owner.trim()) {
+        owners.add(property.owner.trim());
+      }
+    }
+
+    return owners.size > 0 ? Array.from(owners).sort((left, right) => left.localeCompare(right)) : ["Self"];
+  }, [properties]);
+
   function openCreateDialog() {
     setEditing(null);
     setFormValues(defaultValues);
@@ -257,6 +270,53 @@ export default function RealEstatePage() {
     }
   }
 
+  async function handleBulkDelete(selectedProperties: RealEstateProperty[]) {
+    if (selectedProperties.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedProperties.length} selected properties?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedProperties.map((property) => deleteRealEstateProperty(property.id)));
+      setNotice(`${selectedProperties.length} properties deleted successfully.`);
+      await refresh();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete selected properties");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkChangeOwner(selectedProperties: RealEstateProperty[], owner: string) {
+    if (selectedProperties.length === 0 || !owner.trim()) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedProperties.map((property) => updateRealEstateProperty({ id: property.id, owner: owner.trim() })));
+      setNotice(`Updated owner for ${selectedProperties.length} properties.`);
+      await refresh();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update property owners");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <AppLayout>
       <PageContainer>
@@ -297,47 +357,44 @@ export default function RealEstatePage() {
         </DashboardCard>
 
         <DashboardCard>
-          {loading ? (
-            <LoadingSpinner label="Loading properties..." />
-          ) : filteredProperties.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm text-slate-600">
-              Add your first property to start real estate tracking.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-slate-600">Property Name</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-600">City</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-600">Owner</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-600">Current Value</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {filteredProperties.map((property) => (
-                    <tr key={property.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-900">{property.property_name}</td>
-                      <td className="px-4 py-3 text-slate-700">{property.city}</td>
-                      <td className="px-4 py-3 text-slate-700">{property.owner}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(property.current_market_value, { maximumFractionDigits: 0 })}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openEditDialog(property)}>
-                            Edit
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleDelete(property)}>
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataGrid
+            title="Property inventory"
+            description="Track location, ownership, and current market value"
+            columns={[
+              { key: "property_name", header: "Property Name", widthClassName: "min-w-52", className: "font-medium text-slate-900", cell: (property) => property.property_name },
+              { key: "city", header: "City", widthClassName: "min-w-32", cell: (property) => property.city },
+              { key: "owner", header: "Owner", widthClassName: "min-w-36", cell: (property) => property.owner },
+              { key: "current_market_value", header: "Current Value", widthClassName: "min-w-40 text-slate-900", cell: (property) => formatCurrency(property.current_market_value, { maximumFractionDigits: 0 }) },
+              {
+                key: "actions",
+                header: "Actions",
+                widthClassName: "min-w-36",
+                className: "text-right",
+                headerClassName: "text-right",
+                cell: (property) => (
+                  <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                    <Button size="sm" variant="outline" onClick={() => openEditDialog(property)}>
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDelete(property)}>
+                      Delete
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+            rows={filteredProperties}
+            getRowId={(property) => property.id}
+            loading={loading}
+            emptyTitle="No properties yet"
+            emptyDescription="Add your first property to start real estate tracking."
+            selection={{
+              exportFileName: "real-estate-properties.csv",
+              onDeleteSelected: handleBulkDelete,
+              ownerOptions: ownerOptions.map((owner) => ({ label: owner, value: owner })),
+              onChangeOwnerSelected: handleBulkChangeOwner,
+            }}
+          />
         </DashboardCard>
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

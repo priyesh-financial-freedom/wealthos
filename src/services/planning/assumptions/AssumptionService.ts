@@ -2,6 +2,8 @@ import { supabase } from "@/lib/supabase/client";
 import type { AssumptionsBundle } from "@/types/assumptions";
 
 import {
+  getRegistryItem,
+  PLANNING_ASSUMPTION_DOCUMENTATION,
   getScenarioRecommendedAssumptions,
   SCENARIO_PRESET_DESCRIPTIONS,
   SCENARIO_PRESET_OVERRIDES,
@@ -10,11 +12,14 @@ import {
 import { PlanningAssumptionRepository } from "./AssumptionRepository";
 import { PLANNING_ASSUMPTION_KEYS } from "./AssumptionTypes";
 import type {
+  EffectivePlanningAssumptionResult,
   EffectivePlanningAssumptions,
   PlanningAssumptionEditorState,
   PlanningAssumptionKey,
   PlanningAssumptionOverrides,
+  PlanningAssumptionProvenanceSource,
   PlanningAssumptionRecord,
+  ResolvedPlanningAssumptionFieldMap,
   PlanningAssumptionScopeSelection,
   PlanningGoalSummary,
   PlanningScenarioPreset,
@@ -151,6 +156,81 @@ function hasOverrides(overrides: PlanningAssumptionOverrides) {
   return PLANNING_ASSUMPTION_KEYS.some((key) => typeof overrides[key] !== "undefined");
 }
 
+function hasOverrideValue(overrides: PlanningAssumptionOverrides, key: PlanningAssumptionKey) {
+  return typeof overrides[key] !== "undefined";
+}
+
+function resolveProvenanceSource(params: {
+  scope: PlanningAssumptionScopeSelection;
+  key: PlanningAssumptionKey;
+  userDefaultsOverrides: PlanningAssumptionOverrides;
+  scenarioOverrides: PlanningAssumptionOverrides;
+  goalOverrides: PlanningAssumptionOverrides;
+}): { source: PlanningAssumptionProvenanceSource; inheritanceLevel: 1 | 2 | 3 | 4; scopeId: string | null } {
+  const { scope, key, userDefaultsOverrides, scenarioOverrides, goalOverrides } = params;
+
+  if (scope.level === "GOAL" && hasOverrideValue(goalOverrides, key)) {
+    return { source: "GOAL_OVERRIDE", inheritanceLevel: 4, scopeId: scope.goalId };
+  }
+
+  if ((scope.level === "GOAL" || scope.level === "SCENARIO") && hasOverrideValue(scenarioOverrides, key)) {
+    const scenarioId = scope.level === "SCENARIO" ? scope.scenarioId : scope.scenarioId ?? null;
+    return { source: "SCENARIO_OVERRIDE", inheritanceLevel: 3, scopeId: scenarioId };
+  }
+
+  if (hasOverrideValue(userDefaultsOverrides, key)) {
+    return { source: "USER_DEFAULT", inheritanceLevel: 2, scopeId: null };
+  }
+
+  return { source: "SYSTEM_DEFAULT", inheritanceLevel: 1, scopeId: null };
+}
+
+function buildEffectiveResult(params: {
+  scope: PlanningAssumptionScopeSelection;
+  values: EffectivePlanningAssumptions;
+  activeOverrides: PlanningAssumptionOverrides;
+  userDefaultsOverrides: PlanningAssumptionOverrides;
+  scenarioOverrides: PlanningAssumptionOverrides;
+  goalOverrides: PlanningAssumptionOverrides;
+}): EffectivePlanningAssumptionResult {
+  const fieldEntries = PLANNING_ASSUMPTION_KEYS.map((key) => {
+    const registryItem = getRegistryItem(key);
+    const source = resolveProvenanceSource({
+      scope: params.scope,
+      key,
+      userDefaultsOverrides: params.userDefaultsOverrides,
+      scenarioOverrides: params.scenarioOverrides,
+      goalOverrides: params.goalOverrides,
+    });
+
+    return [
+      key,
+      {
+        value: params.values[key],
+        provenance: {
+          key,
+          source: source.source,
+          inheritanceLevel: source.inheritanceLevel,
+          overrideActive: hasOverrideValue(params.activeOverrides, key),
+          inheritedFromKey: null,
+          scopeId: source.scopeId,
+          category: registryItem.category,
+          unit: registryItem.unit,
+          dependencies: registryItem.dependencies,
+          affectedEngines: registryItem.affectedEngines,
+        },
+      },
+    ] as const;
+  });
+
+  const fields = Object.fromEntries(fieldEntries) as ResolvedPlanningAssumptionFieldMap;
+
+  return {
+    values: params.values,
+    fields,
+  };
+}
+
 function deriveScenarioSeed(preset: PlanningScenarioPreset): PlanningAssumptionOverrides {
   return { ...SCENARIO_PRESET_OVERRIDES[preset] };
 }
@@ -269,7 +349,15 @@ export class PlanningAssumptionService {
       }
     }
 
-    const effective = mergeAssumptionLayers(inherited, overrides);
+    const effectiveValues = mergeAssumptionLayers(inherited, overrides);
+    const effective = buildEffectiveResult({
+      scope: resolvedScope,
+      values: effectiveValues,
+      activeOverrides: overrides,
+      userDefaultsOverrides,
+      scenarioOverrides,
+      goalOverrides,
+    });
 
     return {
       scope: resolvedScope,
@@ -280,6 +368,7 @@ export class PlanningAssumptionService {
       inherited,
       recommended,
       overrides,
+      documentation: PLANNING_ASSUMPTION_DOCUMENTATION,
     };
   }
 
@@ -351,7 +440,7 @@ export class PlanningAssumptionService {
     );
 
     const editorState = await this.getEditorState(scope);
-    return editorState.effective;
+    return editorState.effective.values;
   }
 
   async getLegacyAssumptionsBundle(options: { scenarioId?: string | null; goalId?: string | null } = {}) {

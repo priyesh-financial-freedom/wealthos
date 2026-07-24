@@ -29,6 +29,9 @@ interface InvestmentTableProps {
   onView: (investment: Investment) => void;
   onEdit: (investment: Investment) => void;
   onDelete: (investment: Investment) => void;
+  onBulkDelete: (investments: Investment[]) => Promise<void> | void;
+  onBulkChangeOwner: (investments: Investment[], owner: string) => Promise<void> | void;
+  ownerOptions: string[];
 }
 
 type InvestmentColumnKey =
@@ -103,6 +106,9 @@ export function InvestmentTable({
   onView,
   onEdit,
   onDelete,
+  onBulkDelete,
+  onBulkChangeOwner,
+  ownerOptions,
 }: InvestmentTableProps) {
   const allColumns: InvestmentColumnConfig[] = [
     { key: "name", label: "Investment Name", sortable: true, widthClassName: "min-w-56", className: "font-medium text-slate-900", cell: (investment) => investment.investment_name },
@@ -189,6 +195,12 @@ export function InvestmentTable({
       pagination={{ page, pageSize, totalRows, onPageChange, onPageSizeChange, pageSizeOptions: [10, 20, 50] }}
       emptyTitle="No investments yet"
       emptyDescription="Add your first holding to unlock allocation, return, and diversification insights."
+      selection={{
+        exportFileName: "investments.csv",
+        onDeleteSelected: onBulkDelete,
+        ownerOptions: ownerOptions.map((owner) => ({ label: owner, value: owner })),
+        onChangeOwnerSelected: onBulkChangeOwner,
+      }}
     />
   );
 }

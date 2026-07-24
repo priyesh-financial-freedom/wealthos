@@ -147,6 +147,18 @@ export default function InvestmentsPage() {
 
   const summary = useMemo(() => buildInvestmentSummary(investments), [investments]);
 
+  const ownerOptions = useMemo(() => {
+    const owners = new Set<string>();
+
+    for (const investment of investments) {
+      if (investment.owner && investment.owner.trim()) {
+        owners.add(investment.owner.trim());
+      }
+    }
+
+    return owners.size > 0 ? Array.from(owners).sort((left, right) => left.localeCompare(right)) : ["Self"];
+  }, [investments]);
+
   const filteredInvestments = useMemo(
     () => filterAndSortInvestments({ investments, query, categoryFilter, regionFilter, sortKey, sortDirection }),
     [categoryFilter, investments, query, regionFilter, sortDirection, sortKey],
@@ -205,6 +217,51 @@ export default function InvestmentsPage() {
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete investment");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkDelete(selectedInvestments: Investment[]) {
+    if (selectedInvestments.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedInvestments.length} selected investment(s)?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await Promise.all(selectedInvestments.map((investment) => deleteInvestment(investment.id)));
+      setNotice(`${selectedInvestments.length} investment(s) deleted successfully.`);
+      await refreshInvestments();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete selected investments");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkChangeOwner(selectedInvestments: Investment[], owner: string) {
+    if (selectedInvestments.length === 0 || !owner.trim()) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await Promise.all(selectedInvestments.map((investment) => updateInvestment({ id: investment.id, owner: owner.trim() })));
+      setNotice(`Updated owner for ${selectedInvestments.length} investment(s).`);
+      await refreshInvestments();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update selected investments");
     } finally {
       setSubmitting(false);
     }
@@ -300,6 +357,9 @@ export default function InvestmentsPage() {
           onView={(investment) => setSelectedInvestment(investment)}
           onEdit={(investment) => { setEditingInvestment(investment); setDialogOpen(true); }}
           onDelete={(investment) => setDeleteTarget(investment)}
+          onBulkDelete={handleBulkDelete}
+          onBulkChangeOwner={handleBulkChangeOwner}
+          ownerOptions={ownerOptions}
         />
       </PageContainer>
 

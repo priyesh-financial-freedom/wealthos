@@ -270,6 +270,53 @@ export default function LiabilitiesPage() {
     }
   }
 
+  async function handleBulkDelete(selectedLiabilities: Liability[]) {
+    if (selectedLiabilities.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedLiabilities.length} selected liabilities?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedLiabilities.map((liability) => deleteLiability(liability.id)));
+      setNotice(`${selectedLiabilities.length} liabilities deleted successfully.`);
+      await refreshDashboard();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete selected liabilities");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkStatusChange(selectedLiabilities: Liability[], status: Liability["status"]) {
+    if (selectedLiabilities.length === 0) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedLiabilities.map((liability) => updateLiability({ id: liability.id, status })));
+      setNotice(`Updated status for ${selectedLiabilities.length} liabilities.`);
+      await refreshDashboard();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update selected liabilities");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   useEffect(() => {
     if (!notice) {
       return;
@@ -407,7 +454,7 @@ export default function LiabilitiesPage() {
             </div>
           </div>
 
-          {loading ? <LoadingSpinner label="Loading liabilities..." /> : filteredLiabilities.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center"><h4 className="text-base font-semibold text-slate-900">No liabilities yet</h4><p className="mt-2 text-sm text-slate-600">Add your first liability to track debt, repayment obligations, and risk.</p></div> : <LiabilityTable liabilities={filteredLiabilities} onView={(liability) => setSelectedLiability(liability)} onEdit={(liability) => { setEditingLiability(liability); setDialogOpen(true); }} onDelete={(liability) => setDeleteTarget(liability)} />}
+          {loading ? <LoadingSpinner label="Loading liabilities..." /> : filteredLiabilities.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center"><h4 className="text-base font-semibold text-slate-900">No liabilities yet</h4><p className="mt-2 text-sm text-slate-600">Add your first liability to track debt, repayment obligations, and risk.</p></div> : <LiabilityTable liabilities={filteredLiabilities} onView={(liability) => setSelectedLiability(liability)} onEdit={(liability) => { setEditingLiability(liability); setDialogOpen(true); }} onDelete={(liability) => setDeleteTarget(liability)} onBulkDelete={handleBulkDelete} onBulkChangeStatus={handleBulkStatusChange} />}
         </DashboardCard>
       </PageContainer>
 

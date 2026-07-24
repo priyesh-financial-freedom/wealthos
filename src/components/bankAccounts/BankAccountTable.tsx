@@ -4,7 +4,7 @@ import { BankAccountTypeBadge } from "@/components/bankAccounts/BankAccountTypeB
 import { Button } from "@/components/ui/button";
 import { DataGrid, type DataGridSortDirection } from "@/components/ui/data-grid";
 import { formatCurrency } from "@/lib/formatters";
-import type { BankAccount } from "@/types/bankAccount";
+import type { BankAccount, BankAccountStatus } from "@/types/bankAccount";
 
 interface BankAccountTableProps {
   accounts: BankAccount[];
@@ -25,6 +25,10 @@ interface BankAccountTableProps {
   onView: (account: BankAccount) => void;
   onEdit: (account: BankAccount) => void;
   onDelete: (account: BankAccount) => void;
+  onBulkDelete: (accounts: BankAccount[]) => Promise<void> | void;
+  onBulkChangeStatus: (accounts: BankAccount[], status: BankAccountStatus) => Promise<void> | void;
+  onBulkChangeOwner: (accounts: BankAccount[], owner: string) => Promise<void> | void;
+  ownerOptions: string[];
 }
 export function BankAccountTable({
   accounts,
@@ -45,6 +49,10 @@ export function BankAccountTable({
   onView,
   onEdit,
   onDelete,
+  onBulkDelete,
+  onBulkChangeStatus,
+  onBulkChangeOwner,
+  ownerOptions,
 }: BankAccountTableProps) {
   return (
     <DataGrid
@@ -105,6 +113,18 @@ export function BankAccountTable({
       pagination={{ page, pageSize, totalRows, onPageChange, onPageSizeChange, pageSizeOptions: [10, 20, 50] }}
       emptyTitle="No bank accounts yet"
       emptyDescription="Add your first bank account to start treasury tracking."
+      selection={{
+        exportFileName: "bank-accounts.csv",
+        onDeleteSelected: onBulkDelete,
+        statusOptions: [
+          { label: "Active", value: "active" },
+          { label: "Inactive", value: "inactive" },
+          { label: "Closed", value: "closed" },
+        ],
+        onChangeStatusSelected: (selectedAccounts, status) => onBulkChangeStatus(selectedAccounts, status as BankAccountStatus),
+        ownerOptions: ownerOptions.map((owner) => ({ label: owner, value: owner })),
+        onChangeOwnerSelected: onBulkChangeOwner,
+      }}
     />
   );
 }

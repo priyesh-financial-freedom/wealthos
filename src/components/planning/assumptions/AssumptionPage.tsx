@@ -85,7 +85,7 @@ export function PlanningAssumptionPage() {
 
   function applyEditorState(nextState: PlanningAssumptionEditorState) {
     setEditorState(nextState);
-    setDraftValues(buildDraftValues(nextState.effective));
+    setDraftValues(buildDraftValues(nextState.effective.values));
     setValidationErrors({});
   }
 
@@ -156,7 +156,7 @@ export function PlanningAssumptionPage() {
 
     for (const key of fieldKeys) {
       try {
-        const parsedValue = parseDraftValue(key, draftValues[key] ?? String(editorState.effective[key]));
+        const parsedValue = parseDraftValue(key, draftValues[key] ?? String(editorState.effective.values[key]));
         const issue = validatePlanningAssumptionValue(key, parsedValue);
         if (issue) {
           nextErrors[key] = issue;
@@ -374,7 +374,7 @@ export function PlanningAssumptionPage() {
             </div>
 
             <AssumptionForm
-              currentValues={editorState.effective}
+              currentValues={editorState.effective.values}
               recommendedValues={editorState.recommended}
               inheritedValues={editorState.inherited}
               overrides={editorState.overrides}

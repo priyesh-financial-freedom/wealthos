@@ -171,6 +171,18 @@ export default function BankAccountsPage() {
     [filteredAccounts, snapshots, totalLiabilities],
   );
 
+  const ownerOptions = useMemo(() => {
+    const owners = new Set<string>();
+
+    for (const account of accounts) {
+      if (account.owner && account.owner.trim()) {
+        owners.add(account.owner.trim());
+      }
+    }
+
+    return owners.size > 0 ? Array.from(owners).sort((left, right) => left.localeCompare(right)) : ["Self"];
+  }, [accounts]);
+
   const paginatedAccounts = useMemo(() => filteredAccounts.slice((page - 1) * pageSize, page * pageSize), [filteredAccounts, page, pageSize]);
 
   async function handleCreateAccount(values: BankAccountInsert) {
@@ -227,6 +239,74 @@ export default function BankAccountsPage() {
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete bank account");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkDeleteAccounts(selectedAccounts: BankAccount[]) {
+    if (selectedAccounts.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${selectedAccounts.length} selected bank account(s)?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedAccounts.map((account) => deleteBankAccount(account.id)));
+      setNotice(`${selectedAccounts.length} bank account(s) deleted successfully.`);
+      await refreshData();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete selected bank accounts");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkChangeAccountStatus(selectedAccounts: BankAccount[], status: BankAccount["status"]) {
+    if (selectedAccounts.length === 0) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedAccounts.map((account) => updateBankAccount({ id: account.id, status })));
+      setNotice(`Updated status for ${selectedAccounts.length} bank account(s).`);
+      await refreshData();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update selected bank accounts");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBulkChangeAccountOwner(selectedAccounts: BankAccount[], owner: string) {
+    if (selectedAccounts.length === 0 || !owner.trim()) {
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await Promise.all(selectedAccounts.map((account) => updateBankAccount({ id: account.id, owner: owner.trim() })));
+      setNotice(`Updated owner for ${selectedAccounts.length} bank account(s).`);
+      await refreshData();
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update account owners");
     } finally {
       setSubmitting(false);
     }
@@ -387,6 +467,10 @@ export default function BankAccountsPage() {
             setAccountDialogOpen(true);
           }}
           onDelete={(account) => setDeleteAccountTarget(account)}
+          onBulkDelete={handleBulkDeleteAccounts}
+          onBulkChangeStatus={handleBulkChangeAccountStatus}
+          onBulkChangeOwner={handleBulkChangeAccountOwner}
+          ownerOptions={ownerOptions}
         />
 
         <ContentContainer>
