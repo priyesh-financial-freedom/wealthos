@@ -37,6 +37,8 @@ interface SidebarProps {
   collapsed: boolean;
 }
 
+type SidebarGroupKey = "planning" | "assets";
+
 function rowLinkClass(params: { active: boolean; level: 1 | 2 | 3; collapsed: boolean }): string {
   const { active, level, collapsed } = params;
   const levelClass =
@@ -77,9 +79,15 @@ export interface SidebarNavItem {
 }
 
 export function Sidebar({ activeHref, collapsed }: SidebarProps) {
-  const [assetsOpen, setAssetsOpen] = useState(true);
-  const [planningOpen, setPlanningOpen] = useState(true);
-  const [retirementOpen, setRetirementOpen] = useState(true);
+  const [expandedGroup, setExpandedGroup] = useState<SidebarGroupKey | null>(null);
+  const [retirementOpen, setRetirementOpen] = useState(false);
+
+  const planningOpen = expandedGroup === "planning";
+  const assetsOpen = expandedGroup === "assets";
+
+  function toggleGroup(group: SidebarGroupKey) {
+    setExpandedGroup((current) => (current === group ? null : group));
+  }
 
   const dashboardActive = activeHref === "/dashboard";
   const planningDashboardActive = activeHref === "/planning";
@@ -138,7 +146,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 <button
                   type="button"
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-                  onClick={() => setPlanningOpen((current) => !current)}
+                  onClick={() => toggleGroup("planning")}
                   aria-label={planningOpen ? "Collapse Planning" : "Expand Planning"}
                 >
                   {planningOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -231,7 +239,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 <button
                   type="button"
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
-                  onClick={() => setAssetsOpen((current) => !current)}
+                  onClick={() => toggleGroup("assets")}
                   aria-label={assetsOpen ? "Collapse Assets" : "Expand Assets"}
                 >
                   {assetsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
