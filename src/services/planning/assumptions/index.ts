@@ -18,6 +18,7 @@ export { validatePlanningAssumptionPatch, validatePlanningAssumptionValue } from
 export type {
   EffectivePlanningAssumptions,
   LoanPrepaymentStrategy,
+  PlanningFamilyProfile,
   PlanningAssumptionCategoryKey,
   PlanningAssumptionEditorState,
   PlanningAssumptionFieldDefinition,

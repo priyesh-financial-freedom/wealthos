@@ -8,6 +8,7 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/formatters";
 import { PLANNING_ASSUMPTION_FIELD_DEFINITIONS, PLANNING_ASSUMPTION_SECTIONS } from "@/services/planning/assumptions";
 import type {
   EffectivePlanningAssumptions,
+  PlanningFamilyProfile,
   PlanningAssumptionCategoryKey,
   PlanningAssumptionFieldDefinition,
   PlanningAssumptionKey,
@@ -21,10 +22,16 @@ interface AssumptionFormProps {
   overrides: PlanningAssumptionOverrides;
   draftValues: Partial<Record<PlanningAssumptionKey, string>>;
   validationErrors: Partial<Record<PlanningAssumptionKey, string>>;
+  familyProfile: PlanningFamilyProfile;
+  familyProfileDraft: { primaryDateOfBirth: string; spouseDateOfBirth: string };
+  familyProfileErrors: { primaryDateOfBirth?: string; spouseDateOfBirth?: string };
+  familyProfileSaving: boolean;
   expandedSections: Partial<Record<PlanningAssumptionCategoryKey, boolean>>;
   savingSection: PlanningAssumptionCategoryKey | null;
   onToggleSection: (category: PlanningAssumptionCategoryKey) => void;
   onFieldChange: (key: PlanningAssumptionKey, value: string) => void;
+  onFamilyProfileFieldChange: (key: "primaryDateOfBirth" | "spouseDateOfBirth", value: string) => void;
+  onSaveFamilyProfile: () => void;
   onResetField: (key: PlanningAssumptionKey) => void;
   onResetSection: (category: PlanningAssumptionCategoryKey) => void;
   onSaveSection: (category: PlanningAssumptionCategoryKey) => void;
@@ -82,10 +89,16 @@ export function AssumptionForm({
   overrides,
   draftValues,
   validationErrors,
+  familyProfile,
+  familyProfileDraft,
+  familyProfileErrors,
+  familyProfileSaving,
   expandedSections,
   savingSection,
   onToggleSection,
   onFieldChange,
+  onFamilyProfileFieldChange,
+  onSaveFamilyProfile,
   onResetField,
   onResetSection,
   onSaveSection,
@@ -127,6 +140,46 @@ export function AssumptionForm({
 
             {isExpanded ? (
               <div className="grid gap-4 p-5 lg:grid-cols-2">
+                {section.category === "PERSONAL" ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 lg:col-span-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Planner Family Profile</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">Primary and spouse date of birth are the canonical source for age-dependent planning.</p>
+                      </div>
+                      <Button type="button" size="sm" onClick={onSaveFamilyProfile} disabled={familyProfileSaving}>
+                        {familyProfileSaving ? "Saving..." : "Save DOB"}
+                      </Button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Primary Date Of Birth</p>
+                        <Input
+                          type="date"
+                          value={familyProfileDraft.primaryDateOfBirth}
+                          onChange={(event) => onFamilyProfileFieldChange("primaryDateOfBirth", event.target.value)}
+                          className="bg-white"
+                        />
+                        {familyProfileErrors.primaryDateOfBirth ? <p className="text-xs font-medium text-rose-600">{familyProfileErrors.primaryDateOfBirth}</p> : null}
+                        <p className="text-xs text-slate-600">Current Age (read-only): <span className="font-semibold text-slate-900">{familyProfile.primaryCurrentAge}</span></p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Spouse Date Of Birth</p>
+                        <Input
+                          type="date"
+                          value={familyProfileDraft.spouseDateOfBirth}
+                          onChange={(event) => onFamilyProfileFieldChange("spouseDateOfBirth", event.target.value)}
+                          className="bg-white"
+                        />
+                        {familyProfileErrors.spouseDateOfBirth ? <p className="text-xs font-medium text-rose-600">{familyProfileErrors.spouseDateOfBirth}</p> : null}
+                        <p className="text-xs text-slate-600">Current Age (read-only): <span className="font-semibold text-slate-900">{familyProfile.spouseCurrentAge ?? "Not set"}</span></p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {section.fieldKeys.map((fieldKey) => {
                   const definition = getFieldDefinition(fieldKey);
                   const currentValue = currentValues[fieldKey];

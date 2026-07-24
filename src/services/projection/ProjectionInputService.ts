@@ -12,6 +12,7 @@ import { projectionEventsService } from "@/services/projection/events";
 import { getRealEstateProperties } from "@/services/realEstateProperties";
 import { getRetirementAccounts } from "@/services/retirement";
 import { getSilverHoldings } from "@/services/silverHoldings";
+import { planningAssumptionService } from "@/services/planning/assumptions";
 import type { Account } from "@/types/account";
 import type { Asset } from "@/types/asset";
 import type { FixedDeposit } from "@/types/fixedDeposit";
@@ -143,8 +144,50 @@ function buildEmptyExpenses(): ProjectionExpenseItem[] {
   return [];
 }
 
-function buildEmptyFamilyMembers(): ProjectionFamilyMember[] {
-  return [];
+function buildFamilyMembersFromProfile(profile: Awaited<ReturnType<typeof planningAssumptionService.getFamilyProfile>>): ProjectionFamilyMember[] {
+  const members: ProjectionFamilyMember[] = [];
+
+  members.push({
+    id: "primary",
+    name: "Primary",
+    relationship: "self",
+    birthDate: profile.primaryDateOfBirth,
+    currentAge: profile.primaryCurrentAge,
+    isDependent: false,
+  });
+
+  if (profile.spouseDateOfBirth) {
+    members.push({
+      id: "spouse",
+      name: "Spouse",
+      relationship: "spouse",
+      birthDate: profile.spouseDateOfBirth,
+      currentAge: profile.spouseCurrentAge,
+      isDependent: false,
+    });
+  }
+
+  return members;
+}
+
+function calculateAgeFromDateOfBirth(dateOfBirth: string | null, today: Date): number | null {
+  if (!dateOfBirth) {
+    return null;
+  }
+
+  const parsed = new Date(`${dateOfBirth}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  let age = today.getUTCFullYear() - parsed.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - parsed.getUTCMonth();
+  const dayDiff = today.getUTCDate() - parsed.getUTCDate();
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+    age -= 1;
+  }
+
+  return Math.max(0, age);
 }
 
 function buildTaxProfileFromAssumptions(assumptions: Awaited<ReturnType<typeof assumptionsService.getAssumptionsBundle>>): ProjectionTaxProfile {
@@ -281,11 +324,12 @@ export class ProjectionInputService {
       scenarioId: options.scenario.id === DEFAULT_SCENARIO_KEY ? null : options.scenario.id,
     });
 
-    const [loadedData, goals, persistedEvents, closedSeed] = await Promise.all([
+    const [loadedData, goals, persistedEvents, closedSeed, familyProfile] = await Promise.all([
       this.loadRepositories(),
       goalService.listGoals({ includeProgress: false }),
       options.scenario.events.length > 0 ? Promise.resolve(options.scenario.events) : projectionEventsService.listEvents(options.scenario.id).catch(() => [] as FinancialEvent[]),
       getLatestClosedMonthEndSeed(),
+      planningAssumptionService.getFamilyProfile(),
     ]);
 
     const requestedStart = parseMonthKey(options.scenario.startMonth || assumptions.planning.startMonth);
@@ -304,7 +348,8 @@ export class ProjectionInputService {
       const effective = parseMonthKey(effectiveStartMonth);
       return Math.max(0, (effective.year - start.year) * 12 + (effective.month - start.month));
     })();
-    const startingAge = Number(effectiveAssumptions.currentAge ?? 0) + ageOffsetMonths / 12;
+    const canonicalCurrentAge = calculateAgeFromDateOfBirth(familyProfile.primaryDateOfBirth, currentDate);
+    const startingAge = Number(canonicalCurrentAge ?? effectiveAssumptions.currentAge ?? 0) + ageOffsetMonths / 12;
 
     return {
       scenario: {
@@ -330,7 +375,7 @@ export class ProjectionInputService {
       expenses: buildEmptyExpenses(),
       goals,
       taxes: buildTaxProfileFromAssumptions(assumptions),
-      familyMembers: buildEmptyFamilyMembers(),
+      familyMembers: buildFamilyMembersFromProfile(familyProfile),
       planningHorizon: assumptions.planning,
       currentDate,
       projectionStartDate: effectiveStartMonth,

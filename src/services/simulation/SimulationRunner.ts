@@ -1,4 +1,5 @@
 import { CURRENT_PLANNING_ASSUMPTION_BASELINE } from "@/services/assumptions";
+import { planningAssumptionService } from "@/services/planning/assumptions";
 import { createMonthlyLedgerRecord, type ProjectionContext, type ProjectionMonthState } from "@/services/projection/ProjectionContext";
 import { projectionEngine } from "@/services/projection";
 import type { MonthlySnapshot, ProjectionScenario } from "@/types/projection";
@@ -72,9 +73,56 @@ function buildEffectiveAssumptions(context: SimulationContext) {
   };
 }
 
-function buildProjectionContext(context: SimulationContext, scenario: ProjectionScenario): ProjectionContext {
+function calculateAgeFromDateOfBirth(dateOfBirth: string | null, today: Date): number | null {
+  if (!dateOfBirth) {
+    return null;
+  }
+
+  const parsed = new Date(`${dateOfBirth}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  let age = today.getUTCFullYear() - parsed.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - parsed.getUTCMonth();
+  const dayDiff = today.getUTCDate() - parsed.getUTCDate();
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+    age -= 1;
+  }
+
+  return Math.max(0, age);
+}
+
+async function buildProjectionContext(context: SimulationContext, scenario: ProjectionScenario): Promise<ProjectionContext> {
   const openingState = deriveOpeningState(context.snapshot);
   const effectiveAssumptions = buildEffectiveAssumptions(context);
+  const familyProfile = await planningAssumptionService.getFamilyProfile().catch(() => null);
+  const canonicalCurrentAge = calculateAgeFromDateOfBirth(familyProfile?.primaryDateOfBirth ?? null, new Date());
+  const startingAge = canonicalCurrentAge ?? effectiveAssumptions.currentAge;
+  const familyMembers = familyProfile
+    ? [
+        {
+          id: "primary",
+          name: "Primary",
+          relationship: "self",
+          birthDate: familyProfile.primaryDateOfBirth,
+          currentAge: familyProfile.primaryCurrentAge,
+          isDependent: false,
+        },
+        ...(familyProfile.spouseDateOfBirth
+          ? [
+              {
+                id: "spouse",
+                name: "Spouse",
+                relationship: "spouse",
+                birthDate: familyProfile.spouseDateOfBirth,
+                currentAge: familyProfile.spouseCurrentAge,
+                isDependent: false,
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   return {
     scenario,
@@ -101,7 +149,7 @@ function buildProjectionContext(context: SimulationContext, scenario: Projection
       cessRate: Number(context.resolvedAssumptions.tax.cessRate ?? 0),
       note: context.resolvedAssumptions.tax.note,
     },
-    familyMembers: [],
+    familyMembers,
     planningHorizon: context.resolvedAssumptions.planning,
     currentDate: new Date(),
     projectionStartDate: context.projectionStart,
@@ -110,7 +158,7 @@ function buildProjectionContext(context: SimulationContext, scenario: Projection
     openingSource: { kind: "live-balance-sheet", asOfMonth: context.snapshot.month },
     financialEvents: context.resolvedEvents,
     monthlyLedger: [],
-    currentRecord: createMonthlyLedgerRecord(context.projectionStart, effectiveAssumptions.currentAge, openingState),
+    currentRecord: createMonthlyLedgerRecord(context.projectionStart, startingAge, openingState),
     currentState: openingState,
   };
 }
@@ -128,7 +176,7 @@ export class ProjectionEngineSimulationCalculator implements ProjectionCalculato
       isDefault: false,
     };
 
-    const projectionContext = buildProjectionContext(context, scenario);
+    const projectionContext = await buildProjectionContext(context, scenario);
     const result = await projectionEngine.run(projectionContext);
 
     return { timeline: result.timeline, monthlySnapshots: result.snapshots, scenario };

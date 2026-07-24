@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { PLANNING_ASSUMPTION_COLUMN_BY_KEY, PLANNING_ASSUMPTION_KEYS } from "./AssumptionTypes";
 import type {
+  EffectivePlanningAssumptions,
+  PlanningFamilyProfile,
   PlanningAssumptionKey,
   PlanningAssumptionOverrides,
   PlanningAssumptionRecord,
@@ -76,6 +78,13 @@ interface PlanningGoalRow {
   priority: "LOW" | "MEDIUM" | "HIGH";
 }
 
+interface PlanningFamilyProfileRow {
+  user_id: string;
+  primary_date_of_birth: string | null;
+  spouse_date_of_birth: string | null;
+  updated_at: string;
+}
+
 function assignRecordValue<Key extends PlanningAssumptionKey>(
   record: PlanningAssumptionRecord,
   key: Key,
@@ -102,6 +111,10 @@ function mapPlanningAssumptionRow(row: PlanningAssumptionRow): PlanningAssumptio
     updatedAt: row.updated_at,
   };
 
+  if (typeof row.current_age === "number") {
+    assignRecordValue(record, "currentAge", row.current_age as EffectivePlanningAssumptions["currentAge"]);
+  }
+
   for (const key of PLANNING_ASSUMPTION_KEYS) {
     const column = PLANNING_ASSUMPTION_COLUMN_BY_KEY[key] as keyof PlanningAssumptionRow;
     const value = row[column];
@@ -121,6 +134,14 @@ function mapPlanningAssumptionRow(row: PlanningAssumptionRow): PlanningAssumptio
   }
 
   return record;
+}
+
+function mapPlanningFamilyProfileRow(row: PlanningFamilyProfileRow): Omit<PlanningFamilyProfile, "primaryCurrentAge" | "spouseCurrentAge"> {
+  return {
+    primaryDateOfBirth: row.primary_date_of_birth,
+    spouseDateOfBirth: row.spouse_date_of_birth,
+    updatedAt: row.updated_at,
+  };
 }
 
 function mapScenarioRow(row: PlanningScenarioRow): Omit<PlanningScenarioSummary, "preset"> {
@@ -298,6 +319,50 @@ export class PlanningAssumptionRepository {
 
   async getUserDefaults(userId: string) {
     return this.findAssumptionRecord(userId, { scenarioId: null, goalId: null });
+  }
+
+  async getFamilyProfile(userId: string): Promise<Omit<PlanningFamilyProfile, "primaryCurrentAge" | "spouseCurrentAge"> | null> {
+    const client = await this.getClient();
+    const { data, error } = await client
+      .from("planning_family_profiles")
+      .select("user_id, primary_date_of_birth, spouse_date_of_birth, updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    return mapPlanningFamilyProfileRow(data as PlanningFamilyProfileRow);
+  }
+
+  async upsertFamilyProfile(
+    userId: string,
+    input: { primaryDateOfBirth?: string | null; spouseDateOfBirth?: string | null },
+  ): Promise<Omit<PlanningFamilyProfile, "primaryCurrentAge" | "spouseCurrentAge">> {
+    const client = await this.getClient();
+    const { data, error } = await client
+      .from("planning_family_profiles")
+      .upsert(
+        {
+          user_id: userId,
+          primary_date_of_birth: input.primaryDateOfBirth ?? null,
+          spouse_date_of_birth: input.spouseDateOfBirth ?? null,
+        },
+        { onConflict: "user_id" },
+      )
+      .select("user_id, primary_date_of_birth, spouse_date_of_birth, updated_at")
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return mapPlanningFamilyProfileRow(data as PlanningFamilyProfileRow);
   }
 
   async getScenarioOverrides(userId: string, scenarioId: string) {

@@ -281,7 +281,8 @@ export class ProjectionEngine {
   async run(context: ProjectionContext): Promise<ProjectionResult> {
     const timeline = this.buildTimelineRange(context.projectionStartDate, context.planningHorizon.endYear, context.planningHorizon.endMonth);
     const openingState = cloneProjectionState(context.currentState);
-    const openingAge = Number(context.currentRecord.age ?? context.effectiveAssumptions.currentAge ?? 0);
+    const primaryMemberAge = context.familyMembers.find((member) => member.relationship === "self")?.currentAge ?? null;
+    const openingAge = Number(primaryMemberAge ?? context.currentRecord.age ?? context.effectiveAssumptions.currentAge ?? 0);
     let rollingState = cloneProjectionState(openingState);
     let mutableLedger = context.monthlyLedger;
 

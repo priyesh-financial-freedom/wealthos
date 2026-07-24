@@ -15,6 +15,7 @@ import type {
   EffectivePlanningAssumptionResult,
   EffectivePlanningAssumptions,
   PlanningAssumptionEditorState,
+  PlanningFamilyProfile,
   PlanningAssumptionKey,
   PlanningAssumptionOverrides,
   PlanningAssumptionProvenanceSource,
@@ -118,6 +119,65 @@ function inferScenarioPreset(name: string): PlanningScenarioPreset {
   return "BASE";
 }
 
+function calculateAgeFromDateOfBirth(dateOfBirth: string | null, today: Date): number | null {
+  if (!dateOfBirth) {
+    return null;
+  }
+
+  const parsed = new Date(`${dateOfBirth}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  let age = today.getUTCFullYear() - parsed.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - parsed.getUTCMonth();
+  const dayDiff = today.getUTCDate() - parsed.getUTCDate();
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+    age -= 1;
+  }
+
+  return Math.max(0, age);
+}
+
+function normalizeDateInput(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw new Error("Date of birth must be in YYYY-MM-DD format.");
+  }
+
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Date of birth is invalid.");
+  }
+
+  return normalized;
+}
+
+function resolveFamilyProfile(params: {
+  profile: Awaited<ReturnType<PlanningAssumptionRepository["getFamilyProfile"]>>;
+  fallbackCurrentAge: number;
+  today: Date;
+}): PlanningFamilyProfile {
+  const primaryCurrentAge = calculateAgeFromDateOfBirth(params.profile?.primaryDateOfBirth ?? null, params.today);
+  const spouseCurrentAge = calculateAgeFromDateOfBirth(params.profile?.spouseDateOfBirth ?? null, params.today);
+
+  return {
+    primaryDateOfBirth: params.profile?.primaryDateOfBirth ?? null,
+    spouseDateOfBirth: params.profile?.spouseDateOfBirth ?? null,
+    primaryCurrentAge: primaryCurrentAge ?? params.fallbackCurrentAge,
+    spouseCurrentAge,
+    updatedAt: params.profile?.updatedAt ?? null,
+  };
+}
+
 function mergeAssumptionLayers(...layers: Array<PlanningAssumptionOverrides | null | undefined>): EffectivePlanningAssumptions {
   return layers.reduce<EffectivePlanningAssumptions>(
     (accumulator, layer) => ({
@@ -193,7 +253,8 @@ function buildEffectiveResult(params: {
   scenarioOverrides: PlanningAssumptionOverrides;
   goalOverrides: PlanningAssumptionOverrides;
 }): EffectivePlanningAssumptionResult {
-  const fieldEntries = PLANNING_ASSUMPTION_KEYS.map((key) => {
+  const fieldKeys: PlanningAssumptionKey[] = ["currentAge", ...PLANNING_ASSUMPTION_KEYS];
+  const fieldEntries = fieldKeys.map((key) => {
     const registryItem = getRegistryItem(key);
     const source = resolveProvenanceSource({
       scope: params.scope,
@@ -313,6 +374,7 @@ export class PlanningAssumptionService {
   async getEditorState(scope: PlanningAssumptionScopeSelection = { level: "SCENARIO", scenarioId: "" }): Promise<PlanningAssumptionEditorState> {
     const { user } = await this.repository.getAuthenticatedUser();
     const scenarios = await this.ensureCoreScenarios(user.id);
+    const familyProfileRecord = await this.repository.getFamilyProfile(user.id);
 
     const resolvedScope = await this.resolveScope(user.id, scenarios, scope);
     const userDefaultsRecord = await this.repository.getUserDefaults(user.id);
@@ -349,7 +411,27 @@ export class PlanningAssumptionService {
       }
     }
 
-    const effectiveValues = mergeAssumptionLayers(inherited, overrides);
+    const familyProfile = resolveFamilyProfile({
+      profile: familyProfileRecord,
+      fallbackCurrentAge: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.currentAge,
+      today: new Date(),
+    });
+
+    const effectiveValues = {
+      ...mergeAssumptionLayers(inherited, overrides),
+      currentAge: familyProfile.primaryCurrentAge,
+    };
+
+    inherited = {
+      ...inherited,
+      currentAge: familyProfile.primaryCurrentAge,
+    };
+
+    recommended = {
+      ...recommended,
+      currentAge: familyProfile.primaryCurrentAge,
+    };
+
     const effective = buildEffectiveResult({
       scope: resolvedScope,
       values: effectiveValues,
@@ -364,6 +446,7 @@ export class PlanningAssumptionService {
       scenarios,
       activeScenarioId: scenarios.find((scenario) => scenario.isActive)?.id ?? null,
       goal,
+      familyProfile,
       effective,
       inherited,
       recommended,
@@ -411,6 +494,17 @@ export class PlanningAssumptionService {
     return this.getEditorState(editorState.scope);
   }
 
+  async upsertFamilyProfile(input: { primaryDateOfBirth?: string | null; spouseDateOfBirth?: string | null }, scope?: PlanningAssumptionScopeSelection) {
+    const { user } = await this.repository.getAuthenticatedUser();
+    const payload = {
+      primaryDateOfBirth: normalizeDateInput(input.primaryDateOfBirth),
+      spouseDateOfBirth: normalizeDateInput(input.spouseDateOfBirth),
+    };
+
+    await this.repository.upsertFamilyProfile(user.id, payload);
+    return this.getEditorState(scope);
+  }
+
   async resetScopeValues(scope: PlanningAssumptionScopeSelection, keys: readonly PlanningAssumptionKey[]) {
     const { user } = await this.repository.getAuthenticatedUser();
     const editorState = await this.getEditorState(scope);
@@ -446,6 +540,16 @@ export class PlanningAssumptionService {
   async getLegacyAssumptionsBundle(options: { scenarioId?: string | null; goalId?: string | null } = {}) {
     const effective = await this.getEffectiveAssumptions(options);
     return mapLegacyBundle(effective);
+  }
+
+  async getFamilyProfile(userId?: string) {
+    const resolvedUserId = userId ?? (await this.repository.getAuthenticatedUser()).user.id;
+    const profile = await this.repository.getFamilyProfile(resolvedUserId);
+    return resolveFamilyProfile({
+      profile,
+      fallbackCurrentAge: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.currentAge,
+      today: new Date(),
+    });
   }
 
   private async ensureCoreScenarios(userId: string): Promise<PlanningScenarioSummary[]> {

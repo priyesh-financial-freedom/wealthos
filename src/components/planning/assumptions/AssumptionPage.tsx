@@ -24,6 +24,11 @@ import type {
   PlanningAssumptionScopeSelection,
 } from "@/services/planning/assumptions";
 
+type FamilyProfileDraft = {
+  primaryDateOfBirth: string;
+  spouseDateOfBirth: string;
+};
+
 function buildDraftValues(values: EffectivePlanningAssumptions): Partial<Record<PlanningAssumptionKey, string>> {
   const draft: Partial<Record<PlanningAssumptionKey, string>> = {};
 
@@ -65,6 +70,9 @@ export function PlanningAssumptionPage() {
   const [editorState, setEditorState] = useState<PlanningAssumptionEditorState | null>(null);
   const [draftValues, setDraftValues] = useState<Partial<Record<PlanningAssumptionKey, string>>>({});
   const [validationErrors, setValidationErrors] = useState<Partial<Record<PlanningAssumptionKey, string>>>({});
+  const [familyProfileDraft, setFamilyProfileDraft] = useState<FamilyProfileDraft>({ primaryDateOfBirth: "", spouseDateOfBirth: "" });
+  const [familyProfileErrors, setFamilyProfileErrors] = useState<Partial<Record<keyof FamilyProfileDraft, string>>>({});
+  const [savingFamilyProfile, setSavingFamilyProfile] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Partial<Record<PlanningAssumptionCategoryKey, boolean>>>({
     PERSONAL: true,
     INCOME: true,
@@ -87,6 +95,28 @@ export function PlanningAssumptionPage() {
     setEditorState(nextState);
     setDraftValues(buildDraftValues(nextState.effective.values));
     setValidationErrors({});
+    setFamilyProfileDraft({
+      primaryDateOfBirth: nextState.familyProfile.primaryDateOfBirth ?? "",
+      spouseDateOfBirth: nextState.familyProfile.spouseDateOfBirth ?? "",
+    });
+    setFamilyProfileErrors({});
+  }
+
+  function validateDateInput(value: string): string | null {
+    if (!value) {
+      return null;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return "Date must be in YYYY-MM-DD format.";
+    }
+
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return "Date is invalid.";
+    }
+
+    return null;
   }
 
   async function loadEditorState(scope?: PlanningAssumptionScopeSelection) {
@@ -184,6 +214,53 @@ export function PlanningAssumptionPage() {
       setError(saveError instanceof Error ? saveError.message : "Unable to save assumption changes.");
     } finally {
       setSavingSection(null);
+    }
+  }
+
+  function handleFamilyProfileFieldChange(key: keyof FamilyProfileDraft, value: string) {
+    setFamilyProfileDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+
+    const issue = validateDateInput(value);
+    setFamilyProfileErrors((current) => ({
+      ...current,
+      [key]: issue ?? undefined,
+    }));
+  }
+
+  async function handleSaveFamilyProfile() {
+    if (!editorState) {
+      return;
+    }
+
+    const primaryError = validateDateInput(familyProfileDraft.primaryDateOfBirth);
+    const spouseError = validateDateInput(familyProfileDraft.spouseDateOfBirth);
+    if (primaryError || spouseError) {
+      setFamilyProfileErrors({
+        primaryDateOfBirth: primaryError ?? undefined,
+        spouseDateOfBirth: spouseError ?? undefined,
+      });
+      return;
+    }
+
+    try {
+      setSavingFamilyProfile(true);
+      const nextState = await planningAssumptionService.upsertFamilyProfile(
+        {
+          primaryDateOfBirth: familyProfileDraft.primaryDateOfBirth || null,
+          spouseDateOfBirth: familyProfileDraft.spouseDateOfBirth || null,
+        },
+        editorState.scope,
+      );
+      applyEditorState(nextState);
+      setNotice("Family profile updated. Current age is now derived from date of birth.");
+      setError(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save family profile.");
+    } finally {
+      setSavingFamilyProfile(false);
     }
   }
 
@@ -380,6 +457,10 @@ export function PlanningAssumptionPage() {
               overrides={editorState.overrides}
               draftValues={draftValues}
               validationErrors={validationErrors}
+              familyProfile={editorState.familyProfile}
+              familyProfileDraft={familyProfileDraft}
+              familyProfileErrors={familyProfileErrors}
+              familyProfileSaving={savingFamilyProfile}
               expandedSections={expandedSections}
               savingSection={savingSection}
               onToggleSection={(category) => {
@@ -389,6 +470,10 @@ export function PlanningAssumptionPage() {
                 }));
               }}
               onFieldChange={handleFieldChange}
+              onFamilyProfileFieldChange={handleFamilyProfileFieldChange}
+              onSaveFamilyProfile={() => {
+                void handleSaveFamilyProfile();
+              }}
               onResetField={(key) => {
                 void handleResetField(key);
               }}

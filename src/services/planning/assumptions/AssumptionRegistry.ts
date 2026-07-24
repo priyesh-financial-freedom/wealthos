@@ -648,10 +648,12 @@ export const PLANNING_ASSUMPTION_SECTIONS: readonly PlanningAssumptionSectionDef
   category,
   label: SECTION_DESCRIPTIONS[category].label,
   description: SECTION_DESCRIPTIONS[category].description,
-  fieldKeys: ASSUMPTION_REGISTRY.filter((item) => item.category === category).map((item) => item.key),
+  fieldKeys: ASSUMPTION_REGISTRY.filter((item) => item.category === category && item.key !== "currentAge").map((item) => item.key),
 }));
 
-export const PLANNING_ASSUMPTION_FIELD_DEFINITIONS: readonly PlanningAssumptionFieldDefinition[] = ASSUMPTION_REGISTRY.map(({ defaultValue: _defaultValue, recommendedValue: _recommendedValue, dependencies: _dependencies, affectedEngines: _affectedEngines, ...definition }) => definition);
+export const PLANNING_ASSUMPTION_FIELD_DEFINITIONS: readonly PlanningAssumptionFieldDefinition[] = ASSUMPTION_REGISTRY
+  .filter((item) => item.key !== "currentAge")
+  .map(({ defaultValue: _defaultValue, recommendedValue: _recommendedValue, dependencies: _dependencies, affectedEngines: _affectedEngines, ...definition }) => definition);
 
 export const SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS: EffectivePlanningAssumptions = ASSUMPTION_REGISTRY.reduce<EffectivePlanningAssumptions>(
   (accumulator, item) => ({

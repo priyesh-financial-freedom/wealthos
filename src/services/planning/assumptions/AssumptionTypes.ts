@@ -106,6 +106,14 @@ export interface PlanningGoalSummary {
   priority: GoalPriority;
 }
 
+export interface PlanningFamilyProfile {
+  primaryDateOfBirth: string | null;
+  spouseDateOfBirth: string | null;
+  primaryCurrentAge: number;
+  spouseCurrentAge: number | null;
+  updatedAt: string | null;
+}
+
 export type PlanningAssumptionScopeSelection =
   | { level: "USER_DEFAULTS" }
   | { level: "SCENARIO"; scenarioId: string }
@@ -160,6 +168,7 @@ export interface PlanningAssumptionEditorState {
   scenarios: PlanningScenarioSummary[];
   activeScenarioId: string | null;
   goal: PlanningGoalSummary | null;
+  familyProfile: PlanningFamilyProfile;
   effective: EffectivePlanningAssumptionResult;
   inherited: EffectivePlanningAssumptions;
   recommended: EffectivePlanningAssumptions;
@@ -203,7 +212,6 @@ export interface PlanningAssumptionSectionDefinition {
 }
 
 export const PLANNING_ASSUMPTION_KEYS = [
-  "currentAge",
   "retirementAge",
   "lifeExpectancy",
   "spouseLifeExpectancy",
@@ -244,7 +252,6 @@ export const PLANNING_ASSUMPTION_KEYS = [
 ] as const satisfies readonly PlanningAssumptionKey[];
 
 export const DISPLAY_PLANNING_ASSUMPTION_KEYS = [
-  "currentAge",
   "retirementAge",
   "lifeExpectancy",
   "spouseLifeExpectancy",
@@ -284,7 +291,6 @@ export const DISPLAY_PLANNING_ASSUMPTION_KEYS = [
 ] as const satisfies readonly PlanningAssumptionKey[];
 
 export const PLANNING_ASSUMPTION_COLUMN_BY_KEY = {
-  currentAge: "current_age",
   retirementAge: "retirement_age",
   lifeExpectancy: "life_expectancy",
   spouseLifeExpectancy: "spouse_life_expectancy",
@@ -322,4 +328,4 @@ export const PLANNING_ASSUMPTION_COLUMN_BY_KEY = {
   legacyTarget: "legacy_target",
   emergencyCorpusMonths: "emergency_corpus_months",
   goalFundingPriority: "goal_funding_priority",
-} as const satisfies Record<PlanningAssumptionKey, string>;
+} as const satisfies Record<(typeof PLANNING_ASSUMPTION_KEYS)[number], string>;
