@@ -1,9 +1,9 @@
 import { supabase } from "@/lib/supabase/client";
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
-import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios";
-import { projectionEventsService } from "@/services/projection";
-import { FinancialSimulationEngine } from "@/services/simulation";
-import type { SimulationResult } from "@/services/simulation";
+import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios/browser";
+import { projectionEventsService } from "@/services/projection/events";
+import { FinancialSimulationEngine } from "@/services/simulation/FinancialSimulationEngine";
+import type { SimulationResult } from "@/services/simulation/SimulationOutputs";
 import type {
   FinancialGoal,
   FinancialGoalInsert,

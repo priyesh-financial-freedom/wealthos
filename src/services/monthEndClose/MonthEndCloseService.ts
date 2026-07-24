@@ -1,6 +1,5 @@
-import { supabase } from "@/lib/supabase/client";
-import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
-import { getBalanceSheetData } from "@/services/balanceSheet";
+import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
+import { getBalanceSheetData, type BalanceSheetData } from "@/services/balanceSheet";
 import { projectionEngine } from "@/services/projection/ProjectionEngine";
 import { projectionInputService } from "@/services/projection/ProjectionInputService";
 import type { Asset } from "@/types/asset";
@@ -27,6 +26,8 @@ import type { ProjectionScenario } from "@/types/projection";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
 import type { SilverHolding } from "@/types/silverHolding";
+
+import { MonthEndCloseRepository } from "./MonthEndCloseRepository";
 
 type ValueMap = Record<MonthEndCloseItemKey, number>;
 
@@ -55,6 +56,11 @@ interface PersistedItemSnapshot {
   sortOrder: number;
 }
 
+interface MonthEndCloseServiceDependencies {
+  repository: MonthEndCloseRepository;
+  balanceSheetLoader?: () => Promise<BalanceSheetData>;
+}
+
 const ITEM_DEFINITION_MAP = new Map(MONTH_END_CLOSE_ITEM_DEFINITIONS.map((item) => [item.key, item]));
 const MUTUAL_FUND_CATEGORIES = new Set<InvestmentCategory>(["Mutual Funds"]);
 const STOCK_CATEGORIES = new Set<InvestmentCategory>(["Stocks", "ETFs", "Bonds", "Crypto", "Cash Equivalents"]);
@@ -64,36 +70,6 @@ const FIXED_DEPOSIT_CATEGORIES = new Set<InvestmentCategory>(["Fixed Deposits"])
 const EPF_CATEGORIES = new Set<InvestmentCategory>(["EPF"]);
 const PPF_CATEGORIES = new Set<InvestmentCategory>(["PPF"]);
 const NPS_CATEGORIES = new Set<InvestmentCategory>(["NPS"]);
-
-function assertSupabaseClient() {
-  if (!supabase) {
-    throw new Error("Supabase client is not configured.");
-  }
-
-  return supabase;
-}
-
-async function requireAuthenticatedUser() {
-  const client = assertSupabaseClient();
-
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser();
-
-  if (error || !user) {
-    if (typeof window !== "undefined") {
-      window.location.assign("/login");
-    }
-    throw new Error("Authentication required.");
-  }
-
-  return { client, user };
-}
-
-function toNumber(value: number | string | null | undefined) {
-  return Number(value ?? 0);
-}
 
 function emptyValueMap(): ValueMap {
   return MONTH_END_CLOSE_ITEM_DEFINITIONS.reduce((acc, item) => {
@@ -454,24 +430,6 @@ function summarizePersistedItems(items: MonthEndCloseItem[], field: "opening_val
   return buildKpiSummary(values);
 }
 
-function normalizeMonthEndClose(row: MonthEndClose): MonthEndClose {
-  return row;
-}
-
-function normalizeMonthEndCloseItem(row: MonthEndCloseItem): MonthEndCloseItem {
-  return {
-    ...row,
-    entity_id: String(row.entity_id),
-    entity_type: row.entity_type,
-    entity_name: row.entity_name,
-    opening_value: toNumber(row.opening_value),
-    projected_value: toNumber(row.projected_value),
-    actual_value: toNumber(row.actual_value),
-    absolute_variance: toNumber(row.absolute_variance),
-    percentage_variance: row.percentage_variance === null ? null : toNumber(row.percentage_variance),
-  };
-}
-
 function persistedItemToSnapshot(item: MonthEndCloseItem): PersistedItemSnapshot {
   return {
     rowKey: entityRowKey(item.entity_type, item.entity_id),
@@ -546,11 +504,8 @@ function allocateAcrossRows(rows: PersistedItemSnapshot[], total: number, getBas
 
   let allocated = 0;
   rows.forEach((row, index) => {
-    const value = index === rows.length - 1
-      ? total - allocated
-      : basisTotal > 0
-        ? total * (basis[index] / basisTotal)
-        : total / rows.length;
+    const value =
+      index === rows.length - 1 ? total - allocated : basisTotal > 0 ? total * (basis[index] / basisTotal) : total / rows.length;
     allocated += value;
     result.set(row.rowKey, value);
   });
@@ -571,92 +526,6 @@ function applyLegacyBucketFallback(rows: PersistedItemSnapshot[], legacyTotals: 
       row[field] = allocations.get(row.rowKey) ?? row[field];
     });
   }
-}
-
-async function getLatestClosedMonthEndClose(client: ReturnType<typeof assertSupabaseClient>, userId: string): Promise<MonthEndClose | null> {
-  const { data, error } = await client
-    .from("month_end_closes")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "closed")
-    .order("close_year", { ascending: false })
-    .order("close_month", { ascending: false })
-    .order("version_number", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const row = (data?.[0] ?? null) as MonthEndClose | null;
-  return row ? normalizeMonthEndClose(row) : null;
-}
-
-async function getLatestVersionForMonth(client: ReturnType<typeof assertSupabaseClient>, userId: string, closeYear: number, closeMonth: number): Promise<MonthEndClose | null> {
-  const { data, error } = await client
-    .from("month_end_closes")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("close_year", closeYear)
-    .eq("close_month", closeMonth)
-    .order("version_number", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const row = (data?.[0] ?? null) as MonthEndClose | null;
-  return row ? normalizeMonthEndClose(row) : null;
-}
-
-async function getDraftForMonth(client: ReturnType<typeof assertSupabaseClient>, userId: string, closeYear: number, closeMonth: number): Promise<MonthEndClose | null> {
-  const { data, error } = await client
-    .from("month_end_closes")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("close_year", closeYear)
-    .eq("close_month", closeMonth)
-    .eq("status", "draft")
-    .order("version_number", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const row = (data?.[0] ?? null) as MonthEndClose | null;
-  return row ? normalizeMonthEndClose(row) : null;
-}
-
-async function getCloseItems(client: ReturnType<typeof assertSupabaseClient>, closeId: string): Promise<MonthEndCloseItem[]> {
-  const { data, error } = await client
-    .from("month_end_close_items")
-    .select("*")
-    .eq("close_id", closeId)
-    .order("sort_order", { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return ((data ?? []) as MonthEndCloseItem[]).map((row) => normalizeMonthEndCloseItem(row));
-}
-
-async function getCloseById(client: ReturnType<typeof assertSupabaseClient>, userId: string, closeId: string): Promise<MonthEndClose | null> {
-  const { data, error } = await client
-    .from("month_end_closes")
-    .select("*")
-    .eq("id", closeId)
-    .eq("user_id", userId)
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const row = (data?.[0] ?? null) as MonthEndClose | null;
-  return row ? normalizeMonthEndClose(row) : null;
 }
 
 async function getProjectedBucketTotals(targetMonth: MonthReference): Promise<ValueMap> {
@@ -768,18 +637,6 @@ function buildWorkspaceItems(params: {
     });
   }
 
-  for (const snapshot of latestClosedSnapshots.exact.values()) {
-    if (!rowMap.has(snapshot.rowKey)) {
-      rowMap.set(snapshot.rowKey, { ...snapshot, actualValue: 0, projectedValue: 0 });
-    }
-  }
-
-  for (const snapshot of draftSnapshots.exact.values()) {
-    if (!rowMap.has(snapshot.rowKey)) {
-      rowMap.set(snapshot.rowKey, { ...snapshot, projectedValue: 0 });
-    }
-  }
-
   const rows = sortRowSeeds([...rowMap.values()]);
   rows.forEach((row) => {
     const openingSnapshot = latestClosedSnapshots.exact.get(row.rowKey);
@@ -826,8 +683,10 @@ function buildDashboard(params: {
 }): MonthEndCloseDashboard {
   const actualKpis = summarizeEditorItems(params.items, "actualValue");
   const projectedKpis = summarizeEditorItems(params.items, "projectedValue");
-  const largestPositiveVariance = params.items.filter((item) => item.absoluteVariance > 0).sort((left, right) => right.absoluteVariance - left.absoluteVariance)[0] ?? null;
-  const largestNegativeVariance = params.items.filter((item) => item.absoluteVariance < 0).sort((left, right) => left.absoluteVariance - right.absoluteVariance)[0] ?? null;
+  const largestPositiveVariance =
+    params.items.filter((item) => item.absoluteVariance > 0).sort((left, right) => right.absoluteVariance - left.absoluteVariance)[0] ?? null;
+  const largestNegativeVariance =
+    params.items.filter((item) => item.absoluteVariance < 0).sort((left, right) => left.absoluteVariance - right.absoluteVariance)[0] ?? null;
 
   return {
     currentClosedMonth: params.latestClosedMonth,
@@ -842,143 +701,131 @@ function buildDashboard(params: {
   };
 }
 
-export async function getMonthEndCloseWorkspace(): Promise<MonthEndCloseWorkspace> {
-  const { client, user } = await requireAuthenticatedUser();
-  const latestClosed = await getLatestClosedMonthEndClose(client, user.id);
-  const previousMonthReference = latestClosed ? createMonthReference(latestClosed.close_year, latestClosed.close_month) : null;
-  const pendingMonthReference = latestClosed
-    ? nextMonth(latestClosed.close_month, latestClosed.close_year)
-    : createMonthReference(new Date().getFullYear(), new Date().getMonth() + 1);
-  const draft = await getDraftForMonth(client, user.id, pendingMonthReference.year, pendingMonthReference.month);
-  const [draftItems, latestClosedItems, balanceSheetData, projectedBucketTotals] = await Promise.all([
-    draft ? getCloseItems(client, draft.id) : Promise.resolve([]),
-    latestClosed ? getCloseItems(client, latestClosed.id) : Promise.resolve([]),
-    getBalanceSheetData(),
-    getProjectedBucketTotals(pendingMonthReference),
-  ]);
+export class MonthEndCloseService {
+  constructor(private readonly dependencies: MonthEndCloseServiceDependencies) {}
 
-  const items = buildWorkspaceItems({
-    currentSeeds: buildCurrentEntitySeeds(balanceSheetData),
-    latestClosedItems,
-    draftItems,
-    projectedBucketTotals,
-  });
-  const previousNetWorth = latestClosedItems.length > 0 ? summarizePersistedItems(latestClosedItems, "actual_value").netWorth : 0;
-  const dashboard = buildDashboard({
-    latestClosedMonth: previousMonthReference,
-    pendingMonth: pendingMonthReference,
-    items,
-    previousNetWorth,
-  });
-
-  return {
-    close: draft,
-    month: pendingMonthReference,
-    status: draft?.status ?? "draft",
-    items,
-    dashboard,
-  };
-}
-
-async function persistMonthEndClose(input: MonthEndClosePersistInput, status: "draft" | "closed") {
-  const { client, user } = await requireAuthenticatedUser();
-  const existingDraft = input.closeId
-    ? await getCloseById(client, user.id, input.closeId)
-    : await getDraftForMonth(client, user.id, input.closeYear, input.closeMonth);
-  const latestVersionForMonth = await getLatestVersionForMonth(client, user.id, input.closeYear, input.closeMonth);
-
-  if (existingDraft?.status === "closed") {
-    throw new Error("Closed month-end closes are immutable. Create a new version instead.");
+  private get repository() {
+    return this.dependencies.repository;
   }
 
-  let closeRecord = existingDraft;
+  private async loadBalanceSheetData() {
+    if (this.dependencies.balanceSheetLoader) {
+      return this.dependencies.balanceSheetLoader();
+    }
 
-  if (!closeRecord) {
-    const versionNumber = (latestVersionForMonth?.version_number ?? 0) + 1;
-    const supersedesCloseId = latestVersionForMonth?.status === "closed" ? latestVersionForMonth.id : latestVersionForMonth?.supersedes_close_id ?? null;
-    const { data, error } = await client
-      .from("month_end_closes")
-      .insert({
-        user_id: user.id,
-        close_month: input.closeMonth,
-        close_year: input.closeYear,
-        version_number: versionNumber,
+    return getBalanceSheetData();
+  }
+
+  async getWorkspace(): Promise<MonthEndCloseWorkspace> {
+    const userId = await this.repository.getAuthenticatedUserId();
+    const latestClosed = await this.repository.getLatestClosedMonthEndClose(userId);
+    const previousMonthReference = latestClosed ? createMonthReference(latestClosed.close_year, latestClosed.close_month) : null;
+    const pendingMonthReference = latestClosed
+      ? nextMonth(latestClosed.close_month, latestClosed.close_year)
+      : createMonthReference(new Date().getFullYear(), new Date().getMonth() + 1);
+    const draft = await this.repository.getDraftForMonth(userId, pendingMonthReference.year, pendingMonthReference.month);
+
+    const [draftItems, latestClosedItems, balanceSheetData, projectedBucketTotals] = await Promise.all([
+      draft ? this.repository.getCloseItems(draft.id) : Promise.resolve([]),
+      latestClosed ? this.repository.getCloseItems(latestClosed.id) : Promise.resolve([]),
+      this.loadBalanceSheetData(),
+      getProjectedBucketTotals(pendingMonthReference),
+    ]);
+
+    const items = buildWorkspaceItems({
+      currentSeeds: buildCurrentEntitySeeds(balanceSheetData),
+      latestClosedItems,
+      draftItems,
+      projectedBucketTotals,
+    });
+    const previousNetWorth = latestClosedItems.length > 0 ? summarizePersistedItems(latestClosedItems, "actual_value").netWorth : 0;
+    const dashboard = buildDashboard({
+      latestClosedMonth: previousMonthReference,
+      pendingMonth: pendingMonthReference,
+      items,
+      previousNetWorth,
+    });
+
+    return {
+      close: draft,
+      month: pendingMonthReference,
+      status: draft?.status ?? "draft",
+      items,
+      dashboard,
+    };
+  }
+
+  async saveDraft(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {
+    return this.persist(input, "draft");
+  }
+
+  async closeMonth(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {
+    return this.persist(input, "closed");
+  }
+
+  private async persist(input: MonthEndClosePersistInput, status: "draft" | "closed") {
+    const userId = await this.repository.getAuthenticatedUserId();
+    const existingDraft = input.closeId
+      ? await this.repository.getCloseById(userId, input.closeId)
+      : await this.repository.getDraftForMonth(userId, input.closeYear, input.closeMonth);
+    const latestVersionForMonth = await this.repository.getLatestVersionForMonth(userId, input.closeYear, input.closeMonth);
+
+    if (existingDraft?.status === "closed") {
+      throw new Error("Closed month-end closes are immutable. Create a new version instead.");
+    }
+
+    let closeRecord: MonthEndClose;
+
+    if (!existingDraft) {
+      const versionNumber = (latestVersionForMonth?.version_number ?? 0) + 1;
+      const supersedesCloseId =
+        latestVersionForMonth?.status === "closed" ? latestVersionForMonth.id : latestVersionForMonth?.supersedes_close_id ?? null;
+
+      closeRecord = await this.repository.createMonthEndClose({
+        userId,
+        closeMonth: input.closeMonth,
+        closeYear: input.closeYear,
+        versionNumber,
         status,
-        supersedes_close_id: supersedesCloseId,
-        closed_at: status === "closed" ? new Date().toISOString() : null,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    closeRecord = normalizeMonthEndClose(data as MonthEndClose);
-  } else {
-    const { data, error } = await client
-      .from("month_end_closes")
-      .update({
+        supersedesCloseId,
+        closedAt: status === "closed" ? new Date().toISOString() : null,
+      });
+    } else {
+      closeRecord = await this.repository.updateMonthEndCloseStatus({
+        id: existingDraft.id,
+        userId,
         status,
-        closed_at: status === "closed" ? new Date().toISOString() : null,
-      })
-      .eq("id", closeRecord.id)
-      .eq("user_id", user.id)
-      .select("*")
-      .single();
-
-    if (error) {
-      throw new Error(error.message);
+        closedAt: status === "closed" ? new Date().toISOString() : null,
+      });
     }
 
-    closeRecord = normalizeMonthEndClose(data as MonthEndClose);
+    const existingRows = await this.repository.getCloseItems(closeRecord.id);
+    const incomingKeys = new Set(input.items.map((item) => entityRowKey(item.entityType, item.entityId)));
+    const rowsToDelete = existingRows.filter((item) => !incomingKeys.has(entityRowKey(item.entity_type, item.entity_id)));
+
+    await this.repository.deleteCloseItemsByIds(rowsToDelete.map((row) => row.id));
+
+    const itemRows = input.items.map((item) => ({
+      close_id: closeRecord.id,
+      user_id: userId,
+      entity_id: item.entityId,
+      entity_type: item.entityType,
+      entity_name: item.entityName,
+      item_key: item.key,
+      item_label: item.label,
+      item_type: item.itemType,
+      sort_order: item.sortOrder,
+      opening_value: Number(item.openingValue ?? 0),
+      projected_value: Number(item.projectedValue ?? 0),
+      actual_value: Number(item.actualValue ?? 0),
+      absolute_variance: calculateAbsoluteVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
+      percentage_variance: calculatePercentageVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
+    }));
+
+    await this.repository.upsertCloseItems(itemRows);
+
+    return this.getWorkspace();
   }
-
-  const existingRows = await getCloseItems(client, closeRecord.id);
-  const incomingKeys = new Set(input.items.map((item) => entityRowKey(item.entityType, item.entityId)));
-  const rowsToDelete = existingRows.filter((item) => !incomingKeys.has(entityRowKey(item.entity_type, item.entity_id)));
-
-  if (rowsToDelete.length > 0) {
-    const { error: deleteError } = await client.from("month_end_close_items").delete().in("id", rowsToDelete.map((row) => row.id));
-    if (deleteError) {
-      throw new Error(deleteError.message);
-    }
-  }
-
-  const itemRows = input.items.map((item) => ({
-    close_id: closeRecord.id,
-    user_id: user.id,
-    entity_id: item.entityId,
-    entity_type: item.entityType,
-    entity_name: item.entityName,
-    item_key: item.key,
-    item_label: item.label,
-    item_type: item.itemType,
-    sort_order: item.sortOrder,
-    opening_value: Number(item.openingValue ?? 0),
-    projected_value: Number(item.projectedValue ?? 0),
-    actual_value: Number(item.actualValue ?? 0),
-    absolute_variance: calculateAbsoluteVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
-    percentage_variance: calculatePercentageVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
-  }));
-
-  const { error: itemsError } = await client.from("month_end_close_items").upsert(itemRows, {
-    onConflict: "close_id,entity_type,entity_id",
-  });
-
-  if (itemsError) {
-    throw new Error(itemsError.message);
-  }
-
-  return getMonthEndCloseWorkspace();
-}
-
-export async function saveMonthEndCloseDraft(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {
-  return persistMonthEndClose(input, "draft");
-}
-
-export async function closeMonthEndClose(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {
-  return persistMonthEndClose(input, "closed");
 }
 
 export function calculateMonthEndCloseVarianceSummary(items: MonthEndCloseEditorItem[]) {

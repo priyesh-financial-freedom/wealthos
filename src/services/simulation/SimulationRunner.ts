@@ -1,7 +1,7 @@
 import { CURRENT_PLANNING_ASSUMPTION_BASELINE } from "@/services/assumptions";
 import { planningAssumptionService } from "@/services/planning/assumptions";
 import { createMonthlyLedgerRecord, type ProjectionContext, type ProjectionMonthState } from "@/services/projection/ProjectionContext";
-import { projectionEngine } from "@/services/projection";
+import { projectionEngine } from "@/services/projection/ProjectionEngine";
 import type { MonthlySnapshot, ProjectionScenario } from "@/types/projection";
 
 import type {

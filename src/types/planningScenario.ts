@@ -1,4 +1,4 @@
-import type { SimulationResult } from "@/services/simulation";
+import type { SimulationResult } from "@/services/simulation/SimulationOutputs";
 import type { AssumptionsBundle } from "@/types/assumptions";
 
 export type PlanningScenarioType = "BASE" | "CUSTOM" | "SYSTEM";
