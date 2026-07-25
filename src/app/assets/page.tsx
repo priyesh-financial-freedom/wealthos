@@ -10,7 +10,7 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { LoadingSpinner } from "@/components/ui/feedback";
 import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
 import { getBalanceSheetData } from "@/services/balanceSheet";
-import { buildMonthlyHistoryModel, getMonthlyHistory } from "@/services/monthlySnapshots";
+import { snapshotReadModel, type SnapshotHistoryRecord } from "@/services/snapshots";
 
 interface AssetBucket {
   name: string;
@@ -22,6 +22,14 @@ const CHART_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#b45309", "#7c3aed", "#0
 
 function sum(values: number[]) {
   return values.reduce((total, value) => total + Number(value ?? 0), 0);
+}
+
+function computeAssetBase(record: SnapshotHistoryRecord) {
+  if (record.source === "legacy-monthly-snapshot") {
+    return Number(record.totals.assets ?? 0) + Number(record.totals.investments ?? 0);
+  }
+
+  return Number(record.totals.assets ?? 0);
 }
 
 function buildAssetBuckets(params: {
@@ -107,14 +115,16 @@ export default function AssetsPage() {
     setError(null);
 
     try {
-      const [historyRows, balanceSheetData] = await Promise.all([
-        getMonthlyHistory().catch(() => []),
+      const [snapshotHistory, balanceSheetData] = await Promise.all([
+        snapshotReadModel.loadHistory({ source: "legacy-monthly-snapshot" }).catch(() => []),
         getBalanceSheetData().catch(() => null),
       ]);
 
-      const historyModel = buildMonthlyHistoryModel(historyRows);
-      const latestAssetBase = historyModel.latest ? Number(historyModel.latest.snapshot.assets_total ?? 0) + Number(historyModel.latest.snapshot.investments_total ?? 0) : null;
-      const previousAssetBase = historyModel.previousMonth ? Number(historyModel.previousMonth.snapshot.assets_total ?? 0) + Number(historyModel.previousMonth.snapshot.investments_total ?? 0) : null;
+      const orderedHistory = snapshotHistory.slice().sort((left, right) => right.monthKey.localeCompare(left.monthKey));
+      const latestRecord = orderedHistory[0] ?? null;
+      const previousRecord = latestRecord ? orderedHistory.find((record) => record.monthKey < latestRecord.monthKey) ?? null : null;
+      const latestAssetBase = latestRecord ? computeAssetBase(latestRecord) : null;
+      const previousAssetBase = previousRecord ? computeAssetBase(previousRecord) : null;
 
       const bankAccounts = balanceSheetData?.bankAccounts ?? [];
       const investments = balanceSheetData?.investments ?? [];
