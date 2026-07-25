@@ -13,13 +13,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import {
   buildMonthlyHistoryModel,
-  closeCurrentMonthSnapshot,
   getMonthlyHistory,
   type MonthlyComparisonWindow,
   type MonthlyHistoryRecord,
   type MonthlyReviewInsight,
   type MonthlyTrendPoint,
 } from "@/services/monthlySnapshots";
+import { snapshotWriteService } from "@/services/snapshots";
 import type { MonthlySnapshot } from "@/types/monthlySnapshot";
 
 function formatInr(value: number) {
@@ -289,7 +289,7 @@ export default function HistoryPage() {
     setNotice(null);
 
     try {
-      const snapshot = await closeCurrentMonthSnapshot();
+      const snapshot = await snapshotWriteService.closeCurrentMonthSnapshot();
       setClosedSnapshot(snapshot);
       setNotice(`Month closed successfully for ${monthLabel(snapshot.snapshot_month, snapshot.snapshot_year)}.`);
       await refreshHistory();

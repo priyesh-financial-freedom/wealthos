@@ -1,5 +1,6 @@
 import { calculateDebtRatio } from "@/services/finance";
 import { supabase } from "@/lib/supabase/client";
+import { snapshotWriteService } from "./snapshots/SnapshotWriteService";
 import type { MonthlyAssetSnapshot, MonthlyInvestmentSnapshot, MonthlyLiabilitySnapshot, MonthlySnapshot } from "@/types/monthlySnapshot";
 
 const cashAssetTypes = new Set(["cash", "checking", "savings"]);
@@ -146,19 +147,7 @@ function compactRecent(records: MonthlyHistoryRecord[], limit = 12) {
 }
 
 export async function closeCurrentMonthSnapshot() {
-  const { client } = await requireAuthenticatedUser();
-  const { snapshot_month, snapshot_year } = currentMonthYear();
-
-  const { data, error } = await client.rpc("close_monthly_snapshot", {
-    p_snapshot_month: snapshot_month,
-    p_snapshot_year: snapshot_year,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data as MonthlySnapshot;
+  return snapshotWriteService.closeCurrentMonthSnapshot();
 }
 
 export async function getMonthlyHistory(): Promise<MonthlyHistoryRecord[]> {
