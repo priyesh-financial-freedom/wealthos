@@ -13,9 +13,8 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSpinner } from "@/components/ui/feedback";
 import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
-import { buildMonthlyHistoryModel, getMonthlyHistory } from "@/services/monthlySnapshots";
+import { snapshotReadModel, type SnapshotHistoryRecord } from "@/services/snapshots";
 import { getBalanceSheetData, type BalanceSheetSection, type BalanceSheetSummary } from "@/services/balanceSheet";
-import type { MonthlyHistoryRecord } from "@/services/monthlySnapshots";
 
 const ASSET_COLORS = ["#0f172a", "#334155", "#15803d", "#f59e0b", "#b45309", "#0f766e", "#7c3aed", "#94a3b8"];
 const LIABILITY_COLORS = ["#7f1d1d", "#b91c1c", "#dc2626", "#f97316", "#7c2d12"];
@@ -61,9 +60,39 @@ function formatMoney(value: number) {
   return formatCurrency(value, { maximumFractionDigits: 0 });
 }
 
+function toAscendingByMonth(records: SnapshotHistoryRecord[]) {
+  return records.slice().sort((left, right) => left.monthKey.localeCompare(right.monthKey));
+}
+
+function toMonthlyGrowthData(records: SnapshotHistoryRecord[]) {
+  const ordered = toAscendingByMonth(records);
+  return ordered.map((record, index) => {
+    const previous = index > 0 ? ordered[index - 1] : null;
+    const currentNetWorth = Number(record.totals.netWorth ?? 0);
+    const previousNetWorth = previous ? Number(previous.totals.netWorth ?? 0) : currentNetWorth;
+
+    return {
+      month: record.monthLabel,
+      growth: currentNetWorth - previousNetWorth,
+    };
+  });
+}
+
+function toTrendData(records: SnapshotHistoryRecord[]) {
+  return toAscendingByMonth(records)
+    .slice(-12)
+    .map((record) => ({
+      month: record.monthLabel,
+      netWorth: Number(record.totals.netWorth ?? 0),
+      assets: Number(record.totals.assets ?? 0),
+      liabilities: Number(record.totals.liabilities ?? 0),
+      investments: Number(record.totals.investments ?? 0),
+    }));
+}
+
 export default function BalanceSheetPage() {
   const [summary, setSummary] = useState<BalanceSheetSummary>(emptySummary);
-  const [historyRecords, setHistoryRecords] = useState<MonthlyHistoryRecord[]>([]);
+  const [historyRecords, setHistoryRecords] = useState<SnapshotHistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +102,10 @@ export default function BalanceSheetPage() {
     async function loadBalanceSheet() {
       try {
         setLoading(true);
-        const [balanceSheetData, history] = await Promise.all([getBalanceSheetData(), getMonthlyHistory().catch(() => [])]);
+        const [balanceSheetData, history] = await Promise.all([
+          getBalanceSheetData(),
+          snapshotReadModel.loadHistory({ source: "legacy-monthly-snapshot" }).catch(() => []),
+        ]);
         if (!mounted) {
           return;
         }
@@ -106,15 +138,8 @@ export default function BalanceSheetPage() {
     };
   }, []);
 
-  const historyModel = useMemo(() => buildMonthlyHistoryModel(historyRecords), [historyRecords]);
-  const monthlyGrowthData = useMemo(
-    () =>
-      historyModel.records
-        .slice()
-        .sort((left, right) => (left.snapshot.snapshot_year - right.snapshot.snapshot_year) || (left.snapshot.snapshot_month - right.snapshot.snapshot_month))
-        .map((record) => ({ month: record.monthLabel, growth: record.snapshot.growth_from_previous_month })),
-    [historyModel.records],
-  );
+  const trendData = useMemo(() => toTrendData(historyRecords), [historyRecords]);
+  const monthlyGrowthData = useMemo(() => toMonthlyGrowthData(historyRecords), [historyRecords]);
 
   return (
     <AppLayout>
@@ -182,12 +207,12 @@ export default function BalanceSheetPage() {
                   <h3 className="text-base font-semibold text-slate-900">Net Worth Trend</h3>
                   <p className="text-sm text-slate-600">Monthly balance sheet progression from the close-month engine</p>
                 </div>
-                {historyModel.trendData.length === 0 ? (
+                {trendData.length === 0 ? (
                   <EmptyChart label="Close a month to store balance sheet totals and unlock historical trend analysis." />
                 ) : (
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={historyModel.trendData}>
+                      <AreaChart data={trendData}>
                         <defs>
                           <linearGradient id="bs-networth" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#0f172a" stopOpacity={0.28} />
