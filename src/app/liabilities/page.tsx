@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -134,7 +134,7 @@ function matchesLiabilityBucket(liability: Liability, bucket: LiabilityBucket): 
   return !(liability.liability_type === "Home Loan" || liability.liability_type === "Loan Against Property" || liability.liability_type === "Car Loan" || liability.liability_type === "Credit Card");
 }
 
-export default function LiabilitiesPage() {
+function LiabilitiesPageContent() {
   const searchParams = useSearchParams();
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
   const [totalAssetBase, setTotalAssetBase] = useState(0);
@@ -525,5 +525,13 @@ export default function LiabilitiesPage() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+export default function LiabilitiesPage() {
+  return (
+    <Suspense fallback={<div className="h-dvh min-h-screen bg-[radial-gradient(circle_at_top_left,_#eef4ff_0%,_#f3f6fb_35%,_#f8fbff_100%)]" />}>
+      <LiabilitiesPageContent />
+    </Suspense>
   );
 }

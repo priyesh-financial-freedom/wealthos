@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { InvestmentDetailsDialog } from "@/components/investments/InvestmentDetailsDialog";
@@ -95,7 +95,7 @@ function filterAndSortInvestments(params: {
     });
 }
 
-export default function InvestmentsPage() {
+function InvestmentsPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -417,5 +417,13 @@ export default function InvestmentsPage() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+export default function InvestmentsPage() {
+  return (
+    <Suspense fallback={<div className="h-dvh min-h-screen bg-[radial-gradient(circle_at_top_left,_#eef4ff_0%,_#f3f6fb_35%,_#f8fbff_100%)]" />}>
+      <InvestmentsPageContent />
+    </Suspense>
   );
 }
