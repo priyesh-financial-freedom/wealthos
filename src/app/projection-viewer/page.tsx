@@ -158,7 +158,10 @@ export default function ProjectionViewerPage() {
         isDefault: true,
       };
 
-      const context = await projectionInputService.buildContext({ scenario });
+      const context = await projectionInputService.buildContext({
+        scenario,
+        startSource: { kind: "live-balance-sheet" },
+      });
       const result = await projectionEngine.run(context);
       setProjection(result);
 

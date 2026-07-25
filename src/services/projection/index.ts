@@ -16,7 +16,7 @@ export { ProjectionPipeline } from "./ProjectionPipeline";
 export type { ProjectionStep } from "./steps/ProjectionStep";
 export { projectionEngine, ProjectionEngine } from "./ProjectionEngine";
 export type { ProjectionResult, ProjectionTimelinePoint, OpeningBalances } from "./ProjectionEngine";
-export type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource } from "./ProjectionContext";
+export type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource, ProjectionStartSource } from "./ProjectionContext";
 export { projectionEventsService, ProjectionEventsService, DEFAULT_PROJECTION_SCENARIO_KEY } from "./events";
 export type {
   MonthlyLedgerEntry,

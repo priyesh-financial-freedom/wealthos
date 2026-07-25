@@ -28,7 +28,7 @@ import type {
   ProjectionScenario,
   ProjectionTaxProfile,
 } from "@/types/projection";
-import type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource } from "@/services/projection/ProjectionContext";
+import type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource, ProjectionStartSource } from "@/services/projection/ProjectionContext";
 import { cloneProjectionState, createMonthlyLedgerRecord } from "@/services/projection/ProjectionContext";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
@@ -312,36 +312,152 @@ async function getLatestClosedMonthEndSeed(): Promise<{ source: ProjectionOpenin
   };
 }
 
+async function getClosedMonthEndSeedByCloseId(closeId: string): Promise<{ source: ProjectionOpeningSource; nextStartMonth: string; state: ProjectionMonthState } | null> {
+  const { client, user } = await requireAuthenticatedUser();
+  const closeResult = await client
+    .from("month_end_closes")
+    .select("id, close_month, close_year")
+    .eq("user_id", user.id)
+    .eq("id", closeId)
+    .eq("status", "closed")
+    .limit(1);
+
+  if (closeResult.error) {
+    throw new Error(closeResult.error.message);
+  }
+
+  const closeRow = (closeResult.data?.[0] ?? null) as MonthEndCloseRow | null;
+  if (!closeRow) {
+    return null;
+  }
+
+  const itemResult = await client
+    .from("month_end_close_items")
+    .select("item_key, actual_value")
+    .eq("close_id", closeRow.id);
+
+  if (itemResult.error) {
+    throw new Error(itemResult.error.message);
+  }
+
+  const values = ((itemResult.data ?? []) as MonthEndCloseItemRow[]).reduce<Record<string, number>>((acc, row) => {
+    acc[row.item_key] = toNumber(row.actual_value);
+    return acc;
+  }, {});
+
+  const nextMonth = addMonths(closeRow.close_year, closeRow.close_month);
+
+  return {
+    source: {
+      kind: "month-end-close",
+      asOfMonth: formatMonthKey(closeRow.close_year, closeRow.close_month),
+      closeId: closeRow.id,
+    },
+    nextStartMonth: formatMonthKey(nextMonth.year, nextMonth.month),
+    state: buildOpeningStateFromCloseValues(values),
+  };
+}
+
+function normalizeStartSource(startSource: ProjectionStartSource | undefined): ProjectionStartSource {
+  return startSource ?? { kind: "live-balance-sheet" };
+}
+
+function coerceStartMonth(requestedStartMonth: string, seedStartMonth: string): string {
+  const requestedStart = parseMonthKey(requestedStartMonth);
+  const seededStart = parseMonthKey(seedStartMonth);
+  const chosen = compareMonth(requestedStart, seededStart) > 0 ? requestedStart : seededStart;
+  return formatMonthKey(chosen.year, chosen.month);
+}
+
+interface ProjectionSeedResolution {
+  openingState: ProjectionMonthState;
+  effectiveStartMonth: string;
+  openingSource: ProjectionOpeningSource;
+}
+
 export interface ProjectionInputOptions {
   scenario: ProjectionScenario;
   currentDate?: Date;
+  startSource?: ProjectionStartSource;
 }
 
 export class ProjectionInputService {
+  private async resolveProjectionSeed(params: {
+    startSource: ProjectionStartSource;
+    requestedStartMonth: string;
+    loadedData: LoadedProjectionData;
+  }): Promise<ProjectionSeedResolution> {
+    if (params.startSource.kind === "manual-opening-balances") {
+      const effectiveStartMonth = params.startSource.startMonth || params.requestedStartMonth;
+      return {
+        openingState: cloneProjectionState(params.startSource.balances),
+        effectiveStartMonth,
+        openingSource: {
+          kind: "manual-opening-balances",
+          asOfMonth: effectiveStartMonth,
+        },
+      };
+    }
+
+    if (params.startSource.kind === "latest-closed-month-end") {
+      const closedSeed = await getLatestClosedMonthEndSeed();
+      if (!closedSeed) {
+        return {
+          openingState: buildOpeningStateFromLiveData(params.loadedData),
+          effectiveStartMonth: params.requestedStartMonth,
+          openingSource: { kind: "live-balance-sheet", asOfMonth: params.requestedStartMonth },
+        };
+      }
+
+      return {
+        openingState: closedSeed.state,
+        effectiveStartMonth: coerceStartMonth(params.requestedStartMonth, closedSeed.nextStartMonth),
+        openingSource: closedSeed.source,
+      };
+    }
+
+    if (params.startSource.kind === "specific-closed-month-end") {
+      const closedSeed = await getClosedMonthEndSeedByCloseId(params.startSource.closeId);
+      if (!closedSeed) {
+        throw new Error("Selected closed month-end snapshot was not found.");
+      }
+
+      return {
+        openingState: closedSeed.state,
+        effectiveStartMonth: coerceStartMonth(params.requestedStartMonth, closedSeed.nextStartMonth),
+        openingSource: closedSeed.source,
+      };
+    }
+
+    return {
+      openingState: buildOpeningStateFromLiveData(params.loadedData),
+      effectiveStartMonth: params.requestedStartMonth,
+      openingSource: { kind: "live-balance-sheet", asOfMonth: params.requestedStartMonth },
+    };
+  }
+
   async buildContext(options: ProjectionInputOptions): Promise<ProjectionContext> {
     const assumptions = await assumptionsService.getAssumptionsBundle(options.scenario.id || DEFAULT_SCENARIO_KEY);
     const effectiveAssumptions = await assumptionsService.getEffectiveAssumptions({
       scenarioId: options.scenario.id === DEFAULT_SCENARIO_KEY ? null : options.scenario.id,
     });
 
-    const [loadedData, goals, persistedEvents, closedSeed, familyProfile] = await Promise.all([
+    const [loadedData, goals, persistedEvents, familyProfile] = await Promise.all([
       this.loadRepositories(),
       goalService.listGoals({ includeProgress: false }),
       options.scenario.events.length > 0 ? Promise.resolve(options.scenario.events) : projectionEventsService.listEvents(options.scenario.id).catch(() => [] as FinancialEvent[]),
-      getLatestClosedMonthEndSeed(),
       planningAssumptionService.getFamilyProfile(),
     ]);
 
-    const requestedStart = parseMonthKey(options.scenario.startMonth || assumptions.planning.startMonth);
-    const effectiveStartMonth = closedSeed
-      ? (() => {
-          const seededStart = parseMonthKey(closedSeed.nextStartMonth);
-          const chosen = compareMonth(requestedStart, seededStart) > 0 ? requestedStart : seededStart;
-          return formatMonthKey(chosen.year, chosen.month);
-        })()
-      : options.scenario.startMonth || assumptions.planning.startMonth;
+    const requestedStartMonth = options.scenario.startMonth || assumptions.planning.startMonth;
+    const seed = await this.resolveProjectionSeed({
+      startSource: normalizeStartSource(options.startSource),
+      requestedStartMonth,
+      loadedData,
+    });
 
-    const openingState = closedSeed ? closedSeed.state : buildOpeningStateFromLiveData(loadedData);
+    const effectiveStartMonth = seed.effectiveStartMonth;
+    const openingState = seed.openingState;
     const currentDate = options.currentDate ?? new Date();
     const ageOffsetMonths = (() => {
       const start = parseMonthKey(assumptions.planning.startMonth);
@@ -381,7 +497,7 @@ export class ProjectionInputService {
       projectionStartDate: effectiveStartMonth,
       currentMonth: effectiveStartMonth,
       monthIndex: 0,
-      openingSource: closedSeed?.source ?? { kind: "live-balance-sheet", asOfMonth: effectiveStartMonth },
+      openingSource: seed.openingSource,
       financialEvents: persistedEvents,
       monthlyLedger: [],
       currentRecord: createMonthlyLedgerRecord(effectiveStartMonth, startingAge, openingState),

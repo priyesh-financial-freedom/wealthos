@@ -540,7 +540,10 @@ async function getProjectedBucketTotals(targetMonth: MonthReference): Promise<Va
     isDefault: true,
   };
 
-  const context = await projectionInputService.buildContext({ scenario });
+  const context = await projectionInputService.buildContext({
+    scenario,
+    startSource: { kind: "latest-closed-month-end" },
+  });
   const result = await projectionEngine.run(context);
   const snapshot = result.snapshots.find((item) => item.month === targetMonth.monthKey) ?? result.snapshots[0] ?? null;
 

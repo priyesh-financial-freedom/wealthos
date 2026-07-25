@@ -24,10 +24,16 @@ import type { SilverHolding } from "@/types/silverHolding";
 import type { EffectivePlanningAssumptions } from "@/services/planning/assumptions";
 
 export interface ProjectionOpeningSource {
-  kind: "live-balance-sheet" | "month-end-close";
+  kind: "live-balance-sheet" | "month-end-close" | "manual-opening-balances";
   asOfMonth: string;
   closeId?: string;
 }
+
+export type ProjectionStartSource =
+  | { kind: "live-balance-sheet" }
+  | { kind: "latest-closed-month-end" }
+  | { kind: "specific-closed-month-end"; closeId: string }
+  | { kind: "manual-opening-balances"; balances: ProjectionMonthState; startMonth?: string };
 
 export interface ProjectionMonthState {
   cash: number;
