@@ -701,6 +701,52 @@ function buildDashboard(params: {
   };
 }
 
+function buildActualValueOverrideMap(items: MonthEndClosePersistInput["items"]): Map<string, number> {
+  const overrides = new Map<string, number>();
+  for (const item of items) {
+    overrides.set(entityRowKey(item.entityType, item.entityId), Number(item.actualValue ?? 0));
+  }
+
+  return overrides;
+}
+
+function applyActualValueOverrides(items: MonthEndCloseEditorItem[], overrides: Map<string, number>): MonthEndCloseEditorItem[] {
+  return items.map((item) => {
+    const rowKey = entityRowKey(item.entityType, item.entityId);
+    if (!overrides.has(rowKey)) {
+      return item;
+    }
+
+    const actualValue = overrides.get(rowKey) ?? 0;
+
+    return {
+      ...item,
+      actualValue,
+      absoluteVariance: calculateAbsoluteVariance(actualValue, item.projectedValue),
+      percentageVariance: calculatePercentageVariance(actualValue, item.projectedValue),
+    };
+  });
+}
+
+function toMonthEndCloseItemRows(params: { closeId: string; userId: string; items: MonthEndCloseEditorItem[] }) {
+  return params.items.map((item) => ({
+    close_id: params.closeId,
+    user_id: params.userId,
+    entity_id: item.entityId,
+    entity_type: item.entityType,
+    entity_name: item.entityName,
+    item_key: item.key,
+    item_label: item.label,
+    item_type: item.itemType,
+    sort_order: item.sortOrder,
+    opening_value: Number(item.openingValue ?? 0),
+    projected_value: Number(item.projectedValue ?? 0),
+    actual_value: Number(item.actualValue ?? 0),
+    absolute_variance: calculateAbsoluteVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
+    percentage_variance: calculatePercentageVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
+  }));
+}
+
 export class MonthEndCloseService {
   constructor(private readonly dependencies: MonthEndCloseServiceDependencies) {}
 
@@ -714,6 +760,33 @@ export class MonthEndCloseService {
     }
 
     return getBalanceSheetData();
+  }
+
+  private async reconcileDraftOnWorkspaceLoad(params: {
+    userId: string;
+    draft: MonthEndClose | null;
+    draftItems: MonthEndCloseItem[];
+    reconciledItems: MonthEndCloseEditorItem[];
+  }): Promise<void> {
+    if (!params.draft) {
+      return;
+    }
+
+    const incomingKeys = new Set(params.reconciledItems.map((item) => entityRowKey(item.entityType, item.entityId)));
+    const rowsToDelete = params.draftItems.filter((item) => !incomingKeys.has(entityRowKey(item.entity_type, item.entity_id)));
+
+    if (rowsToDelete.length > 0) {
+      await this.repository.deleteCloseItemsByIds(rowsToDelete.map((row) => row.id));
+    }
+
+    // Re-upsert canonical draft rows so persisted draft stays synchronized with live entities immediately on load.
+    await this.repository.upsertCloseItems(
+      toMonthEndCloseItemRows({
+        closeId: params.draft.id,
+        userId: params.userId,
+        items: params.reconciledItems,
+      }),
+    );
   }
 
   async getWorkspace(): Promise<MonthEndCloseWorkspace> {
@@ -738,6 +811,14 @@ export class MonthEndCloseService {
       draftItems,
       projectedBucketTotals,
     });
+
+    await this.reconcileDraftOnWorkspaceLoad({
+      userId,
+      draft,
+      draftItems,
+      reconciledItems: items,
+    });
+
     const previousNetWorth = latestClosedItems.length > 0 ? summarizePersistedItems(latestClosedItems, "actual_value").netWorth : 0;
     const dashboard = buildDashboard({
       latestClosedMonth: previousMonthReference,
@@ -761,6 +842,35 @@ export class MonthEndCloseService {
 
   async closeMonth(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {
     return this.persist(input, "closed");
+  }
+
+  private async buildReconciledPersistItems(params: {
+    userId: string;
+    closeRecordId: string;
+    closeYear: number;
+    closeMonth: number;
+    incomingItems: MonthEndClosePersistInput["items"];
+  }): Promise<MonthEndCloseEditorItem[]> {
+    const [latestClosed, existingRows, balanceSheetData] = await Promise.all([
+      this.repository.getLatestClosedMonthEndClose(params.userId),
+      this.repository.getCloseItems(params.closeRecordId),
+      this.loadBalanceSheetData(),
+    ]);
+
+    const [latestClosedItems, projectedBucketTotals] = await Promise.all([
+      latestClosed ? this.repository.getCloseItems(latestClosed.id) : Promise.resolve([]),
+      getProjectedBucketTotals(createMonthReference(params.closeYear, params.closeMonth)),
+    ]);
+
+    const canonicalItems = buildWorkspaceItems({
+      currentSeeds: buildCurrentEntitySeeds(balanceSheetData),
+      latestClosedItems,
+      draftItems: existingRows,
+      projectedBucketTotals,
+    });
+
+    const incomingOverrides = buildActualValueOverrideMap(params.incomingItems);
+    return applyActualValueOverrides(canonicalItems, incomingOverrides);
   }
 
   private async persist(input: MonthEndClosePersistInput, status: "draft" | "closed") {
@@ -799,28 +909,25 @@ export class MonthEndCloseService {
       });
     }
 
+    const reconciledItems = await this.buildReconciledPersistItems({
+      userId,
+      closeRecordId: closeRecord.id,
+      closeYear: input.closeYear,
+      closeMonth: input.closeMonth,
+      incomingItems: input.items,
+    });
+
     const existingRows = await this.repository.getCloseItems(closeRecord.id);
-    const incomingKeys = new Set(input.items.map((item) => entityRowKey(item.entityType, item.entityId)));
+    const incomingKeys = new Set(reconciledItems.map((item) => entityRowKey(item.entityType, item.entityId)));
     const rowsToDelete = existingRows.filter((item) => !incomingKeys.has(entityRowKey(item.entity_type, item.entity_id)));
 
     await this.repository.deleteCloseItemsByIds(rowsToDelete.map((row) => row.id));
 
-    const itemRows = input.items.map((item) => ({
-      close_id: closeRecord.id,
-      user_id: userId,
-      entity_id: item.entityId,
-      entity_type: item.entityType,
-      entity_name: item.entityName,
-      item_key: item.key,
-      item_label: item.label,
-      item_type: item.itemType,
-      sort_order: item.sortOrder,
-      opening_value: Number(item.openingValue ?? 0),
-      projected_value: Number(item.projectedValue ?? 0),
-      actual_value: Number(item.actualValue ?? 0),
-      absolute_variance: calculateAbsoluteVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
-      percentage_variance: calculatePercentageVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
-    }));
+    const itemRows = toMonthEndCloseItemRows({
+      closeId: closeRecord.id,
+      userId,
+      items: reconciledItems,
+    });
 
     await this.repository.upsertCloseItems(itemRows);
 
