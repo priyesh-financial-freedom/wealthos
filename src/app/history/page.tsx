@@ -11,16 +11,346 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
-import {
-  buildMonthlyHistoryModel,
-  getMonthlyHistory,
-  type MonthlyComparisonWindow,
-  type MonthlyHistoryRecord,
-  type MonthlyReviewInsight,
-  type MonthlyTrendPoint,
-} from "@/services/monthlySnapshots";
-import { snapshotWriteService } from "@/services/snapshots";
+import { calculateDebtRatio } from "@/services/finance";
+import { supabase } from "@/lib/supabase/client";
+import { snapshotReadModel, snapshotWriteService, type SnapshotHistoryRecord } from "@/services/snapshots";
 import type { MonthlySnapshot } from "@/types/monthlySnapshot";
+
+interface HistorySnapshot {
+  id: string;
+  snapshot_month: number;
+  snapshot_year: number;
+  status: string;
+  assets_total: number;
+  liabilities_total: number;
+  investments_total: number;
+  net_worth: number;
+  growth_from_previous_month: number;
+  growth_from_previous_year: number;
+  cash_and_bank_total: number;
+}
+
+interface MonthlyHistoryRecord {
+  snapshot: HistorySnapshot;
+  monthLabel: string;
+}
+
+interface MonthlyComparisonMetric {
+  label: string;
+  current: number;
+  previous: number | null;
+  delta: number;
+  deltaPercent: number | null;
+  tone: "positive" | "warning" | "neutral";
+  inverse?: boolean;
+}
+
+interface MonthlyComparisonWindow {
+  title: string;
+  subtitle: string;
+  metrics: MonthlyComparisonMetric[];
+}
+
+interface MonthlyTrendPoint {
+  month: string;
+  netWorth: number;
+  assets: number;
+  liabilities: number;
+  investments: number;
+}
+
+interface MonthlyReviewInsight {
+  title: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral";
+}
+
+interface MonthlyHistoryModel {
+  records: MonthlyHistoryRecord[];
+  latest: MonthlyHistoryRecord | null;
+  previousMonth: MonthlyHistoryRecord | null;
+  sameMonthLastYear: MonthlyHistoryRecord | null;
+  comparisons: MonthlyComparisonWindow[];
+  trendData: MonthlyTrendPoint[];
+  review: MonthlyReviewInsight[];
+  timeline: MonthlyHistoryRecord[];
+}
+
+function toNumber(value: number | string | null | undefined) {
+  return Number(value ?? 0);
+}
+
+function parseMonthKey(monthKey: string) {
+  const [yearText, monthText] = monthKey.split("-");
+  return {
+    snapshot_year: Number(yearText),
+    snapshot_month: Number(monthText),
+  };
+}
+
+function snapshotSort(left: MonthlyHistoryRecord, right: MonthlyHistoryRecord) {
+  if (left.snapshot.snapshot_year !== right.snapshot.snapshot_year) {
+    return right.snapshot.snapshot_year - left.snapshot.snapshot_year;
+  }
+
+  return right.snapshot.snapshot_month - left.snapshot.snapshot_month;
+}
+
+function compactRecent(records: MonthlyHistoryRecord[], limit = 12) {
+  return [...records].sort((left, right) => (left.snapshot.snapshot_year - right.snapshot.snapshot_year) || (left.snapshot.snapshot_month - right.snapshot.snapshot_month)).slice(-limit);
+}
+
+function getSnapshotValue(snapshot: MonthlyHistoryRecord | null, key: "netWorth" | "assets" | "liabilities" | "investments") {
+  if (!snapshot) {
+    return 0;
+  }
+
+  switch (key) {
+    case "assets":
+      return snapshot.snapshot.assets_total;
+    case "liabilities":
+      return snapshot.snapshot.liabilities_total;
+    case "investments":
+      return snapshot.snapshot.investments_total;
+    case "netWorth":
+    default:
+      return snapshot.snapshot.net_worth;
+  }
+}
+
+function buildMetric(label: string, current: number, previous: number | null, inverse = false): MonthlyComparisonMetric {
+  const delta = previous === null ? 0 : current - previous;
+  const deltaPercent = previous && previous !== 0 ? (delta / Math.abs(previous)) * 100 : null;
+  const direction = inverse ? -delta : delta;
+  const tone: MonthlyComparisonMetric["tone"] = previous === null ? "neutral" : direction > 0 ? "positive" : direction < 0 ? "warning" : "neutral";
+
+  return {
+    label,
+    current,
+    previous,
+    delta,
+    deltaPercent,
+    tone,
+    inverse,
+  };
+}
+
+function formatIndianCurrency(value: number) {
+  const absolute = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+
+  if (absolute >= 10000000) {
+    return `${sign}₹${(absolute / 10000000).toFixed(1)} crore`;
+  }
+
+  if (absolute >= 100000) {
+    return `${sign}₹${(absolute / 100000).toFixed(1)} lakh`;
+  }
+
+  return `${sign}₹${absolute.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+async function loadCashTotalsBySnapshotId(records: SnapshotHistoryRecord[]) {
+  const snapshotIds = records
+    .map((record) => record.metadata.snapshotId)
+    .filter((value): value is string => Boolean(value));
+
+  if (snapshotIds.length === 0) {
+    return new Map<string, number>();
+  }
+
+  if (!supabase) {
+    throw new Error("Supabase client is not configured.");
+  }
+
+  const { data, error } = await supabase
+    .from("monthly_snapshots")
+    .select("id, cash_and_bank_total")
+    .in("id", snapshotIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const totals = new Map<string, number>();
+  for (const row of data ?? []) {
+    totals.set(String(row.id), toNumber((row as { cash_and_bank_total?: number | string | null }).cash_and_bank_total));
+  }
+
+  return totals;
+}
+
+function buildHistoryRecords(records: SnapshotHistoryRecord[], cashTotalsBySnapshotId: Map<string, number>): MonthlyHistoryRecord[] {
+  const mapped = records.map((record) => {
+    const parsed = parseMonthKey(record.monthKey);
+    const snapshotId = record.metadata.snapshotId ?? record.monthKey;
+
+    return {
+      monthLabel: record.monthLabel,
+      snapshot: {
+        id: snapshotId,
+        snapshot_month: parsed.snapshot_month,
+        snapshot_year: parsed.snapshot_year,
+        status: record.metadata.status ?? "closed",
+        assets_total: toNumber(record.totals.assets),
+        liabilities_total: toNumber(record.totals.liabilities),
+        investments_total: toNumber(record.totals.investments),
+        net_worth: toNumber(record.totals.netWorth),
+        growth_from_previous_month: 0,
+        growth_from_previous_year: 0,
+        cash_and_bank_total: cashTotalsBySnapshotId.get(snapshotId) ?? 0,
+      },
+    } satisfies MonthlyHistoryRecord;
+  }).sort(snapshotSort);
+
+  for (const record of mapped) {
+    const previousMonth = mapped.find((candidate) => (
+      candidate !== record
+      && (
+        candidate.snapshot.snapshot_year < record.snapshot.snapshot_year
+        || (
+          candidate.snapshot.snapshot_year === record.snapshot.snapshot_year
+          && candidate.snapshot.snapshot_month < record.snapshot.snapshot_month
+        )
+      )
+    )) ?? null;
+
+    const previousYear = mapped.find((candidate) => (
+      candidate.snapshot.snapshot_year === record.snapshot.snapshot_year - 1
+      && candidate.snapshot.snapshot_month === record.snapshot.snapshot_month
+    )) ?? null;
+
+    record.snapshot.growth_from_previous_month = previousMonth
+      ? record.snapshot.net_worth - previousMonth.snapshot.net_worth
+      : 0;
+    record.snapshot.growth_from_previous_year = previousYear
+      ? record.snapshot.net_worth - previousYear.snapshot.net_worth
+      : 0;
+  }
+
+  return mapped;
+}
+
+function buildMonthlyHistoryModel(records: MonthlyHistoryRecord[]): MonthlyHistoryModel {
+  const ordered = [...records].sort(snapshotSort);
+  const latest = ordered[0] ?? null;
+  const previousMonth = latest ? ordered.find((record) => record !== latest && (record.snapshot.snapshot_year < latest.snapshot.snapshot_year || (record.snapshot.snapshot_year === latest.snapshot.snapshot_year && record.snapshot.snapshot_month < latest.snapshot.snapshot_month))) ?? null : null;
+  const sameMonthLastYear = latest ? ordered.find((record) => record.snapshot.snapshot_year === latest.snapshot.snapshot_year - 1 && record.snapshot.snapshot_month === latest.snapshot.snapshot_month) ?? null : null;
+  const recent = compactRecent(ordered, 12);
+  const trendData = recent
+    .slice()
+    .sort((left, right) => (left.snapshot.snapshot_year - right.snapshot.snapshot_year) || (left.snapshot.snapshot_month - right.snapshot.snapshot_month))
+    .map((record) => ({
+      month: record.monthLabel,
+      netWorth: record.snapshot.net_worth,
+      assets: record.snapshot.assets_total,
+      liabilities: record.snapshot.liabilities_total,
+      investments: record.snapshot.investments_total,
+    }));
+
+  const comparisons: MonthlyComparisonWindow[] = [
+    {
+      title: "Current vs Last Month",
+      subtitle: latest ? `${latest.monthLabel} against the previous close` : "No closed month yet",
+      metrics: [
+        buildMetric("Net worth", getSnapshotValue(latest, "netWorth"), getSnapshotValue(previousMonth, "netWorth")),
+        buildMetric("Assets", getSnapshotValue(latest, "assets"), getSnapshotValue(previousMonth, "assets")),
+        buildMetric("Liabilities", getSnapshotValue(latest, "liabilities"), getSnapshotValue(previousMonth, "liabilities"), true),
+        buildMetric("Investments", getSnapshotValue(latest, "investments"), getSnapshotValue(previousMonth, "investments")),
+      ],
+    },
+    {
+      title: "Current vs Same Month Last Year",
+      subtitle: latest ? `${latest.monthLabel} year-over-year comparison` : "No closed month yet",
+      metrics: [
+        buildMetric("Net worth", getSnapshotValue(latest, "netWorth"), getSnapshotValue(sameMonthLastYear, "netWorth")),
+        buildMetric("Assets", getSnapshotValue(latest, "assets"), getSnapshotValue(sameMonthLastYear, "assets")),
+        buildMetric("Liabilities", getSnapshotValue(latest, "liabilities"), getSnapshotValue(sameMonthLastYear, "liabilities"), true),
+        buildMetric("Investments", getSnapshotValue(latest, "investments"), getSnapshotValue(sameMonthLastYear, "investments")),
+      ],
+    },
+  ];
+
+  const review: MonthlyReviewInsight[] = [];
+
+  if (!latest) {
+    review.push({ title: "Start the closing cycle", detail: "Close the first month to begin recording historical performance, growth, and debt movement.", tone: "neutral" });
+  } else {
+    const netWorthDelta = latest.snapshot.growth_from_previous_month;
+    const liabilityDelta = latest.snapshot.liabilities_total - (previousMonth?.snapshot.liabilities_total ?? latest.snapshot.liabilities_total);
+    const investmentShare = latest.snapshot.assets_total + latest.snapshot.investments_total > 0 ? latest.snapshot.investments_total / (latest.snapshot.assets_total + latest.snapshot.investments_total) : 0;
+    const previousInvestmentShare = previousMonth && previousMonth.snapshot.assets_total + previousMonth.snapshot.investments_total > 0
+      ? previousMonth.snapshot.investments_total / (previousMonth.snapshot.assets_total + previousMonth.snapshot.investments_total)
+      : investmentShare;
+    const cashShare = latest.snapshot.cash_and_bank_total / Math.max(latest.snapshot.assets_total, 1);
+    const debtRatio = calculateDebtRatio(latest.snapshot.assets_total + latest.snapshot.investments_total, latest.snapshot.liabilities_total);
+    const previousDebtRatio = previousMonth ? calculateDebtRatio(previousMonth.snapshot.assets_total + previousMonth.snapshot.investments_total, previousMonth.snapshot.liabilities_total) : debtRatio;
+
+    review.push({
+      title: netWorthDelta >= 0 ? "Net worth improved" : "Net worth softened",
+      detail: `${netWorthDelta >= 0 ? "Net worth increased by" : "Net worth declined by"} ${formatIndianCurrency(Math.abs(netWorthDelta))} since the last close.`,
+      tone: netWorthDelta >= 0 ? "positive" : "warning",
+    });
+
+    if (liabilityDelta !== 0) {
+      review.push({
+        title: liabilityDelta < 0 ? "Debt balance reduced" : "Debt balance moved higher",
+        detail: `${liabilityDelta < 0 ? "Liabilities reduced by" : "Liabilities increased by"} ${formatIndianCurrency(Math.abs(liabilityDelta))} versus the prior month.`,
+        tone: liabilityDelta < 0 ? "positive" : "warning",
+      });
+    }
+
+    if (investmentShare > previousInvestmentShare + 0.02) {
+      review.push({
+        title: "Investment allocation increased",
+        detail: `Investments now represent ${(investmentShare * 100).toFixed(0)}% of combined assets and investments, up from ${(previousInvestmentShare * 100).toFixed(0)}% last month.`,
+        tone: "positive",
+      });
+    }
+
+    if (cashShare >= 0.25) {
+      review.push({
+        title: "Cash exceeds target",
+        detail: `Liquid reserves sit at ${(cashShare * 100).toFixed(0)}% of total assets, which gives the board room for near-term flexibility.`,
+        tone: "positive",
+      });
+    }
+
+    if (debtRatio < previousDebtRatio) {
+      review.push({
+        title: "Debt ratio improved",
+        detail: `Debt ratio moved from ${(previousDebtRatio * 100).toFixed(1)}% to ${(debtRatio * 100).toFixed(1)}%.`,
+        tone: "positive",
+      });
+    }
+
+    if (sameMonthLastYear) {
+      const yearOverYearDelta = latest.snapshot.net_worth - sameMonthLastYear.snapshot.net_worth;
+      review.push({
+        title: "Year-over-year context",
+        detail: `${yearOverYearDelta >= 0 ? "Net worth is up" : "Net worth is down"} ${formatIndianCurrency(Math.abs(yearOverYearDelta))} compared with the same month last year.`,
+        tone: yearOverYearDelta >= 0 ? "positive" : "warning",
+      });
+    }
+  }
+
+  return {
+    records: ordered,
+    latest,
+    previousMonth,
+    sameMonthLastYear,
+    comparisons,
+    trendData,
+    review: review.slice(0, 4),
+    timeline: ordered.slice(0, 6),
+  };
+}
+
+async function loadHistoryRecords() {
+  const snapshotHistory = await snapshotReadModel.loadHistory({ source: "legacy-monthly-snapshot" });
+  const cashTotalsBySnapshotId = await loadCashTotalsBySnapshotId(snapshotHistory);
+  return buildHistoryRecords(snapshotHistory, cashTotalsBySnapshotId);
+}
 
 function formatInr(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -41,7 +371,7 @@ function monthLabel(month: number, year: number) {
   return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
 }
 
-function isSameCalendarMonth(snapshot: MonthlySnapshot | null) {
+function isSameCalendarMonth(snapshot: { snapshot_month: number; snapshot_year: number } | null) {
   if (!snapshot) {
     return false;
   }
@@ -222,7 +552,7 @@ export default function HistoryPage() {
   async function refreshHistory() {
     try {
       setLoading(true);
-      const history = await getMonthlyHistory();
+      const history = await loadHistoryRecords();
       setRecords(history);
       setError(null);
     } catch (err) {
@@ -237,7 +567,7 @@ export default function HistoryPage() {
 
     async function loadInitialHistory() {
       try {
-        const history = await getMonthlyHistory();
+        const history = await loadHistoryRecords();
         if (isMounted) {
           setRecords(history);
           setError(null);

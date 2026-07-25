@@ -1,9 +1,9 @@
 import { getBalanceSheetData, type BalanceSheetSummary } from "@/services/balanceSheet";
-import { getMonthlyHistory, buildMonthlyHistoryModel, type MonthlyHistoryModel } from "@/services/monthlySnapshots";
 import { goalService } from "@/services/planning/goals";
 import type { FinancialGoalWithProgress } from "@/types/financialGoal";
 import { createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService } from "@/services/projection";
+import { snapshotReadModel, type SnapshotHistoryRecord } from "@/services/snapshots";
 import type { SimulationResult } from "@/services/simulation";
 import type { HealthScore, HealthScoreComponent, HealthScoreComponentKey, HealthScoreTrendPoint, HealthScoreWeights } from "@/types/healthScore";
 
@@ -28,7 +28,7 @@ interface HealthScoreContext {
   summary: BalanceSheetSummary;
   goals: FinancialGoalWithProgress[];
   simulation: SimulationResult;
-  monthlyHistory: MonthlyHistoryModel;
+  monthlyHistory: HealthScoreHistoryModel;
   monthlyReviewVariance: number;
 }
 
@@ -36,7 +36,7 @@ interface HealthScoreServiceDependencies {
   balanceSheetLoader?: () => Promise<{ summary: BalanceSheetSummary }>;
   goalsLoader?: () => Promise<FinancialGoalWithProgress[]>;
   simulationLoader?: () => Promise<SimulationResult>;
-  monthlyHistoryLoader?: () => Promise<MonthlyHistoryModel>;
+  monthlyHistoryLoader?: () => Promise<HealthScoreHistoryModel>;
   monthlyReviewVarianceLoader?: () => Promise<number>;
 }
 
@@ -44,8 +44,27 @@ interface CalculateHealthScoreInput {
   summary?: BalanceSheetSummary;
   goals?: FinancialGoalWithProgress[];
   simulation?: SimulationResult;
-  monthlyHistory?: MonthlyHistoryModel;
+  monthlyHistory?: HealthScoreHistoryModel;
   monthlyReviewVariance?: number;
+}
+
+interface HealthScoreHistorySnapshot {
+  snapshot_year: number;
+  snapshot_month: number;
+  assets_total: number;
+  liabilities_total: number;
+  investments_total: number;
+  net_worth: number;
+  growth_from_previous_month: number;
+}
+
+interface HealthScoreHistoryRecord {
+  monthLabel: string;
+  snapshot: HealthScoreHistorySnapshot;
+}
+
+interface HealthScoreHistoryModel {
+  records: HealthScoreHistoryRecord[];
 }
 
 function clampScore(value: number): number {
@@ -84,6 +103,64 @@ function average(values: number[]): number {
 
 function monthSort(left: HealthScoreTrendPoint, right: HealthScoreTrendPoint): number {
   return left.month.localeCompare(right.month);
+}
+
+function monthKey(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function parseMonthKey(monthKeyValue: string) {
+  const [yearText, monthText] = monthKeyValue.split("-");
+  return {
+    snapshot_year: Number(yearText),
+    snapshot_month: Number(monthText),
+  };
+}
+
+function snapshotSort(left: HealthScoreHistoryRecord, right: HealthScoreHistoryRecord) {
+  if (left.snapshot.snapshot_year !== right.snapshot.snapshot_year) {
+    return right.snapshot.snapshot_year - left.snapshot.snapshot_year;
+  }
+
+  return right.snapshot.snapshot_month - left.snapshot.snapshot_month;
+}
+
+function mapSnapshotHistoryToHealthScoreHistory(records: SnapshotHistoryRecord[]): HealthScoreHistoryModel {
+  const mapped = records.map((record) => {
+    const parsed = parseMonthKey(record.monthKey);
+
+    return {
+      monthLabel: record.monthLabel,
+      snapshot: {
+        snapshot_year: parsed.snapshot_year,
+        snapshot_month: parsed.snapshot_month,
+        assets_total: Number(record.totals.assets ?? 0),
+        liabilities_total: Number(record.totals.liabilities ?? 0),
+        investments_total: Number(record.totals.investments ?? 0),
+        net_worth: Number(record.totals.netWorth ?? 0),
+        growth_from_previous_month: 0,
+      },
+    } satisfies HealthScoreHistoryRecord;
+  }).sort(snapshotSort);
+
+  for (const record of mapped) {
+    const previousMonth = mapped.find((candidate) => (
+      candidate !== record
+      && (
+        candidate.snapshot.snapshot_year < record.snapshot.snapshot_year
+        || (
+          candidate.snapshot.snapshot_year === record.snapshot.snapshot_year
+          && candidate.snapshot.snapshot_month < record.snapshot.snapshot_month
+        )
+      )
+    )) ?? null;
+
+    record.snapshot.growth_from_previous_month = previousMonth
+      ? record.snapshot.net_worth - previousMonth.snapshot.net_worth
+      : 0;
+  }
+
+  return { records: mapped };
 }
 
 export class HealthScoreService {
@@ -394,8 +471,8 @@ export class HealthScoreService {
       return this.dependencies.monthlyHistoryLoader();
     }
 
-    const history = await getMonthlyHistory().catch(() => []);
-    return buildMonthlyHistoryModel(history);
+    const history = await snapshotReadModel.loadHistory({ source: "legacy-monthly-snapshot" }).catch(() => []);
+    return mapSnapshotHistoryToHealthScoreHistory(history);
   }
 
   private async loadMonthlyReviewVariance() {
