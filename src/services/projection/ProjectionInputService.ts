@@ -28,7 +28,14 @@ import type {
   ProjectionScenario,
   ProjectionTaxProfile,
 } from "@/types/projection";
-import type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource, ProjectionStartSource } from "@/services/projection/ProjectionContext";
+import type {
+  ProjectionContext,
+  ProjectionEntity,
+  ProjectionEntityType,
+  ProjectionMonthState,
+  ProjectionOpeningSource,
+  ProjectionStartSource,
+} from "@/services/projection/ProjectionContext";
 import { cloneProjectionState, createMonthlyLedgerRecord } from "@/services/projection/ProjectionContext";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
@@ -117,6 +124,265 @@ function toNumber(value: number | string | null | undefined) {
   return Number(value ?? 0);
 }
 
+function createProjectionEntity(params: {
+  id: string;
+  entityType: ProjectionEntityType;
+  name: string;
+  openingBalance: number;
+  expectedAnnualReturn?: number;
+  assumptionSource?: string;
+}): ProjectionEntity {
+  const openingBalance = Number(params.openingBalance ?? 0);
+  return {
+    id: params.id,
+    entityType: params.entityType,
+    name: params.name,
+    openingBalance,
+    scheduledContribution: 0,
+    scheduledWithdrawal: 0,
+    growth: 0,
+    fees: 0,
+    tax: 0,
+    closingBalance: openingBalance,
+    expectedAnnualReturn: params.expectedAnnualReturn,
+    assumptionSource: params.assumptionSource,
+  };
+}
+
+function coerceProjectionEntities(state: ProjectionMonthState): ProjectionEntity[] {
+  if (state.projectionEntities && state.projectionEntities.length > 0) {
+    return state.projectionEntities;
+  }
+
+  const entities: ProjectionEntity[] = [];
+  if (Number(state.cash ?? 0) !== 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:cash:aggregate",
+      entityType: "Cash",
+      name: "Cash",
+      openingBalance: Number(state.cash ?? 0),
+      assumptionSource: "manual-opening-balances",
+    }));
+  }
+
+  if (Number(state.investments ?? 0) !== 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:investments:aggregate",
+      entityType: "OtherInvestment",
+      name: "Investments",
+      openingBalance: Number(state.investments ?? 0),
+      assumptionSource: "manual-opening-balances",
+    }));
+  }
+
+  if (Number(state.assets ?? 0) !== 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:real-estate:aggregate",
+      entityType: "RealEstate",
+      name: "Assets",
+      openingBalance: Number(state.assets ?? 0),
+      assumptionSource: "manual-opening-balances",
+    }));
+  }
+
+  if (Number(state.retirementCorpus ?? 0) !== 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:retirement:aggregate",
+      entityType: "OtherInvestment",
+      name: "Retirement Corpus",
+      openingBalance: Number(state.retirementCorpus ?? 0),
+      assumptionSource: "manual-opening-balances",
+    }));
+  }
+
+  if (entities.length === 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:investments:aggregate",
+      entityType: "OtherInvestment",
+      name: "Investments",
+      openingBalance: 0,
+      assumptionSource: "manual-opening-balances",
+    }));
+  }
+
+  return entities;
+}
+
+function buildProjectionEntitiesFromCloseValues(values: Record<string, number>): ProjectionEntity[] {
+  const entities: ProjectionEntity[] = [];
+
+  const closeValueEntities: Array<{ id: string; entityType: ProjectionEntityType; name: string; openingBalance: number }> = [
+    { id: "entity:cash:aggregate", entityType: "Cash", name: "Cash", openingBalance: Number(values.bank_accounts ?? 0) },
+    { id: "entity:mutual-funds:aggregate", entityType: "MutualFund", name: "Mutual Funds", openingBalance: Number(values.mutual_funds ?? 0) },
+    { id: "entity:stocks:aggregate", entityType: "Stock", name: "Stocks", openingBalance: Number(values.stocks ?? 0) },
+    { id: "entity:fixed-deposits:aggregate", entityType: "FixedDeposit", name: "Fixed Deposits", openingBalance: Number(values.fixed_deposits ?? 0) },
+    { id: "entity:gold:aggregate", entityType: "Gold", name: "Gold", openingBalance: Number(values.gold ?? 0) },
+    { id: "entity:silver:aggregate", entityType: "Silver", name: "Silver", openingBalance: Number(values.silver ?? 0) },
+    { id: "entity:epf:aggregate", entityType: "EPF", name: "EPF", openingBalance: Number(values.epf ?? 0) },
+    { id: "entity:ppf:aggregate", entityType: "PPF", name: "PPF", openingBalance: Number(values.ppf ?? 0) },
+    { id: "entity:nps:aggregate", entityType: "NPS", name: "NPS", openingBalance: Number(values.nps ?? 0) },
+    { id: "entity:real-estate:aggregate", entityType: "RealEstate", name: "Real Estate", openingBalance: Number(values.real_estate ?? 0) },
+  ];
+
+  for (const item of closeValueEntities) {
+    if (item.openingBalance === 0) {
+      continue;
+    }
+
+    entities.push(createProjectionEntity({
+      ...item,
+      assumptionSource: "month-end-close",
+    }));
+  }
+
+  if (entities.length === 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:investments:aggregate",
+      entityType: "OtherInvestment",
+      name: "Investments",
+      openingBalance: 0,
+      assumptionSource: "month-end-close",
+    }));
+  }
+
+  return entities;
+}
+
+function mapInvestmentCategoryToEntityType(category: string): ProjectionEntityType {
+  const normalized = category.trim().toUpperCase();
+  if (normalized === "MUTUAL FUNDS") {
+    return "MutualFund";
+  }
+  if (normalized === "STOCKS" || normalized === "ETFS") {
+    return "Stock";
+  }
+  if (normalized === "PPF") {
+    return "PPF";
+  }
+  if (normalized === "EPF") {
+    return "EPF";
+  }
+  if (normalized === "NPS") {
+    return "NPS";
+  }
+  if (normalized === "FIXED DEPOSITS") {
+    return "FixedDeposit";
+  }
+  if (normalized === "GOLD" || normalized === "SOVEREIGN GOLD BONDS") {
+    return "Gold";
+  }
+  if (normalized === "SILVER") {
+    return "Silver";
+  }
+  if (normalized === "BONDS") {
+    return "Bond";
+  }
+  if (normalized === "CASH EQUIVALENTS") {
+    return "Cash";
+  }
+
+  return "OtherInvestment";
+}
+
+function buildProjectionEntitiesFromLiveData(data: LoadedProjectionData): ProjectionEntity[] {
+  const entities: ProjectionEntity[] = [];
+
+  for (const account of data.bankAccounts.filter((item) => item.status !== "closed")) {
+    entities.push(createProjectionEntity({
+      id: `entity:cash:${account.id}`,
+      entityType: "Cash",
+      name: `${account.bank} ${account.account_name}`,
+      openingBalance: Number(account.current_balance ?? 0),
+      expectedAnnualReturn: Number(account.interest_rate ?? 0),
+      assumptionSource: "bank-account",
+    }));
+  }
+
+  for (const asset of data.assets.filter((item) => ["cash", "checking", "savings"].includes(item.asset_type))) {
+    entities.push(createProjectionEntity({
+      id: `entity:cash-asset:${asset.id}`,
+      entityType: "Cash",
+      name: asset.asset_name,
+      openingBalance: Number(asset.current_value ?? 0),
+      assumptionSource: "asset-cash",
+    }));
+  }
+
+  for (const investment of data.investments) {
+    entities.push(createProjectionEntity({
+      id: `entity:investment:${investment.id}`,
+      entityType: mapInvestmentCategoryToEntityType(investment.category),
+      name: investment.investment_name,
+      openingBalance: Number(investment.current_value ?? 0),
+      assumptionSource: `investment:${investment.category}`,
+    }));
+  }
+
+  for (const deposit of data.fixedDeposits) {
+    entities.push(createProjectionEntity({
+      id: `entity:fixed-deposit:${deposit.id}`,
+      entityType: "FixedDeposit",
+      name: `${deposit.institution} ${deposit.account_number}`,
+      openingBalance: Number(deposit.current_value ?? 0),
+      expectedAnnualReturn: Number(deposit.interest_rate ?? 0),
+      assumptionSource: "fixed-deposit",
+    }));
+  }
+
+  for (const retirement of data.retirementAccounts) {
+    entities.push(createProjectionEntity({
+      id: `entity:retirement:${retirement.id}`,
+      entityType: retirement.account_type,
+      name: `${retirement.account_type} ${retirement.institution}`,
+      openingBalance: Number(retirement.current_balance ?? 0),
+      expectedAnnualReturn: Number(retirement.interest_rate ?? 0),
+      assumptionSource: `retirement:${retirement.account_type}`,
+    }));
+  }
+
+  for (const gold of data.goldHoldings) {
+    entities.push(createProjectionEntity({
+      id: `entity:gold:${gold.id}`,
+      entityType: "Gold",
+      name: gold.description,
+      openingBalance: Number(gold.current_value ?? 0),
+      assumptionSource: "gold-holding",
+    }));
+  }
+
+  for (const silver of data.silverHoldings) {
+    entities.push(createProjectionEntity({
+      id: `entity:silver:${silver.id}`,
+      entityType: "Silver",
+      name: silver.description,
+      openingBalance: Number(silver.current_value ?? 0),
+      assumptionSource: "silver-holding",
+    }));
+  }
+
+  for (const property of data.realEstate) {
+    entities.push(createProjectionEntity({
+      id: `entity:real-estate:${property.id}`,
+      entityType: "RealEstate",
+      name: property.property_name,
+      openingBalance: Number(property.current_market_value ?? 0),
+      assumptionSource: "real-estate",
+    }));
+  }
+
+  if (entities.length === 0) {
+    entities.push(createProjectionEntity({
+      id: "entity:investments:aggregate",
+      entityType: "OtherInvestment",
+      name: "Investments",
+      openingBalance: 0,
+      assumptionSource: "live-balance-sheet",
+    }));
+  }
+
+  return entities;
+}
+
 function sumInvestmentCategories(investments: Investment[], categories: ReadonlySet<string>): number {
   return investments
     .filter((investment) => categories.has(investment.category))
@@ -201,20 +467,23 @@ function buildTaxProfileFromAssumptions(assumptions: Awaited<ReturnType<typeof a
 }
 
 function buildOpeningStateFromCloseValues(values: Record<string, number>): ProjectionMonthState {
+  const investments =
+    Number(values.mutual_funds ?? 0) +
+    Number(values.stocks ?? 0) +
+    Number(values.gold ?? 0) +
+    Number(values.silver ?? 0) +
+    Number(values.fixed_deposits ?? 0);
+
   return {
     cash: Number(values.bank_accounts ?? 0),
-    investments:
-      Number(values.mutual_funds ?? 0) +
-      Number(values.stocks ?? 0) +
-      Number(values.gold ?? 0) +
-      Number(values.silver ?? 0) +
-      Number(values.fixed_deposits ?? 0),
+    investments,
     assets: Number(values.real_estate ?? 0) + Number(values.other_assets ?? 0),
     liabilities:
       Number(values.home_loans ?? 0) +
       Number(values.car_loans ?? 0) +
       Number(values.other_liabilities ?? 0),
     retirementCorpus: Number(values.epf ?? 0) + Number(values.ppf ?? 0) + Number(values.nps ?? 0),
+    projectionEntities: buildProjectionEntitiesFromCloseValues(values),
   };
 }
 
@@ -254,13 +523,15 @@ function buildOpeningStateFromLiveData(data: LoadedProjectionData): ProjectionMo
   const gold = data.goldHoldings.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
   const silver = data.silverHoldings.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
   const liabilities = data.liabilities.reduce((sum, liability) => sum + Number(liability.outstanding_amount ?? 0), 0);
+  const totalInvestments = investmentAssets + coreInvestments + fixedDeposits + gold + silver;
 
   return {
     cash: liquidAssetCash + bankCash,
-    investments: investmentAssets + coreInvestments + fixedDeposits + gold + silver,
+    investments: totalInvestments,
     assets: nonInvestmentAssets + (dedicatedRealEstate > 0 ? dedicatedRealEstate : legacyRealEstate),
     liabilities,
     retirementCorpus: retirementAccounts + retirementFromInvestments,
+    projectionEntities: buildProjectionEntitiesFromLiveData(data),
   };
 }
 
@@ -389,8 +660,10 @@ export class ProjectionInputService {
   }): Promise<ProjectionSeedResolution> {
     if (params.startSource.kind === "manual-opening-balances") {
       const effectiveStartMonth = params.startSource.startMonth || params.requestedStartMonth;
+      const manualState = cloneProjectionState(params.startSource.balances);
+      manualState.projectionEntities = coerceProjectionEntities(manualState);
       return {
-        openingState: cloneProjectionState(params.startSource.balances),
+        openingState: manualState,
         effectiveStartMonth,
         openingSource: {
           kind: "manual-opening-balances",

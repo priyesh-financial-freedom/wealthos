@@ -299,12 +299,14 @@ export class ProjectionEngine {
       const executedContext = await this.pipeline.execute(monthContext);
       const finalizedRecord = finalizeProjectionRecord(executedContext.currentRecord);
       mutableLedger = [...mutableLedger, finalizedRecord];
+      const rolledState = cloneProjectionState(executedContext.currentState);
       rollingState = {
         cash: finalizedRecord.closingCash,
         investments: finalizedRecord.closingInvestments,
         assets: finalizedRecord.closingAssets,
         liabilities: finalizedRecord.closingLiabilities,
         retirementCorpus: finalizedRecord.retirementCorpus,
+        projectionEntities: rolledState.projectionEntities,
       };
     }
 

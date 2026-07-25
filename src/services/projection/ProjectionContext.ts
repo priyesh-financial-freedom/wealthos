@@ -41,6 +41,37 @@ export interface ProjectionMonthState {
   assets: number;
   liabilities: number;
   retirementCorpus: number;
+  projectionEntities?: ProjectionEntity[];
+}
+
+export type ProjectionEntityType =
+  | "MutualFund"
+  | "Stock"
+  | "PPF"
+  | "EPF"
+  | "NPS"
+  | "FixedDeposit"
+  | "Gold"
+  | "Silver"
+  | "Cash"
+  | "RealEstate"
+  | "Bond"
+  | "ESOP"
+  | "OtherInvestment";
+
+export interface ProjectionEntity {
+  id: string;
+  entityType: ProjectionEntityType;
+  name: string;
+  openingBalance: number;
+  scheduledContribution: number;
+  scheduledWithdrawal: number;
+  growth: number;
+  fees: number;
+  tax: number;
+  closingBalance: number;
+  expectedAnnualReturn?: number;
+  assumptionSource?: string;
 }
 
 export interface ProjectionMutableLedgerRecord extends MonthlyLedgerRecord {}
@@ -84,6 +115,20 @@ export function cloneProjectionState(state: ProjectionMonthState): ProjectionMon
     assets: Number(state.assets ?? 0),
     liabilities: Number(state.liabilities ?? 0),
     retirementCorpus: Number(state.retirementCorpus ?? 0),
+    projectionEntities: (state.projectionEntities ?? []).map((entity) => ({
+      id: entity.id,
+      entityType: entity.entityType,
+      name: entity.name,
+      openingBalance: Number(entity.openingBalance ?? 0),
+      scheduledContribution: Number(entity.scheduledContribution ?? 0),
+      scheduledWithdrawal: Number(entity.scheduledWithdrawal ?? 0),
+      growth: Number(entity.growth ?? 0),
+      fees: Number(entity.fees ?? 0),
+      tax: Number(entity.tax ?? 0),
+      closingBalance: Number(entity.closingBalance ?? 0),
+      expectedAnnualReturn: entity.expectedAnnualReturn,
+      assumptionSource: entity.assumptionSource,
+    })),
   };
 }
 
