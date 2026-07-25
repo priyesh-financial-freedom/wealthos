@@ -17,19 +17,36 @@ import {
 import {
   AlertTriangle,
   ArrowRight,
+  BarChart3,
+  Brain,
+  Briefcase,
+  CircleCheck,
   CheckCircle2,
   CircleDollarSign,
+  Crown,
+  DollarSign,
   Landmark,
-  Shield,
+  Rocket,
   Target,
   TrendingUp,
-  Wallet,
   Wallet2,
 } from "lucide-react";
 
-import { DashboardCard } from "@/components/dashboard/DashboardCard";
+import {
+  DashboardRefreshBanner,
+  ErrorCard,
+  ExecutiveEmptyState,
+  ExecutiveKpiCard,
+  InsightCard,
+  LoadingExecutiveState,
+  LoadingSkeleton,
+  MetricChip,
+  ProgressBar,
+  ProgressRing,
+  SectionHeader,
+  StatusBadge,
+} from "@/components/dashboard/ExecutiveDesignSystem";
 import { Button } from "@/components/ui/button";
-import { LoadingSpinner } from "@/components/ui/feedback";
 import { formatCurrency } from "@/lib/formatters";
 import type { ExecutiveAllocationItem, ExecutiveDashboardData } from "@/services/dashboard";
 
@@ -39,42 +56,20 @@ interface ExecutiveDashboardProps {
   error?: string | null;
 }
 
-const COLORS = ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0"];
-
-const KpiCard = memo(function KpiCard({ title, value, detail, icon: Icon }: {
-  title: string;
-  value: string;
-  detail: string;
-  icon: typeof Wallet;
-}) {
-  return (
-    <DashboardCard className="transition-all duration-300 hover:-translate-y-1">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-500">{title}</p>
-          <p className="mt-3 text-2xl font-semibold tracking-tight">{value}</p>
-        </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-          <Icon className="h-5 w-5" />
-        </div>
-      </div>
-      <p className="mt-4 text-sm text-slate-600">{detail}</p>
-    </DashboardCard>
-  );
-});
+const COLORS = ["#2563eb", "#10b981", "#7c3aed", "#f59e0b", "#06b6d4", "#ef4444"];
 
 function priorityBadge(priority: string) {
   if (priority === "Critical") {
-    return "border-rose-200 bg-rose-50 text-rose-700";
+    return "critical" as const;
   }
   if (priority === "High") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
+    return "high" as const;
   }
   if (priority === "Medium") {
-    return "border-sky-200 bg-sky-50 text-sky-700";
+    return "medium" as const;
   }
 
-  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "low" as const;
 }
 
 function goalStatusTone(status: string): string {
@@ -88,19 +83,46 @@ function goalStatusTone(status: string): string {
   return "text-rose-700";
 }
 
+function formatPercent(value: number) {
+  return `${Math.max(0, Math.min(100, value)).toFixed(1)}%`;
+}
+
+function computeFinancialIndependenceProgress(data: ExecutiveDashboardData) {
+  const goalsRatio = data.kpis.totalGoals > 0 ? (data.kpis.goalsOnTrack / data.kpis.totalGoals) * 100 : 0;
+  const retirement = Math.max(0, Math.min(100, data.kpis.retirementCoveragePercent));
+  const health = Math.max(0, Math.min(100, data.health.overallScore));
+  return Math.round(goalsRatio * 0.35 + retirement * 0.35 + health * 0.3);
+}
+
+function chartTooltipFormatter(value: number | string | null | undefined) {
+  return formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 });
+}
+
 const HeroFinancialHealth = memo(function HeroFinancialHealth({ data }: { data: ExecutiveDashboardData }) {
+  const fiProgress = computeFinancialIndependenceProgress(data);
   const topStrengths = data.health.strengths.slice(0, 2);
   const topWatchItems = data.health.watchItems.slice(0, 2);
 
   return (
-    <DashboardCard className="overflow-hidden border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.25),_transparent_35%),linear-gradient(135deg,#020617_0%,#0f172a_60%,#1e293b_100%)] text-white shadow-xl">
-      <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
+    <section className="executive-card overflow-hidden rounded-[30px] border border-blue-900/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.24),_transparent_32%),radial-gradient(circle_at_85%_25%,rgba(37,99,235,0.24),transparent_38%),linear-gradient(135deg,#0a1222_0%,#102340_55%,#172f54_100%)] p-6 text-white lg:p-7">
+      <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
         <div>
-          <p className="text-sm font-medium text-slate-300">Hero Financial Health</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight">Score {data.health.overallScore}/100 · Grade {data.health.grade}</h2>
-          <p className="mt-3 text-sm text-slate-300">Deterministic score powered by liquidity, debt, goals, retirement, diversification, and emergency readiness.</p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
+          <p className="executive-label !text-blue-100/90">Executive command center</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em] lg:text-[2.1rem]">
+            Net Worth {formatCurrency(data.kpis.netWorth, { maximumFractionDigits: 0 })}
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm text-blue-100/90">
+            High-signal view across portfolio strength, forecast trajectory, and critical decisions requiring action.
+          </p>
+
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <MetricChip label="Health" value={`${data.health.overallScore}/100`} tone="emerald" />
+            <MetricChip label="FI Progress" value={`${fiProgress}%`} tone="purple" />
+            <MetricChip label="As of" value={data.asOfLabel || "Current"} tone="cyan" />
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button asChild className="bg-white text-slate-900 hover:bg-slate-100">
               <Link href="/planning/decision-center">Open Decision Center</Link>
             </Button>
             <Button asChild variant="outline" className="border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white">
@@ -108,81 +130,87 @@ const HeroFinancialHealth = memo(function HeroFinancialHealth({ data }: { data: 
             </Button>
           </div>
         </div>
+
         <div className="grid gap-3">
-          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">As Of</p>
-            <p className="mt-2 text-lg font-semibold">{data.asOfLabel || "Current period"}</p>
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+            <div className="flex items-center justify-between">
+              <p className="executive-label !text-sky-100">Health score</p>
+              <CircleCheck className="h-4 w-4 text-emerald-300" />
+            </div>
+            <div className="mt-2 flex items-end gap-2">
+              <p className="text-3xl font-semibold tracking-[-0.02em]">{data.health.overallScore}</p>
+              <p className="pb-1 text-sm text-sky-100">Grade {data.health.grade}</p>
+            </div>
+            <ProgressBar value={data.health.overallScore} colorClass="bg-emerald-400" />
           </div>
-          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Top Strengths</p>
-            {topStrengths.length === 0 ? <p className="mt-2 text-sm text-slate-200">No strengths available yet.</p> : topStrengths.map((item) => <p key={item} className="mt-2 text-sm text-slate-100">- {item}</p>)}
+
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+            <p className="executive-label !text-sky-100">Top strengths</p>
+            {topStrengths.length === 0 ? <p className="mt-2 text-sm text-sky-100">No strengths available yet.</p> : topStrengths.map((item) => <p key={item} className="mt-2 text-sm text-sky-50">- {item}</p>)}
           </div>
-          <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Watch Items</p>
-            {topWatchItems.length === 0 ? <p className="mt-2 text-sm text-slate-200">No active watch items.</p> : topWatchItems.map((item) => <p key={item} className="mt-2 text-sm text-slate-100">- {item}</p>)}
+
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+            <p className="executive-label !text-sky-100">Watch list</p>
+            {topWatchItems.length === 0 ? <p className="mt-2 text-sm text-sky-100">No active watch items.</p> : topWatchItems.map((item) => <p key={item} className="mt-2 text-sm text-sky-50">- {item}</p>)}
           </div>
         </div>
       </div>
-    </DashboardCard>
+    </section>
   );
 });
 
 const DecisionCenterPreview = memo(function DecisionCenterPreview({ data }: { data: ExecutiveDashboardData }) {
   return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Decision Center Preview</h3>
-          <p className="text-sm text-slate-600">{data.decisionCenter.openCount} open recommendations · {data.decisionCenter.criticalCount} critical</p>
-        </div>
-        <AlertTriangle className="h-4 w-4 text-slate-400" />
-      </div>
+    <InsightCard
+      title="Decision Center Preview"
+      caption={`${data.decisionCenter.openCount} open recommendations, ${data.decisionCenter.criticalCount} critical`}
+      className="h-full"
+    >
+      <SectionHeader title="Priority Queue" action={<AlertTriangle className="h-4 w-4 text-amber-500" />} />
 
       {data.decisionCenter.items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No open recommendations right now.</div>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">No open recommendations right now.</div>
       ) : (
         <div className="space-y-3">
           {data.decisionCenter.items.map((item) => (
-            <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50/85 px-4 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-slate-900">{item.title}</p>
                   <p className="mt-1 text-sm text-slate-600">{item.recommendedAction}</p>
                 </div>
-                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${priorityBadge(item.priority)}`}>{item.priority}</span>
+                <StatusBadge tone={priorityBadge(item.priority)} label={item.priority} />
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <Button asChild variant="outline" className="mt-4 w-full">
+      <Button asChild variant="outline" className="mt-4 w-full border-slate-300 bg-white hover:bg-slate-50">
         <Link href="/planning/decision-center">
           Open Decision Center
           <ArrowRight className="h-4 w-4" />
         </Link>
       </Button>
-    </DashboardCard>
+    </InsightCard>
   );
 });
 
 const GoalProgressWidget = memo(function GoalProgressWidget({ data }: { data: ExecutiveDashboardData }) {
   return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Goal Progress</h3>
-          <p className="text-sm text-slate-600">{data.goals.onTrack} on-track · {data.goals.atRisk} at-risk · {data.goals.completed} completed</p>
-        </div>
-        <Target className="h-4 w-4 text-slate-400" />
-      </div>
+    <InsightCard
+      title="Goal Progress"
+      caption={`${data.goals.onTrack} on-track, ${data.goals.atRisk} at-risk, ${data.goals.completed} completed`}
+      className="h-full"
+    >
+      <SectionHeader title="Funding Momentum" action={<Target className="h-4 w-4 text-violet-500" />} />
 
       {data.goals.items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No goals configured yet.</div>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">No goals configured yet.</div>
       ) : (
         <div className="space-y-3">
           {data.goals.items.map((goal) => (
-            <div key={goal.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div key={goal.id} className="rounded-2xl border border-slate-200 bg-slate-50/85 px-4 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-slate-900">{goal.name}</p>
@@ -190,15 +218,15 @@ const GoalProgressWidget = memo(function GoalProgressWidget({ data }: { data: Ex
                 </div>
                 <span className={`text-xs font-semibold ${goalStatusTone(goal.status)}`}>{goal.status.replaceAll("_", " ")}</span>
               </div>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(100, Math.max(0, goal.progressPercent))}%` }} />
+              <div className="mt-3">
+                <ProgressBar value={goal.progressPercent} colorClass="bg-violet-600" />
               </div>
               <p className="mt-2 text-xs text-slate-500">{goal.progressPercent.toFixed(1)}% funded</p>
             </div>
           ))}
         </div>
       )}
-    </DashboardCard>
+    </InsightCard>
   );
 });
 
@@ -227,14 +255,8 @@ function AllocationList({ title, items }: { title: string; items: ExecutiveAlloc
 
 const WealthAllocationWidget = memo(function WealthAllocationWidget({ data }: { data: ExecutiveDashboardData }) {
   return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Wealth Allocation</h3>
-          <p className="text-sm text-slate-600">Current split across balance-sheet categories</p>
-        </div>
-        <CircleDollarSign className="h-4 w-4 text-slate-400" />
-      </div>
+    <InsightCard title="Asset Allocation" caption="Diversification by category" className="h-full">
+      <SectionHeader title="Portfolio Mix" action={<CircleDollarSign className="h-4 w-4 text-cyan-500" />} />
       <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="h-72 w-full">
           {data.wealthAllocation.assets.length === 0 ? (
@@ -247,7 +269,10 @@ const WealthAllocationWidget = memo(function WealthAllocationWidget({ data }: { 
                     <Cell key={`${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 14, borderColor: "#dbe5f3", boxShadow: "0 16px 34px -22px rgba(17,24,39,0.45)", background: "#ffffff" }}
+                  formatter={(value) => chartTooltipFormatter(value as number)}
+                />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -257,35 +282,29 @@ const WealthAllocationWidget = memo(function WealthAllocationWidget({ data }: { 
           <AllocationList title="Liabilities" items={data.wealthAllocation.liabilities} />
         </div>
       </div>
-    </DashboardCard>
+    </InsightCard>
   );
 });
 
 const CashFlowSummaryWidget = memo(function CashFlowSummaryWidget({ data }: { data: ExecutiveDashboardData }) {
   return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Cash Flow Summary</h3>
-          <p className="text-sm text-slate-600">Forward six-month cash trajectory from simulation baseline</p>
-        </div>
-        <TrendingUp className="h-4 w-4 text-slate-400" />
-      </div>
+    <InsightCard title="Cash Flow Trajectory" caption="Forward six-month simulation trend" className="h-full">
+      <SectionHeader title="Forecast" action={<TrendingUp className="h-4 w-4 text-blue-500" />} />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Current Cash</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(data.cashFlow.currentCash, { maximumFractionDigits: 0 })}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Avg Monthly Delta</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(data.cashFlow.averageMonthlyDelta, { maximumFractionDigits: 0 })}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Negative Months</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">{data.cashFlow.negativeMonths}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Projected Net Worth Change</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(data.cashFlow.projectedNetWorthChange, { maximumFractionDigits: 0 })}</p>
         </div>
@@ -299,33 +318,30 @@ const CashFlowSummaryWidget = memo(function CashFlowSummaryWidget({ data }: { da
             <AreaChart data={data.cashFlow.points}>
               <defs>
                 <linearGradient id="executive-cash-flow" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="#0f172a" stopOpacity={0.03} />
+                  <stop offset="0%" stopColor="#2563eb" stopOpacity={0.34} />
+                  <stop offset="100%" stopColor="#2563eb" stopOpacity={0.04} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
+              <CartesianGrid stroke="#dbe5f3" strokeDasharray="3 5" vertical={false} />
               <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-              <Tooltip formatter={(value) => formatCurrency(Number(value ?? 0), { maximumFractionDigits: 0 })} />
-              <Area type="monotone" dataKey="value" stroke="#0f172a" fill="url(#executive-cash-flow)" strokeWidth={2.4} />
+              <Tooltip
+                contentStyle={{ borderRadius: 14, borderColor: "#dbe5f3", boxShadow: "0 16px 34px -22px rgba(17,24,39,0.45)", background: "#ffffff" }}
+                formatter={(value) => chartTooltipFormatter(value as number)}
+              />
+              <Area type="monotone" dataKey="value" stroke="#2563eb" fill="url(#executive-cash-flow)" strokeWidth={2.6} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       )}
-    </DashboardCard>
+    </InsightCard>
   );
 });
 
 const RecentActivityTimeline = memo(function RecentActivityTimeline({ data }: { data: ExecutiveDashboardData }) {
   return (
-    <DashboardCard className="h-full">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">Recent Activity Timeline</h3>
-          <p className="text-sm text-slate-600">Most recent changes across review, goals, decisions, and simulation</p>
-        </div>
-        <Landmark className="h-4 w-4 text-slate-400" />
-      </div>
+    <InsightCard title="Executive Brief" caption="Latest movements across review, planning, and simulation" className="h-full">
+      <SectionHeader title="Recent Activity" action={<Landmark className="h-4 w-4 text-slate-500" />} />
 
       {data.recentActivity.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">No recent activity yet.</div>
@@ -344,166 +360,205 @@ const RecentActivityTimeline = memo(function RecentActivityTimeline({ data }: { 
           ))}
         </div>
       )}
-    </DashboardCard>
+    </InsightCard>
   );
 });
 
-function ExecutiveEmptyState() {
-  return (
-    <DashboardCard className="overflow-hidden border-slate-200 bg-gradient-to-br from-slate-950 to-slate-800 p-0 text-white shadow-xl">
-      <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
-        <div>
-          <p className="text-sm font-medium text-slate-300">Executive command center</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-tight">Capture your first holdings to unlock this command center.</h3>
-          <p className="mt-3 max-w-2xl text-sm text-slate-300">Add assets, liabilities, and goals to activate health scoring, decision intelligence, and simulation-backed executive insights.</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
-              <Link href="/assets">Add Asset</Link>
-            </Button>
-            <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
-              <Link href="/liabilities">Add Liability</Link>
-            </Button>
-            <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
-              <Link href="/planning/goals">Add Goal</Link>
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-            <p className="text-sm text-slate-300">Financial Health</p>
-            <p className="mt-2 text-2xl font-semibold text-white">0 / 100</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-            <p className="text-sm text-slate-300">Open Decisions</p>
-            <p className="mt-2 text-2xl font-semibold text-white">0</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-            <p className="text-sm text-slate-300">Goals On Track</p>
-            <p className="mt-2 text-2xl font-semibold text-white">0</p>
-          </div>
-        </div>
-      </div>
-    </DashboardCard>
-  );
-}
-
 export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, data, error }: ExecutiveDashboardProps) {
   if (loading) {
-    return <DashboardSkeleton />;
+    return <LoadingExecutiveState />;
   }
 
   if (error) {
-    return <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>;
+    return <ErrorCard message={error} />;
   }
 
   if (!data) {
-    return <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">Dashboard data is unavailable.</div>;
+    return <ErrorCard message="Dashboard data is unavailable." />;
   }
 
+  const fiProgress = computeFinancialIndependenceProgress(data);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
+      <DashboardRefreshBanner message={`Dashboard synced for ${data.asOfLabel || "current period"}.`} />
+
       {data.emptyState ? (
-        <ExecutiveEmptyState />
+        <ExecutiveEmptyState
+          title="Add your first holdings to unlock premium insights"
+          description="Capture assets, liabilities, and goals to activate simulation-backed executive guidance."
+          action={
+            <div className="flex flex-wrap justify-center gap-3">
+              <Button asChild>
+                <Link href="/assets">Add Asset</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/liabilities">Add Liability</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/planning/goals">Add Goal</Link>
+              </Button>
+            </div>
+          }
+        />
       ) : (
         <>
           <HeroFinancialHealth data={data} />
 
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
+            <ExecutiveKpiCard
               title="Net Worth"
               value={formatCurrency(data.kpis.netWorth, { maximumFractionDigits: 0 })}
               detail="Current household net worth"
               icon={Wallet2}
+              tone="blue"
             />
-            <KpiCard
-              title="Goals"
+            <ExecutiveKpiCard
+              title="Goals Progress"
               value={`${data.kpis.goalsOnTrack}/${data.kpis.totalGoals}`}
               detail="On-track and completed goals"
               icon={Target}
+              tone="amber"
             />
-            <KpiCard
+            <ExecutiveKpiCard
               title="Decisions"
               value={`${data.kpis.openDecisions}`}
               detail={`${data.kpis.criticalDecisions} critical recommendations`}
-              icon={Shield}
+              icon={Brain}
+              tone="red"
             />
-            <KpiCard
+            <ExecutiveKpiCard
               title="Retirement"
               value={`${data.kpis.retirementCoveragePercent.toFixed(1)}%`}
               detail={formatCurrency(data.kpis.retirementAssets, { maximumFractionDigits: 0 }) + " in retirement assets"}
-              icon={CheckCircle2}
+              icon={Briefcase}
+              tone="purple"
             />
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+          <section className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+            <InsightCard
+              title="Financial Independence"
+              caption="Blended progress across health, retirement, and goal execution"
+              className="h-full"
+            >
+              <div className="grid gap-5 md:grid-cols-[0.32fr_0.68fr]">
+                <div className="flex items-center justify-center">
+                  <ProgressRing value={fiProgress} label="FI" tone="purple" />
+                </div>
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700">Health momentum</span>
+                      <span className="text-slate-500">{formatPercent(data.health.overallScore)}</span>
+                    </div>
+                    <ProgressBar value={data.health.overallScore} colorClass="bg-emerald-500" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700">Retirement readiness</span>
+                      <span className="text-slate-500">{formatPercent(data.kpis.retirementCoveragePercent)}</span>
+                    </div>
+                    <ProgressBar value={data.kpis.retirementCoveragePercent} colorClass="bg-violet-600" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700">Goal execution</span>
+                      <span className="text-slate-500">{data.kpis.totalGoals > 0 ? formatPercent((data.kpis.goalsOnTrack / data.kpis.totalGoals) * 100) : "0.0%"}</span>
+                    </div>
+                    <ProgressBar value={data.kpis.totalGoals > 0 ? (data.kpis.goalsOnTrack / data.kpis.totalGoals) * 100 : 0} colorClass="bg-amber-500" />
+                  </div>
+                </div>
+              </div>
+            </InsightCard>
+
             <DecisionCenterPreview data={data} />
-            <GoalProgressWidget data={data} />
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <WealthAllocationWidget data={data} />
+          <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+            <GoalProgressWidget data={data} />
             <CashFlowSummaryWidget data={data} />
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <RecentActivityTimeline data={data} />
-            <DashboardCard className="h-full bg-slate-50">
-              <div className="flex h-full flex-col justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">Executive Notes</h3>
-                  <p className="mt-2 text-sm text-slate-600">Health recommendations from the decision stack.</p>
-                  <div className="mt-4 space-y-2">
-                    {data.health.recommendations.slice(0, 4).map((recommendation) => (
-                      <p key={recommendation} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-700">- {recommendation}</p>
-                    ))}
-                    {data.health.recommendations.length === 0 ? <p className="text-sm text-slate-500">No recommendations right now.</p> : null}
-                  </div>
+          <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+            <WealthAllocationWidget data={data} />
+            <InsightCard title="Health Score" caption="Trend and recommendations" className="h-full">
+              <SectionHeader title="Health Trend" action={<Rocket className="h-4 w-4 text-emerald-500" />} />
+
+              {data.health.trend.length === 0 ? (
+                <LoadingSkeleton rows={3} />
+              ) : (
+                <div className="h-56 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={data.health.trend}>
+                      <defs>
+                        <linearGradient id="health-score-trend" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10b981" stopOpacity={0.32} />
+                          <stop offset="100%" stopColor="#10b981" stopOpacity={0.04} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="#dbe5f3" strokeDasharray="3 5" vertical={false} />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                      <YAxis axisLine={false} tickLine={false} domain={[0, 100]} tick={{ fill: "#64748b", fontSize: 12 }} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 14, borderColor: "#dbe5f3", boxShadow: "0 16px 34px -22px rgba(17,24,39,0.45)", background: "#ffffff" }}
+                      />
+                      <Area type="monotone" dataKey="score" stroke="#10b981" fill="url(#health-score-trend)" strokeWidth={2.4} />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-                <Button asChild variant="outline" className="mt-4 w-full">
-                  <Link href="/planning">
-                    Open Planning Workspace
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
+              )}
+
+              <div className="mt-4 space-y-2.5">
+                {data.health.recommendations.slice(0, 3).map((recommendation) => (
+                  <div key={recommendation} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    {recommendation}
+                  </div>
+                ))}
+                {data.health.recommendations.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">No health recommendations right now.</div>
+                ) : null}
               </div>
-            </DashboardCard>
+            </InsightCard>
+          </section>
+
+          <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+            <RecentActivityTimeline data={data} />
+            <InsightCard title="Executive Brief" caption="Decision signals and recommendations" className="h-full">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="executive-label">Open decisions</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{data.decisionCenter.openCount}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="executive-label">Critical decisions</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">{data.decisionCenter.criticalCount}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <MetricChip label="Net Worth" value={formatCurrency(data.kpis.netWorth, { maximumFractionDigits: 0 })} tone="blue" />
+                <MetricChip label="Retirement" value={formatPercent(data.kpis.retirementCoveragePercent)} tone="purple" />
+                <MetricChip label="Health" value={`${data.health.overallScore}`} tone="emerald" />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="executive-label">Guidance</p>
+                <p className="mt-2 text-sm text-slate-700">
+                  {data.health.recommendations[0] ?? "The platform has no immediate action item. Continue your current plan and monitor monthly variance."}
+                </p>
+              </div>
+
+              <Button asChild variant="outline" className="mt-4 w-full border-slate-300 bg-white hover:bg-slate-50">
+                <Link href="/planning">
+                  Open Planning Workspace
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </InsightCard>
           </section>
         </>
       )}
     </div>
   );
 });
-
-function DashboardSkeleton() {
-  return (
-    <div className="animate-pulse space-y-8">
-      <div className="h-56 rounded-2xl border border-slate-200 bg-slate-100" />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="h-4 w-24 rounded bg-slate-200" />
-            <div className="mt-4 h-8 w-32 rounded bg-slate-200" />
-            <div className="mt-4 h-3 w-full rounded bg-slate-100" />
-          </div>
-        ))}
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-        <div className="h-[24rem] rounded-2xl border border-slate-200 bg-slate-100" />
-        <div className="h-[24rem] rounded-2xl border border-slate-200 bg-slate-100" />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-        <div className="h-[24rem] rounded-2xl border border-slate-200 bg-slate-100" />
-        <div className="h-[24rem] rounded-2xl border border-slate-200 bg-slate-100" />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-        <div className="h-[20rem] rounded-2xl border border-slate-200 bg-slate-100" />
-        <div className="h-[20rem] rounded-2xl border border-slate-200 bg-slate-100" />
-      </div>
-      <LoadingSpinner label="Loading executive dashboard..." />
-    </div>
-  );
-}

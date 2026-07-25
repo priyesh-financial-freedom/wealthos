@@ -29,17 +29,17 @@ export function AppLayout({ children }: AppLayoutProps) {
     : pathname;
 
   return (
-    <div className="h-dvh min-h-screen bg-slate-50 text-slate-900">
+    <div className="h-dvh min-h-screen bg-[radial-gradient(circle_at_top_left,_#eef4ff_0%,_#f3f6fb_35%,_#f8fbff_100%)] text-slate-900">
       <div className="flex h-full overflow-hidden">
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-30 hidden h-screen overflow-hidden border-r border-slate-200 bg-white/95 backdrop-blur xl:flex xl:flex-col",
+            "fixed inset-y-0 left-0 z-30 hidden h-screen overflow-hidden border-r border-slate-200/90 bg-white/96 backdrop-blur xl:flex xl:flex-col",
             collapsed ? "w-24" : "w-72",
           )}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div className="flex items-center justify-between border-b border-slate-200/90 px-5 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-sm font-semibold text-white shadow-md">
                 W
               </div>
               {!collapsed ? <span className="text-base font-semibold">WealthOS</span> : null}
@@ -64,11 +64,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </div>
 
-      <div className={cn("fixed inset-0 z-40 bg-slate-950/40 xl:hidden", mobileOpen ? "block" : "hidden")} onClick={() => setMobileOpen(false)} />
-      <div className={cn("fixed inset-y-0 left-0 z-50 h-screen w-72 flex-col overflow-hidden border-r border-slate-200 bg-white xl:hidden", mobileOpen ? "flex" : "hidden")}>
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <div className={cn("fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[1px] xl:hidden", mobileOpen ? "block" : "hidden")} onClick={() => setMobileOpen(false)} />
+      <div className={cn("fixed inset-y-0 left-0 z-50 h-screen w-72 flex-col overflow-hidden border-r border-slate-200/90 bg-white xl:hidden", mobileOpen ? "flex" : "hidden")}>
+        <div className="flex items-center justify-between border-b border-slate-200/90 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-sm font-semibold text-white shadow-md">
               W
             </div>
             <span className="text-base font-semibold">WealthOS</span>

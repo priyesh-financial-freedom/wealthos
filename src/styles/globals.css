@@ -1,16 +1,34 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #020617;
+  --background: #f3f6fb;
+  --foreground: #0c1424;
   --card: #ffffff;
-  --card-foreground: #020617;
-  --muted: #f1f5f9;
-  --muted-foreground: #475569;
-  --border: #e2e8f0;
-  --primary: #0f172a;
+  --card-foreground: #0c1424;
+  --muted: #eef3f8;
+  --muted-foreground: #546279;
+  --border: #dde6f2;
+  --primary: #2563eb;
   --primary-foreground: #f8fafc;
-  --ring: #94a3b8;
+  --ring: #9bb5e8;
+
+  --executive-primary-blue: #2563eb;
+  --executive-emerald: #10b981;
+  --executive-purple: #7c3aed;
+  --executive-amber: #f59e0b;
+  --executive-red: #ef4444;
+  --executive-cyan: #06b6d4;
+  --executive-slate-950: #0c1424;
+  --executive-slate-900: #111d32;
+  --executive-slate-700: #3f4c66;
+  --executive-slate-500: #6a7892;
+  --executive-slate-200: #dbe5f3;
+  --executive-slate-100: #edf3fb;
+
+  --executive-radius-lg: 16px;
+  --executive-radius-xl: 22px;
+  --executive-shadow-soft: 0 14px 42px -24px rgba(25, 42, 73, 0.42);
+  --executive-shadow-card: 0 28px 60px -42px rgba(20, 40, 78, 0.4);
 }
 
 @theme inline {
@@ -24,6 +42,20 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-ring: var(--ring);
+
+  --color-executive-primary-blue: var(--executive-primary-blue);
+  --color-executive-emerald: var(--executive-emerald);
+  --color-executive-purple: var(--executive-purple);
+  --color-executive-amber: var(--executive-amber);
+  --color-executive-red: var(--executive-red);
+  --color-executive-cyan: var(--executive-cyan);
+  --color-executive-slate-950: var(--executive-slate-950);
+  --color-executive-slate-900: var(--executive-slate-900);
+  --color-executive-slate-700: var(--executive-slate-700);
+  --color-executive-slate-500: var(--executive-slate-500);
+  --color-executive-slate-200: var(--executive-slate-200);
+  --color-executive-slate-100: var(--executive-slate-100);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -34,4 +66,31 @@
 
 body {
   @apply min-h-screen bg-background text-foreground antialiased;
+}
+
+@layer utilities {
+  .executive-card {
+    border-radius: var(--executive-radius-xl);
+    box-shadow: var(--executive-shadow-card);
+  }
+
+  .executive-surface {
+    border-radius: var(--executive-radius-lg);
+    box-shadow: var(--executive-shadow-soft);
+  }
+
+  .executive-section-title {
+    letter-spacing: 0.02em;
+    font-size: 1rem;
+    font-weight: 640;
+    color: var(--executive-slate-900);
+  }
+
+  .executive-label {
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    font-weight: 620;
+    color: var(--executive-slate-500);
+  }
 }
