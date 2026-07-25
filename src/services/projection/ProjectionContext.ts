@@ -57,6 +57,16 @@ export type ProjectionEntityType =
   | "RealEstate"
   | "Bond"
   | "ESOP"
+  | "OtherAsset"
+  | "HomeLoan"
+  | "CarLoan"
+  | "PersonalLoan"
+  | "EducationLoan"
+  | "LoanAgainstProperty"
+  | "CreditCard"
+  | "BankOverdraft"
+  | "GoldLoan"
+  | "OtherLiability"
   | "OtherInvestment";
 
 export interface ProjectionEntity {
