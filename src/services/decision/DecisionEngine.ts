@@ -1,7 +1,7 @@
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { healthScoreService } from "@/services/health";
 import { goalService } from "@/services/planning/goals";
-import { createPlanningScenarioBrowserService, createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
+import { createPlanningScenarioBrowserService, createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService } from "@/services/projection";
 import type { MonthlyReviewWorkspace } from "@/services/projection";
 import type { SimulationResult } from "@/services/simulation";
@@ -31,7 +31,7 @@ const PRIORITY_WEIGHT: Record<DecisionPriority, number> = {
 };
 
 export class DecisionEngine {
-  private readonly baselineSimulationEngine = createPlanningScenarioSimulationEngine();
+  private readonly baselineSimulationEngine = createPlanningScenarioProductionSimulationEngine();
   private readonly planningScenarioService = createPlanningScenarioBrowserService();
 
   constructor(private readonly dependencies: DecisionEngineDependencies = {}) {}

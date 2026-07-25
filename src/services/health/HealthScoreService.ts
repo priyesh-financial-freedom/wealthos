@@ -1,7 +1,7 @@
 import { getBalanceSheetData, type BalanceSheetSummary } from "@/services/balanceSheet";
 import { goalService } from "@/services/planning/goals";
 import type { FinancialGoalWithProgress } from "@/types/financialGoal";
-import { createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
+import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService } from "@/services/projection";
 import { snapshotReadModel, type SnapshotHistoryRecord } from "@/services/snapshots";
 import type { SimulationResult } from "@/services/simulation";
@@ -164,7 +164,7 @@ function mapSnapshotHistoryToHealthScoreHistory(records: SnapshotHistoryRecord[]
 }
 
 export class HealthScoreService {
-  private readonly simulationEngine = createPlanningScenarioSimulationEngine();
+  private readonly simulationEngine = createPlanningScenarioProductionSimulationEngine();
 
   constructor(private readonly dependencies: HealthScoreServiceDependencies = {}) {}
 

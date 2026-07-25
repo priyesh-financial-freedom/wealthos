@@ -2,7 +2,7 @@ import { getBalanceSheetData, type BalanceSheetData } from "@/services/balanceSh
 import { DecisionEngine, type DecisionRecommendation } from "@/services/decision";
 import { healthScoreService, type HealthScore } from "@/services/health";
 import { goalService } from "@/services/planning/goals";
-import { createPlanningScenarioSimulationEngine } from "@/services/planning/scenarios";
+import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService, type MonthlyReviewWorkspace } from "@/services/projection";
 import type { FinancialGoalWithProgress } from "@/types/financialGoal";
 import type { SimulationResult } from "@/services/simulation";
@@ -132,7 +132,7 @@ async function traceAsync<T>(label: string, operation: () => Promise<T>): Promis
 }
 
 async function loadSimulation(): Promise<SimulationResult | null> {
-  const simulationEngine = createPlanningScenarioSimulationEngine();
+  const simulationEngine = createPlanningScenarioProductionSimulationEngine();
   const outcome = await simulationEngine.run({ snapshotId: "executive-dashboard" });
 
   if (!outcome.ok) {

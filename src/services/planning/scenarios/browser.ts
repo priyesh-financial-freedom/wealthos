@@ -28,3 +28,16 @@ export function createPlanningScenarioBrowserService() {
     }),
   });
 }
+
+export function createPlanningScenarioProductionSimulationEngine() {
+  const repository = createBrowserPlanningScenarioRepository();
+
+  return createPlanningScenarioSimulationEngine({
+    snapshotProvider: {
+      loadSnapshot: async () => {
+        const userId = await repository.getAuthenticatedUserId();
+        return repository.loadLatestMonthEndSnapshot(userId);
+      },
+    },
+  });
+}

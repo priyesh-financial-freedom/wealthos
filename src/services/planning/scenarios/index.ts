@@ -1,6 +1,7 @@
 export { PlanningScenarioService, createPlanningScenarioSimulationEngine } from "./PlanningScenarioService";
 export { PlanningScenarioRepository } from "./PlanningScenarioRepository";
 export { createPlanningScenarioBrowserService } from "./browser";
+export { createPlanningScenarioProductionSimulationEngine } from "./browser";
 export type {
   PlanningScenario,
   PlanningScenarioComparison,
