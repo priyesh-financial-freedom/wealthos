@@ -114,12 +114,12 @@ export const InvestmentDashboard = memo(function InvestmentDashboard({ loading, 
         <DashboardCard className="overflow-hidden border-slate-200 bg-gradient-to-br from-slate-950 to-slate-800 p-0 text-white shadow-xl">
           <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
             <div>
-              <p className="text-sm font-medium text-slate-300">Investment empty state</p>
+              <p className="text-sm font-medium text-slate-300">Mutual Funds empty state</p>
               <h3 className="mt-2 text-2xl font-semibold tracking-tight">Capture your first position to unlock simple performance and allocation tracking.</h3>
-              <p className="mt-3 max-w-2xl text-sm text-slate-300">Add mutual funds, stocks, ETFs, fixed income, or alternatives and WealthOS will calculate invested value, current value, and gains automatically.</p>
+              <p className="mt-3 max-w-2xl text-sm text-slate-300">Add mutual funds to start tracking invested value, current value, and gains automatically.</p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button asChild className="bg-white text-slate-950 hover:bg-slate-100">
-                  <Link href="#investment-form">Add Investment</Link>
+                  <Link href="#investment-form">Add Mutual Fund</Link>
                 </Button>
                 <Button asChild variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
                   <Link href="/assets">Open Assets</Link>
@@ -151,7 +151,7 @@ export const InvestmentDashboard = memo(function InvestmentDashboard({ loading, 
       </section>
 
       <section className="grid gap-6">
-        <DonutChartCard title="Asset Allocation" description="Current mix across asset classes" data={summary.assetAllocation} emptyLabel="No holdings yet. Add investments to view allocation." />
+        <DonutChartCard title="Asset Allocation" description="Current mix across asset classes" data={summary.assetAllocation} emptyLabel="No holdings yet. Add mutual funds to view allocation." />
       </section>
     </div>
   );
@@ -170,7 +170,7 @@ function DashboardSkeleton() {
         ))}
       </div>
       <div className="h-[26rem] rounded-2xl border border-slate-200 bg-slate-100" />
-      <LoadingSpinner label="Loading investment dashboard..." />
+      <LoadingSpinner label="Loading mutual funds dashboard..." />
     </div>
   );
 }

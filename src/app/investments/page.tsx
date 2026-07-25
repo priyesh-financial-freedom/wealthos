@@ -199,11 +199,11 @@ function InvestmentsPageContent() {
     try {
       await createInvestment(values);
       setDialogOpen(false);
-      setNotice("Investment created successfully.");
+      setNotice("Mutual fund created successfully.");
       await refreshInvestments();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create investment");
+      setError(err instanceof Error ? err.message : "Unable to create mutual fund");
     } finally {
       setSubmitting(false);
     }
@@ -221,11 +221,11 @@ function InvestmentsPageContent() {
       await updateInvestment({ id: editingInvestment.id, ...values });
       setDialogOpen(false);
       setEditingInvestment(null);
-      setNotice("Investment updated successfully.");
+      setNotice("Mutual fund updated successfully.");
       await refreshInvestments();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update investment");
+      setError(err instanceof Error ? err.message : "Unable to update mutual fund");
     } finally {
       setSubmitting(false);
     }
@@ -238,11 +238,11 @@ function InvestmentsPageContent() {
     try {
       await deleteInvestment(investment.id);
       setDeleteTarget(null);
-      setNotice("Investment deleted successfully.");
+      setNotice("Mutual fund deleted successfully.");
       await refreshInvestments();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete investment");
+      setError(err instanceof Error ? err.message : "Unable to delete mutual fund");
     } finally {
       setSubmitting(false);
     }
@@ -253,7 +253,7 @@ function InvestmentsPageContent() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${selectedInvestments.length} selected investment(s)?`);
+    const confirmed = window.confirm(`Delete ${selectedInvestments.length} selected mutual fund(s)?`);
     if (!confirmed) {
       return;
     }
@@ -263,11 +263,11 @@ function InvestmentsPageContent() {
     setNotice(null);
     try {
       await Promise.all(selectedInvestments.map((investment) => deleteInvestment(investment.id)));
-      setNotice(`${selectedInvestments.length} investment(s) deleted successfully.`);
+      setNotice(`${selectedInvestments.length} mutual fund(s) deleted successfully.`);
       await refreshInvestments();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete selected investments");
+      setError(err instanceof Error ? err.message : "Unable to delete selected mutual funds");
     } finally {
       setSubmitting(false);
     }
@@ -283,11 +283,11 @@ function InvestmentsPageContent() {
     setNotice(null);
     try {
       await Promise.all(selectedInvestments.map((investment) => updateInvestment({ id: investment.id, owner: owner.trim() })));
-      setNotice(`Updated owner for ${selectedInvestments.length} investment(s).`);
+      setNotice(`Updated owner for ${selectedInvestments.length} mutual fund(s).`);
       await refreshInvestments();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to update selected investments");
+      setError(err instanceof Error ? err.message : "Unable to update selected mutual funds");
     } finally {
       setSubmitting(false);
     }
@@ -314,11 +314,11 @@ function InvestmentsPageContent() {
   return (
     <AppLayout>
       <PageContainer>
-        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Mutual Funds & Investments" }]} />
+        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Mutual Funds" }]} />
 
         <PageToolbar>
-          <PageHeader title="Investments" description="Track portfolio performance, allocation, and growth with an executive-grade workspace." />
-          <Button onClick={() => { setEditingInvestment(null); setDialogOpen(true); }} disabled={submitting}>Add Investment</Button>
+          <PageHeader title="Mutual Funds" description="Track portfolio performance, allocation, and growth with an executive-grade workspace." />
+          <Button onClick={() => { setEditingInvestment(null); setDialogOpen(true); }} disabled={submitting}>Add Mutual Fund</Button>
         </PageToolbar>
 
         {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -394,7 +394,7 @@ function InvestmentsPageContent() {
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setEditingInvestment(null); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{editingInvestment ? "Edit investment" : "Add investment"}</DialogTitle>
+            <DialogTitle>{editingInvestment ? "Edit mutual fund" : "Add mutual fund"}</DialogTitle>
           </DialogHeader>
           <InvestmentForm key={editingInvestment?.id ?? "new-investment"} initialData={editingInvestment} onSubmit={editingInvestment ? handleUpdate : handleCreate} onCancel={() => { setDialogOpen(false); setEditingInvestment(null); }} submitting={submitting} />
         </DialogContent>
@@ -403,9 +403,9 @@ function InvestmentsPageContent() {
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete investment</DialogTitle>
+            <DialogTitle>Delete mutual fund</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-600">Are you sure you want to remove this investment?</p>
+          <p className="text-sm text-slate-600">Are you sure you want to remove this mutual fund?</p>
           <div className="mt-4 flex justify-end gap-3">
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={submitting}>
               Cancel

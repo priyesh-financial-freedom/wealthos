@@ -177,13 +177,13 @@ export function InvestmentTable({
 
   return (
     <DataGrid
-      title="Investment holdings"
-      description="Search, filter, sort, and manage portfolio positions"
+      title="Mutual Fund holdings"
+      description="Search, filter, sort, and manage mutual fund positions"
       columns={columns}
       rows={investments}
       getRowId={(investment) => investment.id}
       onRowClick={onView}
-      search={{ value: searchValue, onChange: onSearchChange, placeholder: "Search investments" }}
+      search={{ value: searchValue, onChange: onSearchChange, placeholder: "Search mutual funds" }}
       filters={
         <>
           <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={regionFilter} onChange={(event) => onRegionFilterChange(event.target.value)}>
@@ -195,10 +195,10 @@ export function InvestmentTable({
       }
       sort={{ key: sortKey, direction: sortDirection, onChange: (key, direction) => onSortChange(key as InvestmentTableProps["sortKey"], direction) }}
       pagination={{ page, pageSize, totalRows, onPageChange, onPageSizeChange, pageSizeOptions: [10, 20, 50] }}
-      emptyTitle="No investments yet"
+      emptyTitle="No mutual funds yet"
       emptyDescription="Add your first holding to unlock allocation, return, and diversification insights."
       selection={{
-        exportFileName: "investments.csv",
+        exportFileName: "mutual-funds.csv",
         onDeleteSelected: onBulkDelete,
         ownerOptions: ownerOptions.map((owner) => ({ label: owner, value: owner })),
         onChangeOwnerSelected: onBulkChangeOwner,

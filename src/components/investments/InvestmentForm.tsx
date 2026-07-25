@@ -376,7 +376,7 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting }: 
           Cancel
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? "Saving..." : initialData ? "Save changes" : "Add investment"}
+          {submitting ? "Saving..." : initialData ? "Save changes" : "Add mutual fund"}
         </Button>
       </FormActions>
     </form>
