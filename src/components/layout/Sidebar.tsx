@@ -37,7 +37,7 @@ interface SidebarProps {
   collapsed: boolean;
 }
 
-type SidebarGroupKey = "planning" | "assets";
+type SidebarGroupKey = "planning" | "assets" | "liabilities";
 
 function rowLinkClass(params: { active: boolean; level: 1 | 2 | 3; collapsed: boolean }): string {
   const { active, level, collapsed } = params;
@@ -84,6 +84,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
 
   const planningOpen = expandedGroup === "planning";
   const assetsOpen = expandedGroup === "assets";
+  const liabilitiesOpen = expandedGroup === "liabilities";
 
   function toggleGroup(group: SidebarGroupKey) {
     setExpandedGroup((current) => (current === group ? null : group));
@@ -104,17 +105,26 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
 
   const bankAccountsActive = activeHref === "/bank-accounts";
   const investmentsActive = activeHref === "/investments";
+  const mutualFundsActive = activeHref === "/investments?category=Mutual%20Funds";
+  const stocksActive = activeHref === "/investments?category=Stocks";
+  const bondsActive = activeHref === "/investments?category=Bonds";
   const fixedDepositsActive = activeHref === "/fixed-deposits";
   const goldActive = activeHref === "/gold";
   const silverActive = activeHref === "/silver";
   const realEstateActive = activeHref === "/real-estate";
+  const esopsRsusActive = activeHref === "/esops-rsus";
+  const otherAssetsActive = activeHref === "/other-assets";
   const retirementActive = activeHref === "/retirement" || activeHref === "/retirement?type=EPF" || activeHref === "/retirement?type=PPF" || activeHref === "/retirement?type=NPS";
   const epfActive = activeHref === "/retirement?type=EPF";
   const ppfActive = activeHref === "/retirement?type=PPF";
   const npsActive = activeHref === "/retirement?type=NPS";
-  const assetsActive = activeHref === "/assets" || bankAccountsActive || investmentsActive || fixedDepositsActive || goldActive || silverActive || realEstateActive || retirementActive;
+  const assetsActive = activeHref === "/assets" || bankAccountsActive || investmentsActive || mutualFundsActive || stocksActive || bondsActive || fixedDepositsActive || goldActive || silverActive || realEstateActive || esopsRsusActive || otherAssetsActive || retirementActive;
 
-  const liabilitiesActive = activeHref === "/liabilities";
+  const homeLoansActive = activeHref === "/liabilities?bucket=home-loans";
+  const carLoansActive = activeHref === "/liabilities?bucket=car-loans" || activeHref === "/liabilities?bucket=vehicle-loans";
+  const creditCardsActive = activeHref === "/liabilities?bucket=credit-cards";
+  const otherLiabilitiesActive = activeHref === "/liabilities?bucket=other-liabilities";
+  const liabilitiesActive = activeHref === "/liabilities" || homeLoansActive || carLoansActive || creditCardsActive || otherLiabilitiesActive;
   const insuranceActive = activeHref === "/insurance";
   const reportsActive = ["/reports", "/history", "/income", "/expenses", "/documents"].includes(activeHref);
   const monthEndCloseActive = activeHref === "/month-end-close";
@@ -249,9 +259,23 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 </div>
 
                 <div className={rowWrapClass(2)}>
-                  <Link href="/investments" className={rowLinkClass({ active: investmentsActive, level: 2, collapsed })}>
+                  <Link href="/investments?category=Mutual%20Funds" className={rowLinkClass({ active: mutualFundsActive, level: 2, collapsed })}>
                     <TrendingUp className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Investments</span> : null}
+                    {!collapsed ? <span className="truncate">Mutual Funds</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/investments?category=Stocks" className={rowLinkClass({ active: stocksActive, level: 2, collapsed })}>
+                    <TrendingUp className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Stocks</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/investments?category=Bonds" className={rowLinkClass({ active: bondsActive, level: 2, collapsed })}>
+                    <BookOpen className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Bonds</span> : null}
                   </Link>
                 </div>
 
@@ -280,6 +304,20 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                   <Link href="/real-estate" className={rowLinkClass({ active: realEstateActive, level: 2, collapsed })}>
                     <Wallet className="h-4 w-4 shrink-0" />
                     {!collapsed ? <span className="truncate">Real Estate</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/esops-rsus" className={rowLinkClass({ active: esopsRsusActive, level: 2, collapsed })}>
+                    <CircleDollarSign className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">ESOPs / RSUs</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/other-assets" className={rowLinkClass({ active: otherAssetsActive, level: 2, collapsed })}>
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Other Assets</span> : null}
                   </Link>
                 </div>
 
@@ -326,11 +364,55 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             ) : null}
           </div>
 
-          <div className={rowWrapClass(1)}>
-            <Link href="/liabilities" className={rowLinkClass({ active: liabilitiesActive, level: 1, collapsed })}>
-              <CreditCard className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Liabilities</span> : null}
-            </Link>
+          <div className="space-y-1">
+            <div className={rowWrapClass(1)}>
+              <div className="flex items-center gap-2">
+                <Link href="/liabilities" className={cn("min-w-0 flex-1", rowLinkClass({ active: liabilitiesActive, level: 1, collapsed }))}>
+                  <CreditCard className="h-4 w-4 shrink-0" />
+                  {!collapsed ? <span className="truncate">Liabilities</span> : null}
+                </Link>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                  onClick={() => toggleGroup("liabilities")}
+                  aria-label={liabilitiesOpen ? "Collapse Liabilities" : "Expand Liabilities"}
+                >
+                  {liabilitiesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {liabilitiesOpen ? (
+              <>
+                <div className={rowWrapClass(2)}>
+                  <Link href="/liabilities?bucket=home-loans" className={rowLinkClass({ active: homeLoansActive, level: 2, collapsed })}>
+                    <Landmark className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Home Loans</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/liabilities?bucket=car-loans" className={rowLinkClass({ active: carLoansActive, level: 2, collapsed })}>
+                    <CreditCard className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Car Loans</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/liabilities?bucket=credit-cards" className={rowLinkClass({ active: creditCardsActive, level: 2, collapsed })}>
+                    <CreditCard className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Credit Cards</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/liabilities?bucket=other-liabilities" className={rowLinkClass({ active: otherLiabilitiesActive, level: 2, collapsed })}>
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Other Liabilities</span> : null}
+                  </Link>
+                </div>
+              </>
+            ) : null}
           </div>
 
           <div className={rowWrapClass(1)}>

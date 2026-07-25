@@ -15,7 +15,7 @@ interface InvestmentTableProps {
   totalPortfolioValue: number;
   searchValue: string;
   onSearchChange: (value: string) => void;
-  categoryFilter: "all" | "Mutual Funds" | "Stocks";
+  categoryFilter: "all" | "Mutual Funds" | "Stocks" | "Bonds";
   regionFilter: string;
   onRegionFilterChange: (value: string) => void;
   sortKey: InvestmentSortKey;
@@ -159,6 +159,8 @@ export function InvestmentTable({
       ? ["name", "amc", "folio_number", "nav_price", "units", "current_value", "actions"]
       : categoryFilter === "Stocks"
         ? ["name", "exchange", "average_purchase_price", "nav_price", "units", "current_value", "actions"]
+        : categoryFilter === "Bonds"
+          ? ["name", "owner", "cost_basis", "current_value", "gain_loss", "actions"]
         : ["name", "category", "owner", "units", "cost_basis", "current_value", "gain_loss", "actions"];
 
   const columns = allColumns

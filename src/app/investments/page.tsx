@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { InvestmentDetailsDialog } from "@/components/investments/InvestmentDetailsDialog";
 import { InvestmentForm } from "@/components/investments/InvestmentForm";
@@ -18,7 +19,15 @@ import { buildInvestmentSummary, createInvestment, deleteInvestment, getInvestme
 import type { Investment, InvestmentInsert } from "@/types/investment";
 
 type InvestmentSortKey = "name" | "category" | "current_value" | "gain_loss" | "cost_basis" | "nav_price";
-type CategoryFilter = "all" | "Mutual Funds" | "Stocks";
+type CategoryFilter = "all" | "Mutual Funds" | "Stocks" | "Bonds";
+
+function normalizeCategoryFilter(value: string | null): CategoryFilter {
+  if (value === "Mutual Funds" || value === "Stocks" || value === "Bonds") {
+    return value;
+  }
+
+  return "all";
+}
 
 const InvestmentDashboard = dynamic(() => import("@/components/investments/InvestmentDashboard").then((mod) => mod.InvestmentDashboard), {
   ssr: false,
@@ -87,10 +96,12 @@ function filterAndSortInvestments(params: {
 }
 
 export default function InvestmentsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [regionFilter, setRegionFilter] = useState("all");
   const [sortKey, setSortKey] = useState<InvestmentSortKey>("current_value");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -103,6 +114,21 @@ export default function InvestmentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const categoryFilter = normalizeCategoryFilter(searchParams.get("category"));
+
+  function updateCategoryFilter(nextFilter: CategoryFilter) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextFilter === "all") {
+      params.delete("category");
+    } else {
+      params.set("category", nextFilter);
+    }
+
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+    setPage(1);
+  }
 
   async function refreshInvestments() {
     try {
@@ -310,14 +336,14 @@ export default function InvestmentsPage() {
             { label: "All", value: "all" as const },
             { label: "Mutual Funds", value: "Mutual Funds" as const },
             { label: "Stocks", value: "Stocks" as const },
+            { label: "Bonds", value: "Bonds" as const },
           ].map((option) => (
             <Button
               key={option.value}
               type="button"
               variant={categoryFilter === option.value ? "default" : "outline"}
               onClick={() => {
-                setCategoryFilter(option.value);
-                setPage(1);
+                updateCategoryFilter(option.value);
               }}
             >
               {option.label}

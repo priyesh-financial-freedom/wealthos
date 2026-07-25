@@ -1,7 +1,7 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -15,18 +15,30 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [requestedType, setRequestedType] = useState<string | null>(null);
 
-  useEffect(() => {
-    const selectedType = new URLSearchParams(window.location.search).get("type");
-    setRequestedType(selectedType);
-  }, []);
+  const requestedType = searchParams.get("type");
+  const investmentCategory = searchParams.get("category");
+  const rawLiabilitiesBucket = searchParams.get("bucket");
+  const liabilitiesBucket = rawLiabilitiesBucket === "vehicle-loans" ? "car-loans" : rawLiabilitiesBucket;
 
-  const activeHref = pathname === "/retirement" && (requestedType === "EPF" || requestedType === "PPF" || requestedType === "NPS")
-    ? `/retirement?type=${requestedType}`
-    : pathname;
+  const activeHref = (() => {
+    if (pathname === "/retirement" && (requestedType === "EPF" || requestedType === "PPF" || requestedType === "NPS")) {
+      return `/retirement?type=${requestedType}`;
+    }
+
+    if (pathname === "/investments" && (investmentCategory === "Mutual Funds" || investmentCategory === "Stocks" || investmentCategory === "Bonds")) {
+      return `/investments?category=${encodeURIComponent(investmentCategory)}`;
+    }
+
+    if (pathname === "/liabilities" && liabilitiesBucket) {
+      return `/liabilities?bucket=${encodeURIComponent(liabilitiesBucket)}`;
+    }
+
+    return pathname;
+  })();
 
   return (
     <div className="h-dvh min-h-screen bg-[radial-gradient(circle_at_top_left,_#eef4ff_0%,_#f3f6fb_35%,_#f8fbff_100%)] text-slate-900">

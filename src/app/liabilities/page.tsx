@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
@@ -99,7 +100,42 @@ function buildEmiRows(liabilities: Liability[]) {
     .sort((left, right) => right.emi - left.emi);
 }
 
+type LiabilityBucket = "all" | "home-loans" | "car-loans" | "credit-cards" | "other-liabilities";
+
+function normalizeLiabilityBucket(value: string | null): LiabilityBucket {
+  if (value === "vehicle-loans") {
+    return "car-loans";
+  }
+
+  if (value === "home-loans" || value === "car-loans" || value === "credit-cards" || value === "other-liabilities") {
+    return value;
+  }
+
+  return "all";
+}
+
+function matchesLiabilityBucket(liability: Liability, bucket: LiabilityBucket): boolean {
+  if (bucket === "all") {
+    return true;
+  }
+
+  if (bucket === "home-loans") {
+    return liability.liability_type === "Home Loan" || liability.liability_type === "Loan Against Property";
+  }
+
+  if (bucket === "car-loans") {
+    return liability.liability_type === "Car Loan";
+  }
+
+  if (bucket === "credit-cards") {
+    return liability.liability_type === "Credit Card";
+  }
+
+  return !(liability.liability_type === "Home Loan" || liability.liability_type === "Loan Against Property" || liability.liability_type === "Car Loan" || liability.liability_type === "Credit Card");
+}
+
 export default function LiabilitiesPage() {
+  const searchParams = useSearchParams();
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
   const [totalAssetBase, setTotalAssetBase] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -115,6 +151,8 @@ export default function LiabilitiesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const bucketFilter = normalizeLiabilityBucket(searchParams.get("bucket"));
 
   async function refreshDashboard() {
     try {
@@ -182,7 +220,8 @@ export default function LiabilitiesPage() {
       const matchesQuery = !normalizedQuery || `${liability.account_name} ${liability.lender} ${liability.liability_type} ${liability.status} ${liability.notes ?? ""}`.toLowerCase().includes(normalizedQuery);
       const matchesStatus = statusFilter === "all" || liability.status === statusFilter;
       const matchesType = typeFilter === "all" || liability.liability_type === typeFilter;
-      return matchesQuery && matchesStatus && matchesType;
+      const matchesBucket = matchesLiabilityBucket(liability, bucketFilter);
+      return matchesQuery && matchesStatus && matchesType && matchesBucket;
     });
 
     return [...filtered].sort((left, right) => {
@@ -212,7 +251,7 @@ export default function LiabilitiesPage() {
 
       return (Number(leftValue) - Number(rightValue)) * multiplier;
     });
-  }, [liabilities, query, sortDirection, sortKey, statusFilter, typeFilter]);
+  }, [bucketFilter, liabilities, query, sortDirection, sortKey, statusFilter, typeFilter]);
 
   const liabilitySummaryCards = useMemo(() => buildSummaryBuckets(filteredLiabilities), [filteredLiabilities]);
   const allocationRows = useMemo(() => buildAllocationRows(filteredLiabilities), [filteredLiabilities]);
