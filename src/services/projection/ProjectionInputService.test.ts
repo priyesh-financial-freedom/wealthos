@@ -13,14 +13,15 @@ vi.mock("@/services/assumptions", () => ({
       },
       tax: {
         regime: "new",
-        effectiveTaxRate: 0,
+        effectiveTaxRate: 12,
         surchargeRate: 0,
         cessRate: 0,
-        note: "",
+        note: "Derived from Planning Assumptions 2.0 defaults.",
       },
     })),
     getEffectiveAssumptions: vi.fn(async () => ({
       currentAge: 35,
+      incomeTaxRate: 12,
     })),
   },
 }));
@@ -48,17 +49,23 @@ vi.mock("@/services/projection/events", () => ({
   },
 }));
 
-vi.mock("@/services/planning/assumptions", () => ({
-  planningAssumptionService: {
-    getFamilyProfile: vi.fn(async () => ({
-      primaryDateOfBirth: "1990-01-01",
-      spouseDateOfBirth: null,
-      primaryCurrentAge: 35,
-      spouseCurrentAge: null,
-      updatedAt: null,
-    })),
-  },
-}));
+vi.mock("@/services/planning/assumptions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/planning/assumptions")>();
+
+  return {
+    ...actual,
+    planningAssumptionService: {
+      ...actual.planningAssumptionService,
+      getFamilyProfile: vi.fn(async () => ({
+        primaryDateOfBirth: "1990-01-01",
+        spouseDateOfBirth: null,
+        primaryCurrentAge: 35,
+        spouseCurrentAge: null,
+        updatedAt: null,
+      })),
+    },
+  };
+});
 
 import { ProjectionInputService } from "./ProjectionInputService";
 import { getAssets } from "@/services/assets";
@@ -66,6 +73,7 @@ import { getBankAccounts } from "@/services/bankAccounts";
 import { getFixedDeposits } from "@/services/fixedDeposits";
 import { getGoldHoldings } from "@/services/goldHoldings";
 import { getInvestments } from "@/services/investments";
+import { getLiabilities } from "@/services/liabilities";
 import { getRealEstateProperties } from "@/services/realEstateProperties";
 import { getRetirementAccounts } from "@/services/retirement";
 import { getSilverHoldings } from "@/services/silverHoldings";
@@ -92,10 +100,14 @@ describe("ProjectionInputService", () => {
     expect(context.currentRecord.openingInvestments).toBe(0);
     expect(context.currentRecord.openingLiabilities).toBe(0);
     expect(context.currentState.projectionEntities).toBeDefined();
-    expect(context.currentState.projectionEntities).toHaveLength(1);
-    expect(context.currentState.projectionEntities?.[0].id).toBe("entity:investments:aggregate");
-    expect(context.currentState.projectionEntities?.[0].openingBalance).toBe(0);
-    expect(context.currentState.projectionEntities?.reduce((sum, entity) => sum + entity.openingBalance, 0)).toBe(0);
+    expect(context.currentState.projectionEntities).toHaveLength(0);
+    expect(context.taxes).toEqual({
+      regime: "new",
+      effectiveTaxRate: 12,
+      surchargeRate: 0,
+      cessRate: 0,
+      note: "Derived from Planning Assumptions 2.0 defaults.",
+    });
   });
 
   it("supports manual opening balances start source", async () => {
@@ -133,19 +145,120 @@ describe("ProjectionInputService", () => {
     expect(context.currentRecord.openingInvestments).toBe(200);
     expect(context.currentRecord.openingLiabilities).toBe(50);
     expect(context.currentState.projectionEntities).toBeDefined();
-    expect(context.currentState.projectionEntities).toHaveLength(4);
-    expect(context.currentState.projectionEntities?.map((entity) => entity.id).sort()).toEqual([
-      "entity:cash:aggregate",
-      "entity:investments:aggregate",
-      "entity:real-estate:aggregate",
-      "entity:retirement:aggregate",
-    ]);
+    expect(context.currentState.projectionEntities).toHaveLength(5);
+    expect(context.currentState.projectionEntities?.map((entity) => entity.id)).toEqual(
+      expect.arrayContaining([
+        "entity:assets:aggregate",
+        "entity:cash:aggregate",
+        "entity:investments:aggregate",
+        "entity:liabilities:aggregate",
+        "entity:retirement:aggregate",
+      ]),
+    );
     expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:investments:aggregate")?.openingBalance).toBe(200);
     expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:investments:aggregate")?.closingBalance).toBe(200);
-    expect(context.currentState.projectionEntities?.reduce((sum, entity) => sum + entity.openingBalance, 0)).toBe(1000);
+    expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:liabilities:aggregate")?.openingBalance).toBe(50);
+    expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:liabilities:aggregate")?.closingBalance).toBe(50);
+    expect(context.currentState.projectionEntities?.reduce((sum, entity) => sum + entity.openingBalance, 0)).toBe(1050);
   });
 
-  it("seeds one projection entity per live financial object while preserving aggregate opening balances", async () => {
+  it("maps live liabilities into first-class planning entities", async () => {
+    vi.mocked(getLiabilities).mockResolvedValueOnce([
+      {
+        id: "home-1",
+        user_id: "user-1",
+        liability_type: "Home Loan",
+        lender: "Bank A",
+        account_name: "Home Loan",
+        outstanding_amount: 1000,
+        original_amount: 2000,
+        interest_rate: 8,
+        emi: 0,
+        start_date: null,
+        end_date: null,
+        due_day: null,
+        due_date: null,
+        tenure_months: null,
+        credit_limit: null,
+        sanction_limit: null,
+        status: "active",
+        notes: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "card-1",
+        user_id: "user-1",
+        liability_type: "Credit Card",
+        lender: "Bank B",
+        account_name: "Card",
+        outstanding_amount: 250,
+        original_amount: 0,
+        interest_rate: 0,
+        emi: 0,
+        start_date: null,
+        end_date: null,
+        due_day: null,
+        due_date: null,
+        tenure_months: null,
+        credit_limit: 0,
+        sanction_limit: 0,
+        status: "active",
+        notes: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "other-1",
+        user_id: "user-1",
+        liability_type: "Other Liability",
+        lender: "Bank C",
+        account_name: "Other Liability",
+        outstanding_amount: 75,
+        original_amount: null,
+        interest_rate: null,
+        emi: null,
+        start_date: null,
+        end_date: null,
+        due_day: null,
+        due_date: null,
+        tenure_months: null,
+        credit_limit: null,
+        sanction_limit: null,
+        status: "active",
+        notes: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    const service = new ProjectionInputService();
+    const scenario: ProjectionScenario = {
+      id: "default",
+      name: "Default projection",
+      description: "test",
+      startMonth: "2026-07",
+      planningHorizonYear: 2030,
+      assumptions: [],
+      events: [],
+      isDefault: true,
+    };
+
+    const context = await service.buildContext({ scenario });
+
+    expect(context.currentState.projectionEntities?.map((entity) => entity.id)).toEqual(
+      expect.arrayContaining([
+        "entity:home-loan:aggregate",
+        "entity:credit-cards:aggregate",
+        "entity:other-liabilities:aggregate",
+      ]),
+    );
+    expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:home-loan:aggregate")?.entityType).toBe("HomeLoan");
+    expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:credit-cards:aggregate")?.entityType).toBe("CreditCard");
+    expect(context.currentState.projectionEntities?.find((entity) => entity.id === "entity:other-liabilities:aggregate")?.entityType).toBe("OtherLiability");
+  });
+
+  it("aggregates live holdings into planning buckets", async () => {
     vi.mocked(getAssets).mockResolvedValueOnce([
       {
         id: "asset-cash-1",
@@ -392,18 +505,19 @@ describe("ProjectionInputService", () => {
     expect(context.currentRecord.openingLiabilities).toBe(0);
 
     expect(context.currentState.projectionEntities).toBeDefined();
-    expect(context.currentState.projectionEntities?.length).toBe(9);
-    expect(context.currentState.projectionEntities?.map((entity) => entity.id).sort()).toEqual([
-      "entity:cash-asset:asset-cash-1",
-      "entity:cash:bank-1",
-      "entity:fixed-deposit:fd-1",
-      "entity:gold:gold-1",
-      "entity:investment:inv-mf-1",
-      "entity:investment:inv-stock-1",
-      "entity:real-estate:re-1",
-      "entity:retirement:ret-ppf-1",
-      "entity:silver:silver-1",
-    ]);
+    expect(context.currentState.projectionEntities?.length).toBe(8);
+    expect(context.currentState.projectionEntities?.map((entity) => entity.id)).toEqual(
+      expect.arrayContaining([
+        "entity:cash:aggregate",
+        "entity:fixed-deposits:aggregate",
+        "entity:gold:aggregate",
+        "entity:mutual-funds:aggregate",
+        "entity:ppf:aggregate",
+        "entity:real-estate:aggregate",
+        "entity:silver:aggregate",
+        "entity:stocks:aggregate",
+      ]),
+    );
 
     const totalEntityOpening = context.currentState.projectionEntities?.reduce((sum, entity) => sum + entity.openingBalance, 0) ?? 0;
     expect(totalEntityOpening).toBe(12000);

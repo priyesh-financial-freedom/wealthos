@@ -4,13 +4,61 @@ import type {
   PlanningAssumptionFieldDefinition,
   PlanningAssumptionHelpContent,
   PlanningAssumptionKey,
+  PlanningAssumptionOwnerMetadata,
   PlanningAssumptionRegistryItem,
   PlanningAssumptionSectionDefinition,
   PlanningScenarioPreset,
 } from "./AssumptionTypes";
+import {
+  createHouseholdAssumptionOwner,
+  createPlanningEntityAssumptionOwner,
+  createPlanningEntitySleeveOwner,
+} from "./AssumptionProfiles";
 
-type RawAssumptionRegistryItem = Omit<PlanningAssumptionRegistryItem, "helpContent"> & {
+type RawAssumptionRegistryItem = Omit<PlanningAssumptionRegistryItem, "helpContent" | "owner"> & {
   helpContent?: Partial<PlanningAssumptionHelpContent>;
+};
+
+const HOUSEHOLD_OWNER: PlanningAssumptionOwnerMetadata = createHouseholdAssumptionOwner();
+const ASSUMPTION_OWNER_BY_KEY: Record<PlanningAssumptionKey, PlanningAssumptionOwnerMetadata> = {
+  currentAge: HOUSEHOLD_OWNER,
+  retirementAge: HOUSEHOLD_OWNER,
+  lifeExpectancy: HOUSEHOLD_OWNER,
+  spouseLifeExpectancy: HOUSEHOLD_OWNER,
+  salaryGrowthRate: HOUSEHOLD_OWNER,
+  bonusGrowthRate: HOUSEHOLD_OWNER,
+  businessIncomeGrowth: HOUSEHOLD_OWNER,
+  rentalIncomeGrowth: HOUSEHOLD_OWNER,
+  otherIncomeGrowth: HOUSEHOLD_OWNER,
+  generalInflation: HOUSEHOLD_OWNER,
+  medicalInflation: HOUSEHOLD_OWNER,
+  educationInflation: HOUSEHOLD_OWNER,
+  lifestyleInflation: HOUSEHOLD_OWNER,
+  propertyInflation: HOUSEHOLD_OWNER,
+  luxuryInflation: HOUSEHOLD_OWNER,
+  equityReturn: createPlanningEntityAssumptionOwner("mutual-funds"),
+  debtReturn: createPlanningEntityAssumptionOwner("fixed-deposits"),
+  goldReturn: createPlanningEntityAssumptionOwner("gold"),
+  silverReturn: createPlanningEntityAssumptionOwner("silver"),
+  realEstateReturn: createPlanningEntityAssumptionOwner("real-estate"),
+  cashReturn: createPlanningEntityAssumptionOwner("cash-bank-accounts"),
+  epfReturn: createPlanningEntityAssumptionOwner("epf"),
+  ppfReturn: createPlanningEntityAssumptionOwner("ppf"),
+  npsEquityReturn: createPlanningEntitySleeveOwner("nps", "equity"),
+  npsDebtReturn: createPlanningEntitySleeveOwner("nps", "debt"),
+  homeLoanInterest: createPlanningEntityAssumptionOwner("home-loan"),
+  carLoanInterest: createPlanningEntityAssumptionOwner("car-loan"),
+  personalLoanInterest: createPlanningEntityAssumptionOwner("personal-loan"),
+  loanPrepaymentStrategy: HOUSEHOLD_OWNER,
+  incomeTaxRate: HOUSEHOLD_OWNER,
+  capitalGainsTax: HOUSEHOLD_OWNER,
+  dividendTax: HOUSEHOLD_OWNER,
+  rentalTaxRate: HOUSEHOLD_OWNER,
+  withdrawalRate: HOUSEHOLD_OWNER,
+  retirementExpenseRatio: HOUSEHOLD_OWNER,
+  legacyTarget: HOUSEHOLD_OWNER,
+  emergencyCorpusMonths: HOUSEHOLD_OWNER,
+  goalFundingPriority: HOUSEHOLD_OWNER,
 };
 
 const RAW_ASSUMPTION_REGISTRY: readonly RawAssumptionRegistryItem[] = [
@@ -707,6 +755,7 @@ function buildHelpContent(item: RawAssumptionRegistryItem): PlanningAssumptionHe
 
 export const ASSUMPTION_REGISTRY: readonly PlanningAssumptionRegistryItem[] = RAW_ASSUMPTION_REGISTRY.map((item) => ({
   ...item,
+  owner: ASSUMPTION_OWNER_BY_KEY[item.key],
   helpContent: buildHelpContent(item),
 }));
 
@@ -739,7 +788,7 @@ export const PLANNING_ASSUMPTION_SECTIONS: readonly PlanningAssumptionSectionDef
 
 export const PLANNING_ASSUMPTION_FIELD_DEFINITIONS: readonly PlanningAssumptionFieldDefinition[] = ASSUMPTION_REGISTRY
   .filter((item) => item.key !== "currentAge")
-  .map(({ defaultValue: _defaultValue, recommendedValue: _recommendedValue, dependencies: _dependencies, affectedEngines: _affectedEngines, ...definition }) => definition);
+  .map(({ owner: _owner, defaultValue: _defaultValue, recommendedValue: _recommendedValue, dependencies: _dependencies, affectedEngines: _affectedEngines, ...definition }) => definition);
 
 export const SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS: EffectivePlanningAssumptions = ASSUMPTION_REGISTRY.reduce<EffectivePlanningAssumptions>(
   (accumulator, item) => ({

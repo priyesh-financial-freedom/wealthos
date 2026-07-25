@@ -114,6 +114,104 @@ export interface PlanningFamilyProfile {
   updatedAt: string | null;
 }
 
+export type PlanningAssumptionOwnerScope = "HOUSEHOLD" | "ENTITY_TYPE" | "ENTITY_INSTANCE" | "SLEEVE";
+
+export type PlanningEntityKey =
+  | "cash-bank-accounts"
+  | "mutual-funds"
+  | "stocks"
+  | "fixed-deposits"
+  | "gold"
+  | "silver"
+  | "real-estate"
+  | "epf"
+  | "ppf"
+  | "nps"
+  | "other-assets"
+  | "home-loan"
+  | "car-loan"
+  | "personal-loan"
+  | "education-loan"
+  | "loan-against-property"
+  | "credit-cards"
+  | "bank-overdraft"
+  | "other-liabilities";
+
+export type PlanningEntitySleeveKey = "equity" | "debt";
+
+export interface PlanningAssumptionOwnerMetadata {
+  scope: PlanningAssumptionOwnerScope;
+  entityKey?: PlanningEntityKey;
+  entityInstanceId?: string | null;
+  sleeveKey?: PlanningEntitySleeveKey;
+}
+
+export type HouseholdAssumptionKey =
+  | "currentAge"
+  | "retirementAge"
+  | "lifeExpectancy"
+  | "spouseLifeExpectancy"
+  | "salaryGrowthRate"
+  | "bonusGrowthRate"
+  | "businessIncomeGrowth"
+  | "rentalIncomeGrowth"
+  | "otherIncomeGrowth"
+  | "generalInflation"
+  | "medicalInflation"
+  | "educationInflation"
+  | "lifestyleInflation"
+  | "propertyInflation"
+  | "luxuryInflation"
+  | "incomeTaxRate"
+  | "capitalGainsTax"
+  | "dividendTax"
+  | "rentalTaxRate"
+  | "withdrawalRate"
+  | "retirementExpenseRatio"
+  | "legacyTarget"
+  | "emergencyCorpusMonths"
+  | "goalFundingPriority"
+  | "loanPrepaymentStrategy";
+
+export type PlanningEntityAssumptionKey =
+  | "cashReturn"
+  | "equityReturn"
+  | "debtReturn"
+  | "goldReturn"
+  | "silverReturn"
+  | "realEstateReturn"
+  | "epfReturn"
+  | "ppfReturn"
+  | "homeLoanInterest"
+  | "carLoanInterest"
+  | "personalLoanInterest";
+
+export type PlanningEntitySleeveAssumptionKey = "npsEquityReturn" | "npsDebtReturn";
+
+export type HouseholdAssumptionValues = Pick<EffectivePlanningAssumptions, HouseholdAssumptionKey>;
+export type PlanningEntityAssumptionValues = Partial<Pick<EffectivePlanningAssumptions, PlanningEntityAssumptionKey>>;
+export type PlanningEntitySleeveAssumptionValues = Pick<EffectivePlanningAssumptions, PlanningEntitySleeveAssumptionKey>;
+
+export interface PlanningAssumptionProfile<TAssumptions extends Record<string, unknown> = Record<string, unknown>> {
+  id: string;
+  label: string;
+  owner: PlanningAssumptionOwnerMetadata;
+  assumptions: TAssumptions;
+  notes?: string | null;
+}
+
+export interface HouseholdAssumptionProfile extends PlanningAssumptionProfile<Partial<HouseholdAssumptionValues>> {
+  owner: { scope: "HOUSEHOLD" };
+}
+
+export interface PlanningEntityAssumptionProfile extends PlanningAssumptionProfile<PlanningEntityAssumptionValues> {
+  owner: PlanningAssumptionOwnerMetadata & { scope: "ENTITY_TYPE" | "ENTITY_INSTANCE" };
+}
+
+export interface PlanningEntitySleeveProfile extends PlanningAssumptionProfile<Partial<PlanningEntitySleeveAssumptionValues>> {
+  owner: PlanningAssumptionOwnerMetadata & { scope: "SLEEVE"; entityKey: "nps"; sleeveKey: PlanningEntitySleeveKey };
+}
+
 export type PlanningAssumptionScopeSelection =
   | { level: "USER_DEFAULTS" }
   | { level: "SCENARIO"; scenarioId: string }
@@ -211,6 +309,7 @@ export interface PlanningAssumptionFieldDefinition {
 }
 
 export interface PlanningAssumptionRegistryItem extends PlanningAssumptionFieldDefinition {
+  owner: PlanningAssumptionOwnerMetadata;
   defaultValue: EffectivePlanningAssumptions[PlanningAssumptionKey];
   recommendedValue: EffectivePlanningAssumptions[PlanningAssumptionKey];
   dependencies: readonly PlanningAssumptionDependency[];
