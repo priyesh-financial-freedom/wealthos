@@ -412,7 +412,25 @@ function InvestmentsPageContent() {
                 totalValue={card.totalValue}
                 holdingsCount={card.holdingsCount}
                 monthlyChange={card.monthlyChange}
-                href={category === "Mutual Funds" ? "/investments/mutual-funds" : `/investments?category=${encodeURIComponent(category)}`}
+                href={
+                  category === "Mutual Funds"
+                    ? "/investments/mutual-funds"
+                    : category === "Stocks"
+                      ? "/investments/stocks"
+                      : category === "Bonds"
+                        ? "/investments/bonds"
+                      : category === "Fixed Deposits"
+                        ? "/investments/fixed-deposits"
+                      : category === "Gold"
+                        ? "/investments/gold"
+                      : category === "ESOPs"
+                        ? "/investments/esops"
+                      : category === "Startup Investments"
+                        ? "/investments/startup-investments"
+                      : category === "Other Investments"
+                        ? "/investments/alternative-investments"
+                      : `/investments?category=${encodeURIComponent(category)}`
+                }
               />
             );
           })}
@@ -423,7 +441,7 @@ function InvestmentsPageContent() {
             <ModuleOnboardingState
               title="Welcome to Investments"
               description="Start building your investment portfolio."
-              steps={["Mutual Funds", "Stocks", "Bonds", "Fixed Deposits"]}
+              steps={["Mutual Funds", "Stocks", "Bonds", "Fixed Deposits", "Gold", "ESOPs", "Startup Investments", "Alternative Investments"]}
             />
           </ContentContainer>
         ) : null}

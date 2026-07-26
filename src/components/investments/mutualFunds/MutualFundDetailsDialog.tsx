@@ -1,5 +1,6 @@
 "use client";
 
+import { parseInvestmentDocuments } from "@/components/investments/documents";
 import { DetailDialog, DetailGrid, DetailItem, DetailSection } from "@/components/ui/detail-dialog";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import type { Investment, InvestmentMonthlyHistory } from "@/types/investment";
@@ -20,39 +21,6 @@ function monthLabel(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
 }
 
-function parseDocuments(value: string | null | undefined) {
-  if (!value) {
-    return [];
-  }
-
-  try {
-    const decoded = JSON.parse(value) as unknown;
-    if (Array.isArray(decoded)) {
-      return decoded
-        .map((item) => {
-          if (!item || typeof item !== "object") {
-            return null;
-          }
-
-          const entry = item as Record<string, unknown>;
-          return {
-            type: String(entry.type ?? "Other"),
-            fileName: entry.fileName ? String(entry.fileName) : null,
-            uploadDate: entry.uploadDate ? String(entry.uploadDate) : null,
-          };
-        })
-        .filter((item): item is { type: string; fileName: string | null; uploadDate: string | null } => Boolean(item));
-    }
-  } catch {
-    // Fallback handles old comma-separated format.
-  }
-
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 export function MutualFundDetailsDialog({ fund, historyRows, open, onOpenChange }: MutualFundDetailsDialogProps) {
   if (!fund) {
     return null;
@@ -62,7 +30,7 @@ export function MutualFundDetailsDialog({ fund, historyRows, open, onOpenChange 
   const gainPercent = Number(fund.cost_value ?? fund.cost_basis ?? 0) > 0
     ? (gainLoss / Number(fund.cost_value ?? fund.cost_basis ?? 0)) * 100
     : null;
-  const documents = parseDocuments(fund.documents_placeholder);
+  const documents = parseInvestmentDocuments(fund.documents_placeholder);
 
   return (
     <DetailDialog open={open} onOpenChange={onOpenChange} title={fund.investment_name} description="Mutual Fund overview and value history.">
@@ -121,15 +89,11 @@ export function MutualFundDetailsDialog({ fund, historyRows, open, onOpenChange 
           ) : (
             <ul className="space-y-2">
               {documents.map((item, index) => (
-                typeof item === "string" ? (
-                  <li key={`${item}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{item}</li>
-                ) : (
-                  <li key={`${item.type}-${item.fileName ?? "no-file"}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                    <p className="font-medium text-slate-900">{item.type}</p>
-                    <p>{item.fileName ?? "File not attached"}</p>
-                    <p className="text-xs text-slate-500">Uploaded: {item.uploadDate ?? "N/A"}</p>
-                  </li>
-                )
+                <li key={`${item.type}-${item.fileName ?? "no-file"}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <p className="font-medium text-slate-900">{item.type}</p>
+                  <p>{item.fileName ?? "File not attached"}</p>
+                  <p className="text-xs text-slate-500">Uploaded: {item.uploadDate ?? "N/A"}</p>
+                </li>
               ))}
             </ul>
           )}

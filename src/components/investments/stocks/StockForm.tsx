@@ -1,68 +1,75 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
+import { defaultInvestmentDocumentOptions, parseInvestmentDocuments } from "@/components/investments/documents";
 import { Button } from "@/components/ui/button";
 import { FormActions, FormField, FormGrid } from "@/components/ui/form-layout";
 import { Input } from "@/components/ui/input";
-import { defaultInvestmentDocumentOptions, parseInvestmentDocuments, serializeInvestmentDocuments } from "@/components/investments/documents";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { getInvestmentCategoryMeta, primaryInvestmentCategories } from "@/components/investments/investmentCategoryMeta";
-import type { Investment, InvestmentCategory, InvestmentInsert, InvestmentStatus } from "@/types/investment";
+import type { Investment, InvestmentStatus } from "@/types/investment";
 
-const categories: InvestmentCategory[] = primaryInvestmentCategories;
-
-const institutionRequiredCategories = new Set<InvestmentCategory>(["Mutual Funds", "Fixed Deposits"]);
-
-function isInstitutionRequired(category: InvestmentCategory) {
-  return institutionRequiredCategories.has(category);
-}
-
-type InvestmentFormState = {
-  owner: string;
-  institution: string;
+export type StockFormValues = {
   investment_name: string;
-  investment_type: InvestmentCategory;
+  owner: string;
+  demat_account_provider: string;
+  demat_account_number: string;
+  broker: string;
+  exchange: string;
+  institution: string;
+  isin: string;
   acquisition_date: string;
+  units: number | string;
+  average_purchase_price: number | string;
   cost_value: number | string;
   current_value: number | string;
+  sector: string;
   status: InvestmentStatus;
   notes: string;
   documentsSelected: string[];
   documentsUploaded: Partial<Record<string, { fileName: string | null; uploadDate: string }>>;
 };
 
-interface InvestmentFormProps {
+interface StockFormProps {
   initialData?: Investment | null;
-  onSubmit: (values: InvestmentInsert) => Promise<void> | void;
+  onSubmit: (values: StockFormValues) => Promise<void> | void;
   onCancel: () => void;
   submitting?: boolean;
   submitLabel?: string;
-  fixedCategory?: InvestmentCategory;
-  hideCategoryField?: boolean;
 }
 
-function defaultState(initialData?: Investment | null): InvestmentFormState {
+function toAmount(value: number | string) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function defaultValues(initialData?: Investment | null): StockFormValues {
   const parsedDocuments = parseInvestmentDocuments(initialData?.documents_placeholder);
   const documentsSelected = Array.from(new Set(parsedDocuments.map((item) => item.type)));
-  const documentsUploaded = parsedDocuments.reduce<InvestmentFormState["documentsUploaded"]>((acc, item) => {
+  const documentsUploaded = parsedDocuments.reduce<StockFormValues["documentsUploaded"]>((acc, item) => {
     acc[item.type] = {
       fileName: item.fileName,
       uploadDate: item.uploadDate ?? new Date().toISOString().slice(0, 10),
     };
-
     return acc;
   }, {});
 
   return {
-    owner: initialData?.owner ?? "",
-    institution: initialData?.institution ?? "",
     investment_name: initialData?.investment_name ?? "",
-    investment_type: initialData?.investment_type ?? initialData?.category ?? "Mutual Funds",
+    owner: initialData?.owner ?? "",
+    demat_account_provider: initialData?.demat_account_provider ?? "",
+    demat_account_number: initialData?.demat_account_number ?? "",
+    broker: initialData?.broker ?? "",
+    exchange: initialData?.exchange ?? "",
+    institution: initialData?.institution ?? "",
+    isin: initialData?.isin ?? "",
     acquisition_date: initialData?.acquisition_date ?? initialData?.purchase_date ?? "",
-    cost_value: initialData?.cost_value ?? initialData?.cost_basis ?? 0,
-    current_value: initialData?.current_value ?? 0,
+    units: initialData?.units ?? "",
+    average_purchase_price: initialData?.average_purchase_price ?? "",
+    cost_value: initialData?.cost_value ?? initialData?.cost_basis ?? "",
+    current_value: initialData?.current_value ?? "",
+    sector: initialData?.sector ?? "",
     status: initialData?.status ?? "active",
     notes: initialData?.notes ?? "",
     documentsSelected,
@@ -70,11 +77,21 @@ function defaultState(initialData?: Investment | null): InvestmentFormState {
   };
 }
 
-export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, submitLabel, fixedCategory, hideCategoryField }: InvestmentFormProps) {
-  const [values, setValues] = useState<InvestmentFormState>(() => defaultState(initialData));
+export function StockForm({ initialData, onSubmit, onCancel, submitting, submitLabel }: StockFormProps) {
+  const [values, setValues] = useState<StockFormValues>(() => defaultValues(initialData));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  function updateField<K extends keyof InvestmentFormState>(field: K, value: InvestmentFormState[K]) {
+  const derivedCostValue = useMemo(() => {
+    const units = toAmount(values.units);
+    const avgPurchasePrice = toAmount(values.average_purchase_price);
+    if (units <= 0 || avgPurchasePrice <= 0) {
+      return null;
+    }
+
+    return Number((units * avgPurchasePrice).toFixed(2));
+  }, [values.average_purchase_price, values.units]);
+
+  function updateField<K extends keyof StockFormValues>(field: K, value: StockFormValues[K]) {
     setValues((current) => ({ ...current, [field]: value }));
   }
 
@@ -116,21 +133,29 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
 
   function validate() {
     const nextErrors: Record<string, string> = {};
-    const effectiveCategory = fixedCategory ?? values.investment_type;
 
+    if (!values.investment_name.trim()) {
+      nextErrors.investment_name = "Stock name is required.";
+    }
     if (!values.owner.trim()) {
       nextErrors.owner = "Owner is required.";
     }
-    if (isInstitutionRequired(effectiveCategory) && !values.institution.trim()) {
-      nextErrors.institution = "Institution is required.";
+    if (!values.demat_account_number.trim()) {
+      nextErrors.demat_account_number = "Demat account number is required.";
     }
-    if (!values.investment_name.trim()) {
-      nextErrors.investment_name = "Investment name is required.";
+    if (!values.isin.trim()) {
+      nextErrors.isin = "ISIN is required.";
     }
-    if (Number(values.cost_value) < 0) {
+    if (toAmount(values.units) < 0) {
+      nextErrors.units = "Units must be zero or higher.";
+    }
+    if (toAmount(values.average_purchase_price) < 0) {
+      nextErrors.average_purchase_price = "Average purchase price must be zero or higher.";
+    }
+    if (toAmount(values.cost_value) < 0) {
       nextErrors.cost_value = "Cost value must be zero or higher.";
     }
-    if (Number(values.current_value) < 0) {
+    if (toAmount(values.current_value) < 0) {
       nextErrors.current_value = "Current value must be zero or higher.";
     }
 
@@ -139,40 +164,31 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     const nextErrors = validate();
     setErrors(nextErrors);
-
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
-    const effectiveCategory = fixedCategory ?? values.investment_type;
-
-    await onSubmit({
-      owner: values.owner.trim(),
-      institution: values.institution.trim() || null,
-      investment_name: values.investment_name.trim(),
-      investment_type: effectiveCategory,
-      category: effectiveCategory,
-      acquisition_date: values.acquisition_date || null,
-      purchase_date: values.acquisition_date || null,
-      cost_value: Number(values.cost_value),
-      current_value: Number(values.current_value),
-      status: values.status,
-      notes: values.notes.trim() || null,
-      documents_placeholder: serializeInvestmentDocuments({
-        selectedTypes: values.documentsSelected,
-        uploadedByType: values.documentsUploaded,
-      }),
-      cost_basis: Number(values.cost_value),
-      units: 1,
-      nav_price: Number(values.current_value),
-    });
+    await onSubmit(values);
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <FormGrid>
+        <FormField>
+          <Label htmlFor="stock_name">Stock Name</Label>
+          <Input id="stock_name" value={values.investment_name} onChange={(event) => updateField("investment_name", event.target.value)} />
+          {errors.investment_name ? <p className="text-sm text-rose-600">{errors.investment_name}</p> : null}
+        </FormField>
+
+        <FormField>
+          <Label htmlFor="isin">ISIN</Label>
+          <Input id="isin" value={values.isin} onChange={(event) => updateField("isin", event.target.value.toUpperCase())} placeholder="INE123A01016" />
+          {errors.isin ? <p className="text-sm text-rose-600">{errors.isin}</p> : null}
+        </FormField>
+
         <FormField>
           <Label htmlFor="owner">Owner</Label>
           <Input id="owner" value={values.owner} onChange={(event) => updateField("owner", event.target.value)} />
@@ -180,32 +196,30 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
         </FormField>
 
         <FormField>
-          <Label htmlFor="institution">Institution{isInstitutionRequired(fixedCategory ?? values.investment_type) ? "" : " (Optional)"}</Label>
-          <Input id="institution" value={values.institution} onChange={(event) => updateField("institution", event.target.value)} />
-          {errors.institution ? <p className="text-sm text-rose-600">{errors.institution}</p> : null}
+          <Label htmlFor="demat_account_provider">Demat Provider</Label>
+          <Input id="demat_account_provider" value={values.demat_account_provider} onChange={(event) => updateField("demat_account_provider", event.target.value)} placeholder="NSDL, CDSL, Zerodha, Groww" />
         </FormField>
 
         <FormField>
-          <Label htmlFor="investment_name">Investment Name</Label>
-          <Input id="investment_name" value={values.investment_name} onChange={(event) => updateField("investment_name", event.target.value)} />
-          {errors.investment_name ? <p className="text-sm text-rose-600">{errors.investment_name}</p> : null}
+          <Label htmlFor="demat_account_number">Demat Account Number</Label>
+          <Input id="demat_account_number" value={values.demat_account_number} onChange={(event) => updateField("demat_account_number", event.target.value)} />
+          {errors.demat_account_number ? <p className="text-sm text-rose-600">{errors.demat_account_number}</p> : null}
         </FormField>
 
-        {!hideCategoryField ? (
-          <FormField>
-            <Label htmlFor="investment_type">Investment Type</Label>
-            <select
-              id="investment_type"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              value={values.investment_type}
-              onChange={(event) => updateField("investment_type", event.target.value as InvestmentCategory)}
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>{getInvestmentCategoryMeta(category).displayName}</option>
-              ))}
-            </select>
-          </FormField>
-        ) : null}
+        <FormField>
+          <Label htmlFor="broker">Broker</Label>
+          <Input id="broker" value={values.broker} onChange={(event) => updateField("broker", event.target.value)} />
+        </FormField>
+
+        <FormField>
+          <Label htmlFor="exchange">Exchange</Label>
+          <Input id="exchange" value={values.exchange} onChange={(event) => updateField("exchange", event.target.value)} placeholder="NSE or BSE" />
+        </FormField>
+
+        <FormField>
+          <Label htmlFor="institution">Institution</Label>
+          <Input id="institution" value={values.institution} onChange={(event) => updateField("institution", event.target.value)} placeholder="Broker institution (optional)" />
+        </FormField>
 
         <FormField>
           <Label htmlFor="acquisition_date">Acquisition Date</Label>
@@ -213,8 +227,21 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
         </FormField>
 
         <FormField>
+          <Label htmlFor="units">Units</Label>
+          <Input id="units" type="number" step="0.0001" value={values.units} onChange={(event) => updateField("units", event.target.value)} />
+          {errors.units ? <p className="text-sm text-rose-600">{errors.units}</p> : null}
+        </FormField>
+
+        <FormField>
+          <Label htmlFor="average_purchase_price">Average Purchase Price</Label>
+          <Input id="average_purchase_price" type="number" step="0.0001" value={values.average_purchase_price} onChange={(event) => updateField("average_purchase_price", event.target.value)} />
+          {errors.average_purchase_price ? <p className="text-sm text-rose-600">{errors.average_purchase_price}</p> : null}
+        </FormField>
+
+        <FormField>
           <Label htmlFor="cost_value">Cost Value</Label>
           <Input id="cost_value" type="number" step="0.01" value={values.cost_value} onChange={(event) => updateField("cost_value", event.target.value)} />
+          {derivedCostValue !== null ? <p className="text-xs text-slate-500">Units × Avg Price: {derivedCostValue.toFixed(2)}</p> : null}
           {errors.cost_value ? <p className="text-sm text-rose-600">{errors.cost_value}</p> : null}
         </FormField>
 
@@ -222,6 +249,11 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
           <Label htmlFor="current_value">Current Value</Label>
           <Input id="current_value" type="number" step="0.01" value={values.current_value} onChange={(event) => updateField("current_value", event.target.value)} />
           {errors.current_value ? <p className="text-sm text-rose-600">{errors.current_value}</p> : null}
+        </FormField>
+
+        <FormField>
+          <Label htmlFor="sector">Sector</Label>
+          <Input id="sector" value={values.sector} onChange={(event) => updateField("sector", event.target.value)} />
         </FormField>
 
         <FormField>
@@ -238,11 +270,6 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
           </select>
         </FormField>
       </FormGrid>
-
-      <FormField>
-        <Label htmlFor="notes">Notes</Label>
-        <Textarea id="notes" rows={4} value={values.notes} onChange={(event) => updateField("notes", event.target.value)} />
-      </FormField>
 
       <FormField>
         <Label>Documents</Label>
@@ -272,9 +299,14 @@ export function InvestmentForm({ initialData, onSubmit, onCancel, submitting, su
         </div>
       </FormField>
 
+      <FormField>
+        <Label htmlFor="notes">Notes</Label>
+        <Textarea id="notes" rows={4} value={values.notes} onChange={(event) => updateField("notes", event.target.value)} />
+      </FormField>
+
       <FormActions>
         <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" disabled={submitting}>{submitting ? "Saving..." : initialData ? "Save changes" : submitLabel ?? "Add Investment"}</Button>
+        <Button type="submit" disabled={submitting}>{submitting ? "Saving..." : submitLabel ?? "Save Stock"}</Button>
       </FormActions>
     </form>
   );

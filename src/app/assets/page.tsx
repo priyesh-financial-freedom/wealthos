@@ -151,7 +151,7 @@ export default function AssetsPage() {
           retirementValue: summary?.categoryTotals.retirement ?? 0,
           realEstateValue: summary?.categoryTotals.realEstate ?? 0,
           bankAccountsCount: bankAccounts.filter((account) => account.status !== "closed").length,
-          investmentsCount: investments.filter((investment) => investment.category === "Mutual Funds" || investment.category === "Stocks").length,
+          investmentsCount: investments.filter((investment) => investment.category === "Mutual Funds" || investment.category === "Stocks" || investment.category === "Bonds" || investment.category === "Gold").length,
           fixedDepositsCount: fixedDeposits.length,
           goldCount: goldHoldings.length,
           silverCount: silverHoldings.length,
