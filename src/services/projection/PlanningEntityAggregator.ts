@@ -129,7 +129,7 @@ function buildLiveEntities(data: LoadedProjectionData): ProjectionEntity[] {
   );
 
   const mutualFunds = sumInvestmentCategories(data.investments, new Set(["Mutual Funds"]));
-  const stocks = sumInvestmentCategories(data.investments, new Set(["Stocks", "ETFs"]));
+  const stocks = sumInvestmentCategories(data.investments, new Set(["Stocks", "ETFs", "Bonds"]));
   const fixedDeposits = sum([
     ...data.fixedDeposits.map((deposit) => Number(deposit.current_value ?? 0)),
     ...data.investments.filter((investment) => investment.category === "Fixed Deposits").map((investment) => Number(investment.current_value ?? 0)),
@@ -161,7 +161,7 @@ function buildLiveEntities(data: LoadedProjectionData): ProjectionEntity[] {
   const otherAssets = sum([
     ...data.assets.filter((asset) => ["vehicle", "business", "other"].includes(asset.asset_type)).map((asset) => Number(asset.current_value ?? 0)),
     ...data.investments
-      .filter((investment) => !new Set(["Mutual Funds", "Stocks", "ETFs", "Fixed Deposits", "Gold", "Sovereign Gold Bonds", "Silver", "EPF", "PPF", "NPS"]).has(investment.category))
+      .filter((investment) => !new Set(["Mutual Funds", "Stocks", "ETFs", "Bonds", "Fixed Deposits", "Gold", "Sovereign Gold Bonds", "Silver", "EPF", "PPF", "NPS"]).has(investment.category))
       .map((investment) => Number(investment.current_value ?? 0)),
   ]);
 

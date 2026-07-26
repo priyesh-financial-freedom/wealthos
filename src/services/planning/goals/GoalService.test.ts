@@ -132,11 +132,15 @@ describe("GoalService", () => {
   });
 
   it("creates a goal with defaults and calculated progress", async () => {
-    const store = createStore();
+    const store = createStore({
+      scenarioIds: new Set(["scenario-1"]),
+      scenarioNames: new Map([["scenario-1", "Default Scenario"]]),
+    });
     const run = vi.fn(async (): Promise<SimulationOutcome> => ({ ok: true, result: runtime.simulationResult }));
     const service = new GoalService({
       store: store as never,
       simulationEngine: { run } as never,
+      scenarioSimulation: vi.fn(async () => runtime.simulationResult),
       now: () => new Date("2026-07-21T00:00:00.000Z"),
     });
 
@@ -146,6 +150,7 @@ describe("GoalService", () => {
       target_amount: 200000,
       target_date: "2030-06-15",
       priority: "MEDIUM",
+      linked_scenario_id: "scenario-1",
       funding_source: "Savings",
       notes: "Core safety net",
     });

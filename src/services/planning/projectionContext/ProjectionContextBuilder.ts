@@ -1,5 +1,6 @@
 import { ProjectionContextValidator } from "./ProjectionContextValidator";
-import { buildDeterministicPlanningRunId, deepFreeze } from "../shared";
+import { deepFreeze } from "../shared/Immutable";
+import { buildDeterministicPlanningRunId } from "../shared/DeterministicRunId";
 import type {
   ProjectionCashFlowScheduleItem,
   ProjectionContext,
