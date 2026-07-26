@@ -167,7 +167,7 @@ export function buildBalanceSheetSummary(
     {
       label: "Gold & Silver",
       value: categoryTotals.goldAndSilver,
-      href: "/gold",
+      href: "/investments/gold",
       description: "Precious metal holdings including gold, silver, and sovereign gold bonds.",
     },
     {

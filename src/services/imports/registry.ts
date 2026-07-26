@@ -72,9 +72,15 @@ registerAliases(investmentsImportPlugin, [
   "Investment",
   "MF Holdings",
   "Stock Holdings",
+  "Bond Holdings",
+  "FD Holdings",
+  "Fixed Deposit Holdings",
+  "Fixed Deposits",
   "PFP Investments",
   "Priyesh Investments",
   "MF and Stocks",
+  "Bond Holdings",
+  "Bonds",
 ]);
 
 registerAliases(liabilitiesImportPlugin, [
@@ -177,6 +183,7 @@ export function getSupportedSheetNames() {
     "Bank Accounts",
     "MF Holdings",
     "Stock Holdings",
+    "Bond Holdings",
     "PPF Accounts",
     "EPF Accounts",
     "NPS Accounts",

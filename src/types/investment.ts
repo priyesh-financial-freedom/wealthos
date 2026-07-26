@@ -63,6 +63,31 @@ export interface Investment {
   exchange: string | null;
   isin: string | null;
   average_purchase_price: number | null;
+  demat_account_provider: string | null;
+  demat_account_number: string | null;
+  fd_number: string | null;
+  interest_rate: number | null;
+  compounding_frequency: string | null;
+  payout_type: string | null;
+  maturity_date: string | null;
+  maturity_value: number | null;
+  issuer?: string | null;
+  bond_name?: string | null;
+  bond_type?: string | null;
+  face_value?: number | null;
+  coupon_rate?: number | null;
+  coupon_frequency?: string | null;
+  purchase_price?: number | null;
+  current_market_price?: number | null;
+  gold_type?: string | null;
+  gold_unit?: string | null;
+  storage_location?: string | null;
+  esop_vested_shares?: number | null;
+  esop_current_share_price?: number | null;
+  esop_grant_status?: string | null;
+  startup_funding_round?: string | null;
+  startup_ownership_percent?: number | null;
+  alternative_category?: string | null;
   created_at: string;
   updated_at: string;
   current_value: number;
@@ -106,6 +131,37 @@ export interface InvestmentInsert {
   exchange?: string | null;
   isin?: string | null;
   average_purchase_price?: number | null;
+  demat_account_provider?: string | null;
+  demat_account_number?: string | null;
+  fd_number?: string | null;
+  interest_rate?: number | null;
+  compounding_frequency?: string | null;
+  payout_type?: string | null;
+  maturity_date?: string | null;
+  maturity_value?: number | null;
+  issuer?: string | null;
+  bond_name?: string | null;
+  bond_type?: string | null;
+  face_value?: number | null;
+  coupon_rate?: number | null;
+  coupon_frequency?: string | null;
+  purchase_price?: number | null;
+  current_market_price?: number | null;
+  gold_type?: string | null;
+  gold_unit?: string | null;
+  storage_location?: string | null;
+  esop_vested_shares?: number | null;
+  esop_current_share_price?: number | null;
+  esop_grant_status?: string | null;
+  startup_funding_round?: string | null;
+  startup_ownership_percent?: number | null;
+  alternative_category?: string | null;
+}
+
+export interface StockBusinessKey {
+  owner: string;
+  demat_account_number: string;
+  isin: string;
 }
 
 export interface InvestmentUpdate extends Partial<InvestmentInsert> {

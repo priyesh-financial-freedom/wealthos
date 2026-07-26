@@ -154,6 +154,15 @@ function normalizeDate(value: string | null | undefined): string | null {
   return parsed.toISOString().slice(0, 10);
 }
 
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function mapHoldingRowToInvestment(params: {
   row: Record<string, unknown>;
   monthlyChange: number;
@@ -168,10 +177,11 @@ function mapHoldingRowToInvestment(params: {
   const navPrice = toNumber(row.nav_price);
 
   const currentFromUnitsAndNav = Number((units * navPrice).toFixed(2));
+  const hasExplicitCurrentValue = row.current_value !== null && row.current_value !== undefined;
   const fallbackCurrentValue =
     params.currentMonthValue !== null
       ? toNumber(params.currentMonthValue)
-      : (currentFromUnitsAndNav > 0 ? currentFromUnitsAndNav : currentValue);
+      : (hasExplicitCurrentValue ? currentValue : (currentFromUnitsAndNav > 0 ? currentFromUnitsAndNav : currentValue));
   const effectiveCurrentValue = Number.isFinite(fallbackCurrentValue) ? fallbackCurrentValue : 0;
   const effectiveCostValue = Number.isFinite(costValue) ? costValue : 0;
   const computedGainLoss = effectiveCurrentValue - effectiveCostValue;
@@ -213,6 +223,31 @@ function mapHoldingRowToInvestment(params: {
     exchange: row.exchange ? String(row.exchange) : null,
     isin: row.isin ? String(row.isin) : null,
     average_purchase_price: row.average_purchase_price === null || row.average_purchase_price === undefined ? null : toNumber(row.average_purchase_price),
+    demat_account_provider: row.demat_account_provider ? String(row.demat_account_provider) : null,
+    demat_account_number: row.demat_account_number ? String(row.demat_account_number) : null,
+    fd_number: row.fd_number ? String(row.fd_number) : null,
+    interest_rate: row.interest_rate === null || row.interest_rate === undefined ? null : toNumber(row.interest_rate),
+    compounding_frequency: row.compounding_frequency ? String(row.compounding_frequency) : null,
+    payout_type: row.payout_type ? String(row.payout_type) : null,
+    maturity_date: normalizeDate(row.maturity_date as string | null | undefined),
+    maturity_value: row.maturity_value === null || row.maturity_value === undefined ? null : toNumber(row.maturity_value),
+    issuer: row.issuer ? String(row.issuer) : null,
+    bond_name: row.bond_name ? String(row.bond_name) : null,
+    bond_type: row.bond_type ? String(row.bond_type) : null,
+    face_value: row.face_value === null || row.face_value === undefined ? null : toNumber(row.face_value),
+    coupon_rate: row.coupon_rate === null || row.coupon_rate === undefined ? null : toNumber(row.coupon_rate),
+    coupon_frequency: row.coupon_frequency ? String(row.coupon_frequency) : null,
+    purchase_price: row.purchase_price === null || row.purchase_price === undefined ? null : toNumber(row.purchase_price),
+    current_market_price: row.current_market_price === null || row.current_market_price === undefined ? null : toNumber(row.current_market_price),
+    gold_type: row.gold_type ? String(row.gold_type) : null,
+    gold_unit: row.gold_unit ? String(row.gold_unit) : null,
+    storage_location: row.storage_location ? String(row.storage_location) : null,
+    esop_vested_shares: row.esop_vested_shares === null || row.esop_vested_shares === undefined ? null : toNumber(row.esop_vested_shares),
+    esop_current_share_price: row.esop_current_share_price === null || row.esop_current_share_price === undefined ? null : toNumber(row.esop_current_share_price),
+    esop_grant_status: row.esop_grant_status ? String(row.esop_grant_status) : null,
+    startup_funding_round: row.startup_funding_round ? String(row.startup_funding_round) : null,
+    startup_ownership_percent: row.startup_ownership_percent === null || row.startup_ownership_percent === undefined ? null : toNumber(row.startup_ownership_percent),
+    alternative_category: row.alternative_category ? String(row.alternative_category) : null,
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(row.updated_at ?? new Date().toISOString()),
     gain_loss: computedGainLoss,
@@ -329,8 +364,8 @@ export async function createInvestment(input: InvestmentInsert): Promise<Investm
   const payload = {
     user_id: user.id,
     owner: input.owner ?? null,
-    institution: input.institution ?? input.amc ?? input.broker ?? null,
-    amc: input.amc ?? input.institution ?? null,
+    institution: normalizeOptionalText(input.institution) ?? normalizeOptionalText(input.amc) ?? normalizeOptionalText(input.broker),
+    amc: normalizeOptionalText(input.amc) ?? normalizeOptionalText(input.institution),
     investment_name: input.investment_name,
     investment_type: category,
     acquisition_date: normalizeDate(input.acquisition_date ?? input.purchase_date),
@@ -352,6 +387,35 @@ export async function createInvestment(input: InvestmentInsert): Promise<Investm
     status: normalizeStatus(input.status),
     notes: input.notes ?? null,
     documents_placeholder: input.documents_placeholder ?? null,
+    broker: input.broker ?? null,
+    exchange: input.exchange ?? null,
+    isin: input.isin ?? null,
+    average_purchase_price: input.average_purchase_price ?? null,
+    demat_account_provider: input.demat_account_provider ?? null,
+    demat_account_number: input.demat_account_number ?? null,
+    fd_number: input.fd_number ?? null,
+    interest_rate: input.interest_rate ?? null,
+    compounding_frequency: input.compounding_frequency ?? null,
+    payout_type: input.payout_type ?? null,
+    maturity_date: normalizeDate(input.maturity_date),
+    maturity_value: input.maturity_value ?? null,
+    issuer: input.issuer ?? null,
+    bond_name: input.bond_name ?? null,
+    bond_type: input.bond_type ?? null,
+    face_value: input.face_value ?? null,
+    coupon_rate: input.coupon_rate ?? null,
+    coupon_frequency: input.coupon_frequency ?? null,
+    purchase_price: input.purchase_price ?? null,
+    current_market_price: input.current_market_price ?? null,
+    gold_type: input.gold_type ?? null,
+    gold_unit: input.gold_unit ?? null,
+    storage_location: input.storage_location ?? null,
+    esop_vested_shares: input.esop_vested_shares ?? null,
+    esop_current_share_price: input.esop_current_share_price ?? null,
+    esop_grant_status: input.esop_grant_status ?? null,
+    startup_funding_round: input.startup_funding_round ?? null,
+    startup_ownership_percent: input.startup_ownership_percent ?? null,
+    alternative_category: input.alternative_category ?? null,
   };
 
   const createResponse = await client.from(HOLDINGS_TABLE).insert(payload).select("*").single();
@@ -423,7 +487,7 @@ export async function updateInvestment(input: InvestmentUpdate): Promise<Investm
     patch.owner = updates.owner;
   }
   if (updates.institution !== undefined) {
-    patch.institution = updates.institution;
+    patch.institution = normalizeOptionalText(updates.institution);
   }
   if (updates.investment_name !== undefined) {
     patch.investment_name = updates.investment_name;
@@ -436,7 +500,7 @@ export async function updateInvestment(input: InvestmentUpdate): Promise<Investm
     patch.purchase_date = normalizeDate(updates.acquisition_date ?? updates.purchase_date);
   }
   if (updates.amc !== undefined || updates.institution !== undefined) {
-    patch.amc = updates.amc ?? updates.institution ?? null;
+    patch.amc = normalizeOptionalText(updates.amc) ?? normalizeOptionalText(updates.institution);
   }
   if (updates.folio_number !== undefined) {
     patch.folio_number = updates.folio_number;
@@ -493,6 +557,93 @@ export async function updateInvestment(input: InvestmentUpdate): Promise<Investm
   if (updates.documents_placeholder !== undefined) {
     patch.documents_placeholder = updates.documents_placeholder;
   }
+  if (updates.broker !== undefined) {
+    patch.broker = updates.broker;
+  }
+  if (updates.exchange !== undefined) {
+    patch.exchange = updates.exchange;
+  }
+  if (updates.isin !== undefined) {
+    patch.isin = updates.isin;
+  }
+  if (updates.average_purchase_price !== undefined) {
+    patch.average_purchase_price = updates.average_purchase_price;
+  }
+  if (updates.demat_account_provider !== undefined) {
+    patch.demat_account_provider = updates.demat_account_provider;
+  }
+  if (updates.demat_account_number !== undefined) {
+    patch.demat_account_number = updates.demat_account_number;
+  }
+  if (updates.fd_number !== undefined) {
+    patch.fd_number = updates.fd_number;
+  }
+  if (updates.interest_rate !== undefined) {
+    patch.interest_rate = updates.interest_rate;
+  }
+  if (updates.compounding_frequency !== undefined) {
+    patch.compounding_frequency = updates.compounding_frequency;
+  }
+  if (updates.payout_type !== undefined) {
+    patch.payout_type = updates.payout_type;
+  }
+  if (updates.maturity_date !== undefined) {
+    patch.maturity_date = normalizeDate(updates.maturity_date);
+  }
+  if (updates.maturity_value !== undefined) {
+    patch.maturity_value = updates.maturity_value;
+  }
+  if (updates.issuer !== undefined) {
+    patch.issuer = updates.issuer;
+  }
+  if (updates.bond_name !== undefined) {
+    patch.bond_name = updates.bond_name;
+  }
+  if (updates.bond_type !== undefined) {
+    patch.bond_type = updates.bond_type;
+  }
+  if (updates.face_value !== undefined) {
+    patch.face_value = updates.face_value;
+  }
+  if (updates.coupon_rate !== undefined) {
+    patch.coupon_rate = updates.coupon_rate;
+  }
+  if (updates.coupon_frequency !== undefined) {
+    patch.coupon_frequency = updates.coupon_frequency;
+  }
+  if (updates.purchase_price !== undefined) {
+    patch.purchase_price = updates.purchase_price;
+  }
+  if (updates.current_market_price !== undefined) {
+    patch.current_market_price = updates.current_market_price;
+  }
+  if (updates.gold_type !== undefined) {
+    patch.gold_type = updates.gold_type;
+  }
+  if (updates.gold_unit !== undefined) {
+    patch.gold_unit = updates.gold_unit;
+  }
+  if (updates.storage_location !== undefined) {
+    patch.storage_location = updates.storage_location;
+  }
+  if (updates.esop_vested_shares !== undefined) {
+    patch.esop_vested_shares = updates.esop_vested_shares;
+  }
+  if (updates.esop_current_share_price !== undefined) {
+    patch.esop_current_share_price = updates.esop_current_share_price;
+  }
+  if (updates.esop_grant_status !== undefined) {
+    patch.esop_grant_status = updates.esop_grant_status;
+  }
+  if (updates.startup_funding_round !== undefined) {
+    patch.startup_funding_round = updates.startup_funding_round;
+  }
+  if (updates.startup_ownership_percent !== undefined) {
+    patch.startup_ownership_percent = updates.startup_ownership_percent;
+  }
+  if (updates.alternative_category !== undefined) {
+    patch.alternative_category = updates.alternative_category;
+  }
 
   const updateResponse = await client.from(HOLDINGS_TABLE).update(patch).eq("id", id).eq("user_id", user.id).select("*").single();
 
@@ -522,11 +673,113 @@ export async function updateInvestment(input: InvestmentUpdate): Promise<Investm
     }
 
     if (updates.institution !== undefined && updates.amc === undefined) {
-      legacyPatch.amc = updates.institution;
+      legacyPatch.amc = normalizeOptionalText(updates.institution);
     }
 
     if (updates.documents_placeholder !== undefined) {
       legacyPatch.documents_placeholder = updates.documents_placeholder;
+    }
+
+    if (updates.broker !== undefined) {
+      legacyPatch.broker = updates.broker;
+    }
+
+    if (updates.exchange !== undefined) {
+      legacyPatch.exchange = updates.exchange;
+    }
+
+    if (updates.isin !== undefined) {
+      legacyPatch.isin = updates.isin;
+    }
+
+    if (updates.average_purchase_price !== undefined) {
+      legacyPatch.average_purchase_price = updates.average_purchase_price;
+    }
+
+    if (updates.fd_number !== undefined) {
+      legacyPatch.fd_number = updates.fd_number;
+    }
+
+    if (updates.interest_rate !== undefined) {
+      legacyPatch.interest_rate = updates.interest_rate;
+    }
+
+    if (updates.compounding_frequency !== undefined) {
+      legacyPatch.compounding_frequency = updates.compounding_frequency;
+    }
+
+    if (updates.payout_type !== undefined) {
+      legacyPatch.payout_type = updates.payout_type;
+    }
+
+    if (updates.maturity_date !== undefined) {
+      legacyPatch.maturity_date = normalizeDate(updates.maturity_date);
+    }
+
+    if (updates.maturity_value !== undefined) {
+      legacyPatch.maturity_value = updates.maturity_value;
+    }
+
+    if (updates.issuer !== undefined) {
+      legacyPatch.issuer = updates.issuer;
+    }
+
+    if (updates.bond_name !== undefined) {
+      legacyPatch.bond_name = updates.bond_name;
+    }
+
+    if (updates.bond_type !== undefined) {
+      legacyPatch.bond_type = updates.bond_type;
+    }
+
+    if (updates.face_value !== undefined) {
+      legacyPatch.face_value = updates.face_value;
+    }
+
+    if (updates.coupon_rate !== undefined) {
+      legacyPatch.coupon_rate = updates.coupon_rate;
+    }
+
+    if (updates.coupon_frequency !== undefined) {
+      legacyPatch.coupon_frequency = updates.coupon_frequency;
+    }
+
+    if (updates.purchase_price !== undefined) {
+      legacyPatch.purchase_price = updates.purchase_price;
+    }
+
+    if (updates.current_market_price !== undefined) {
+      legacyPatch.current_market_price = updates.current_market_price;
+    }
+
+    if (updates.gold_type !== undefined) {
+      legacyPatch.gold_type = updates.gold_type;
+    }
+
+    if (updates.gold_unit !== undefined) {
+      legacyPatch.gold_unit = updates.gold_unit;
+    }
+
+    if (updates.storage_location !== undefined) {
+      legacyPatch.storage_location = updates.storage_location;
+    }
+    if (updates.esop_vested_shares !== undefined) {
+      legacyPatch.esop_vested_shares = updates.esop_vested_shares;
+    }
+    if (updates.esop_current_share_price !== undefined) {
+      legacyPatch.esop_current_share_price = updates.esop_current_share_price;
+    }
+    if (updates.esop_grant_status !== undefined) {
+      legacyPatch.esop_grant_status = updates.esop_grant_status;
+    }
+    if (updates.startup_funding_round !== undefined) {
+      legacyPatch.startup_funding_round = updates.startup_funding_round;
+    }
+    if (updates.startup_ownership_percent !== undefined) {
+      legacyPatch.startup_ownership_percent = updates.startup_ownership_percent;
+    }
+    if (updates.alternative_category !== undefined) {
+      legacyPatch.alternative_category = updates.alternative_category;
     }
 
     const legacyResponse = await client
