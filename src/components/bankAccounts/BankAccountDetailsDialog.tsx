@@ -16,35 +16,35 @@ export function BankAccountDetailsDialog({ account, open, onOpenChange }: BankAc
   }
 
   return (
-    <DetailDialog open={open} onOpenChange={onOpenChange} title={`${account.bank} • ${account.account_name}`} description="Banking profile, ownership, and treasury metadata.">
+    <DetailDialog open={open} onOpenChange={onOpenChange} title={`${account.bank} • ${account.nickname || account.account_name}`} description="Month-end balance profile for this bank account.">
       <div className="space-y-6">
         <DetailSection title="Account Snapshot">
           <DetailGrid>
+            <DetailItem label="Bank Name" value={account.bank} />
+            <DetailItem label="Account Nickname" value={account.nickname || account.account_name} />
             <DetailItem label="Account Type" value={account.account_type} />
-            <DetailItem label="Nickname" value={account.nickname || "—"} />
-            <DetailItem label="Masked Number" value={account.masked_account_number} />
-            <DetailItem label="IFSC" value={account.ifsc || "—"} />
+            <DetailItem label="Owner" value={account.owner || "—"} />
             <DetailItem label="Current Balance" value={formatCurrency(account.current_balance)} />
             <DetailItem label="Opening Balance" value={formatCurrency(account.opening_balance)} />
-            <DetailItem label="Interest Rate" value={`${Number(account.interest_rate ?? 0).toFixed(3)}%`} />
-            <DetailItem label="Status" value={account.status} />
+            <DetailItem label="Interest Rate" value={account.interest_rate ? `${Number(account.interest_rate ?? 0).toFixed(3)}%` : "—"} />
+            <DetailItem label="Include in Net Worth" value={account.include_in_net_worth ? "Yes" : "No"} />
+            <DetailItem label="Include in Cash Position" value={account.include_in_cash_position ? "Yes" : "No"} />
+            <DetailItem label="Status" value={account.status === "active" ? "Active" : "Closed"} />
           </DetailGrid>
         </DetailSection>
 
-        <DetailSection title="Ownership & Records">
+        <DetailSection title="Records">
           <DetailGrid>
-            <DetailItem label="Owner" value={account.owner || "—"} />
-            <DetailItem label="Nominee" value={account.nominee || "—"} />
-            <DetailItem label="Joint Holder" value={account.joint_holder || "—"} />
-            <DetailItem label="Documents" value={account.documents_placeholder || "No documents added"} />
             <DetailItem label="Created" value={formatDate(account.created_at)} />
             <DetailItem label="Updated" value={formatDate(account.updated_at)} />
           </DetailGrid>
         </DetailSection>
 
-        <DetailSection title="Notes">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{account.notes || "No notes provided."}</div>
-        </DetailSection>
+        {account.notes ? (
+          <DetailSection title="Notes">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{account.notes}</div>
+          </DetailSection>
+        ) : null}
       </div>
     </DetailDialog>
   );

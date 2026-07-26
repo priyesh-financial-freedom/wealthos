@@ -21,14 +21,12 @@ import {
   Brain,
   Briefcase,
   CircleCheck,
-  CheckCircle2,
   CircleDollarSign,
-  Crown,
-  DollarSign,
   Landmark,
   Rocket,
   Target,
   TrendingUp,
+  Users,
   Wallet2,
 } from "lucide-react";
 
@@ -409,7 +407,7 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
             <ExecutiveKpiCard
               title="Net Worth"
               value={formatCurrency(data.kpis.netWorth, { maximumFractionDigits: 0 })}
-              detail="Current household net worth"
+              detail="Current family net worth"
               icon={Wallet2}
               tone="blue"
             />
@@ -435,6 +433,32 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
               tone="purple"
             />
           </section>
+
+          {data.household ? (
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <ExecutiveKpiCard
+                title="Family"
+                value={data.household.householdName}
+                detail={`${data.household.membersCount} members`}
+                icon={Users}
+                tone="cyan"
+              />
+              <ExecutiveKpiCard
+                title="Planning Horizon"
+                value={data.household.planningHorizonLabel}
+                detail="Configured planning window"
+                icon={BarChart3}
+                tone="emerald"
+              />
+              <ExecutiveKpiCard
+                title="Current Financial Month"
+                value={data.household.currentFinancialMonthLabel}
+                detail="Based on family financial year start"
+                icon={Landmark}
+                tone="blue"
+              />
+            </section>
+          ) : null}
 
           <section className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
             <InsightCard

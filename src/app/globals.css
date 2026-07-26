@@ -3,6 +3,14 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --wealthos-positive: #047857;
+  --wealthos-negative: #be123c;
+  --wealthos-neutral: #334155;
+  --wealthos-primary: #1d4ed8;
+  --wealthos-info: #64748b;
+  --wealthos-card-radius: 1rem;
+  --wealthos-card-padding: 1.5rem;
+  --wealthos-section-gap: 1rem;
 }
 
 @theme inline {

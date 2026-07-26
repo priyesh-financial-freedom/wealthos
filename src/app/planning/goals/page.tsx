@@ -430,6 +430,7 @@ export default function PlanningGoalsPage() {
         <DataGrid
           title="Goal List"
           description="Every goal can optionally link to one planning scenario. Progress is always derived from the simulation engine."
+          tableViewportClassName="max-h-[32rem]"
           columns={columns}
           rows={filteredGoals}
           getRowId={(goal) => goal.id}

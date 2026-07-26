@@ -1,100 +1,48 @@
-"use client";
-
 import { Eye, Pencil, Trash2 } from "lucide-react";
 
+import { investmentCategoryMeta, primaryInvestmentCategories } from "@/components/investments/investmentCategoryMeta";
 import { Button } from "@/components/ui/button";
-import { DataGrid, type DataGridSortDirection } from "@/components/ui/data-grid";
-import { InvestmentCategoryBadge } from "@/components/investments/InvestmentCategoryBadge";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/formatters";
-import type { Investment } from "@/types/investment";
+import { DataGrid } from "@/components/ui/data-grid";
+import { formatCurrency } from "@/lib/formatters";
+import type { Investment, InvestmentCategory, InvestmentStatus } from "@/types/investment";
 
-type InvestmentSortKey = "name" | "category" | "current_value" | "gain_loss" | "cost_basis" | "nav_price";
+type SortKey = "investment_name" | "investment_type" | "current_value" | "cost_value" | "monthly_change";
 
 interface InvestmentTableProps {
-  investments: Investment[];
-  totalPortfolioValue: number;
+  rows: Investment[];
   searchValue: string;
   onSearchChange: (value: string) => void;
-  categoryFilter: "all" | "Mutual Funds" | "Stocks" | "Bonds";
-  regionFilter: string;
-  onRegionFilterChange: (value: string) => void;
-  sortKey: InvestmentSortKey;
-  sortDirection: DataGridSortDirection;
-  onSortChange: (key: InvestmentSortKey, direction: DataGridSortDirection) => void;
+  categoryFilter: "all" | InvestmentCategory;
+  statusFilter: "all" | InvestmentStatus;
+  onCategoryFilterChange: (value: "all" | InvestmentCategory) => void;
+  onStatusFilterChange: (value: "all" | InvestmentStatus) => void;
+  sortKey: SortKey;
+  sortDirection: "asc" | "desc";
+  onSortChange: (sortKey: SortKey, sortDirection: "asc" | "desc") => void;
   page: number;
   pageSize: number;
   totalRows: number;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
+  onPageChange: (value: number) => void;
+  onPageSizeChange: (value: number) => void;
   onView: (investment: Investment) => void;
   onEdit: (investment: Investment) => void;
   onDelete: (investment: Investment) => void;
-  onBulkDelete: (investments: Investment[]) => Promise<void> | void;
-  onBulkChangeOwner: (investments: Investment[], owner: string) => Promise<void> | void;
-  ownerOptions: string[];
+  onOpenHistory: (investment: Investment) => void;
 }
 
-type InvestmentColumnKey =
-  | "name"
-  | "amc"
-  | "folio_number"
-  | "exchange"
-  | "owner"
-  | "units"
-  | "average_purchase_price"
-  | "nav_price"
-  | "cost_basis"
-  | "current_value"
-  | "gain_loss"
-  | "gain_percent"
-  | "portfolio_weight"
-  | "category"
-  | "region"
-  | "sip_amount"
-  | "actions";
-
-interface InvestmentColumnConfig {
-  key: InvestmentColumnKey;
-  label: string;
-  cell: (investment: Investment) => React.ReactNode;
-  sortable?: boolean;
-  widthClassName?: string;
-  className?: string;
-  headerClassName?: string;
-}
-
-function getGainPercent(investment: Investment) {
-  if (!Number.isFinite(investment.cost_basis) || investment.cost_basis <= 0) {
-    return null;
-  }
-
-  return investment.gain_loss / investment.cost_basis;
-}
-
-function getAveragePurchasePrice(investment: Investment) {
-  if (!Number.isFinite(investment.units) || investment.units <= 0) {
-    return null;
-  }
-
-  return investment.cost_basis / investment.units;
-}
-
-function getPortfolioWeight(investment: Investment, totalPortfolioValue: number) {
-  if (!Number.isFinite(totalPortfolioValue) || totalPortfolioValue <= 0) {
-    return null;
-  }
-
-  return investment.current_value / totalPortfolioValue;
-}
+const categoryOptions: Array<{ value: InvestmentCategory; label: string }> = primaryInvestmentCategories.map((category) => ({
+  value: category,
+  label: investmentCategoryMeta[category].displayName,
+}));
 
 export function InvestmentTable({
-  investments,
-  totalPortfolioValue,
+  rows,
   searchValue,
   onSearchChange,
   categoryFilter,
-  regionFilter,
-  onRegionFilterChange,
+  statusFilter,
+  onCategoryFilterChange,
+  onStatusFilterChange,
   sortKey,
   sortDirection,
   onSortChange,
@@ -106,103 +54,119 @@ export function InvestmentTable({
   onView,
   onEdit,
   onDelete,
-  onBulkDelete,
-  onBulkChangeOwner,
-  ownerOptions,
+  onOpenHistory,
 }: InvestmentTableProps) {
-  const allColumns: InvestmentColumnConfig[] = [
-    { key: "name", label: "Investment Name", sortable: true, widthClassName: "min-w-56", className: "font-medium text-slate-900", cell: (investment) => investment.investment_name },
-    { key: "amc", label: "AMC", widthClassName: "min-w-40", cell: (investment) => investment.amc ?? "—" },
-    { key: "folio_number", label: "Folio Number", widthClassName: "min-w-40", cell: (investment) => investment.folio_number ?? "—" },
-    { key: "exchange", label: "Exchange", widthClassName: "min-w-32", cell: (investment) => investment.exchange ?? "—" },
-    { key: "owner", label: "Owner", widthClassName: "min-w-32", cell: (investment) => investment.owner ?? "—" },
-    { key: "units", label: "Units", widthClassName: "min-w-32", cell: (investment) => formatNumber(investment.units) },
-    {
-      key: "average_purchase_price",
-      label: "Avg Purchase Price",
-      widthClassName: "min-w-40 text-slate-900",
-      cell: (investment) => formatCurrency(getAveragePurchasePrice(investment), { maximumFractionDigits: 2 }),
-    },
-    { key: "nav_price", label: "Current Price", sortable: true, widthClassName: "min-w-32 text-slate-900", cell: (investment) => formatCurrency(investment.nav_price, { maximumFractionDigits: 2 }) },
-    { key: "cost_basis", label: "Invested Value", sortable: true, widthClassName: "min-w-40 text-slate-900", cell: (investment) => formatCurrency(investment.cost_basis, { maximumFractionDigits: 0 }) },
-    { key: "current_value", label: "Current Value", sortable: true, widthClassName: "min-w-40 text-slate-900", cell: (investment) => formatCurrency(investment.current_value, { maximumFractionDigits: 0 }) },
-    { key: "gain_loss", label: "Gain/Loss", sortable: true, widthClassName: "min-w-36", className: "font-medium", cell: (investment) => <span className={investment.gain_loss >= 0 ? "text-emerald-700" : "text-rose-700"}>{formatCurrency(investment.gain_loss, { maximumFractionDigits: 0 })}</span> },
-    { key: "gain_percent", label: "Gain %", widthClassName: "min-w-28", className: "font-medium", cell: (investment) => <span className={investment.gain_loss >= 0 ? "text-emerald-700" : "text-rose-700"}>{formatPercent(getGainPercent(investment))}</span> },
-    { key: "portfolio_weight", label: "Portfolio Weight", widthClassName: "min-w-36 text-slate-900", cell: (investment) => formatPercent(getPortfolioWeight(investment, totalPortfolioValue)) },
-    { key: "category", label: "Category", sortable: true, widthClassName: "min-w-36", cell: (investment) => <InvestmentCategoryBadge category={investment.category} /> },
-    { key: "region", label: "Region", widthClassName: "min-w-28", cell: (investment) => investment.region },
-    { key: "sip_amount", label: "SIP Amount", widthClassName: "min-w-32", cell: (investment) => formatCurrency(investment.sip_amount) },
-    {
-      key: "actions",
-      label: "Actions",
-      widthClassName: "min-w-32",
-      className: "text-right",
-      headerClassName: "text-right",
-      cell: (investment) => (
-        <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
-          <Button type="button" variant="ghost" size="icon" onClick={() => onView(investment)}>
-            <Eye className="h-4 w-4" />
-          </Button>
-          <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(investment)}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button type="button" variant="ghost" size="icon" onClick={() => onDelete(investment)}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  const activeColumnKeys: InvestmentColumnKey[] =
-    categoryFilter === "Mutual Funds"
-      ? ["name", "amc", "folio_number", "nav_price", "units", "current_value", "actions"]
-      : categoryFilter === "Stocks"
-        ? ["name", "exchange", "average_purchase_price", "nav_price", "units", "current_value", "actions"]
-        : categoryFilter === "Bonds"
-          ? ["name", "owner", "cost_basis", "current_value", "gain_loss", "actions"]
-        : ["name", "category", "owner", "units", "cost_basis", "current_value", "gain_loss", "actions"];
-
-  const columns = allColumns
-    .filter((column) => activeColumnKeys.includes(column.key))
-    .map((column) => ({
-      key: column.key,
-      header: column.label,
-      cell: column.cell,
-      sortable: column.sortable,
-      widthClassName: column.widthClassName,
-      className: column.className,
-      headerClassName: column.headerClassName,
-    }));
-
   return (
     <DataGrid
-      title="Mutual Fund holdings"
-      description="Search, filter, sort, and manage mutual fund positions"
-      columns={columns}
-      rows={investments}
-      getRowId={(investment) => investment.id}
+      title="Investments"
+      description="Portfolio holdings and month-end performance"
+      tableViewportClassName="max-h-[32rem]"
+      columns={[
+        {
+          key: "investment_name",
+          header: "Investment Name",
+          sortable: true,
+          widthClassName: "min-w-52",
+          className: "font-medium text-slate-900",
+          cell: (row) => row.investment_name,
+        },
+        {
+          key: "investment_type",
+          header: "Investment Type",
+          sortable: true,
+          widthClassName: "min-w-36",
+          cell: (row) => row.investment_type,
+        },
+        {
+          key: "owner",
+          header: "Owner",
+          widthClassName: "min-w-28",
+          cell: (row) => row.owner || "-",
+        },
+        {
+          key: "institution",
+          header: "Institution",
+          widthClassName: "min-w-36",
+          cell: (row) => row.institution || "-",
+        },
+        {
+          key: "cost_value",
+          header: "Cost Value",
+          sortable: true,
+          widthClassName: "min-w-32",
+          cell: (row) => formatCurrency(row.cost_value ?? row.cost_basis, { maximumFractionDigits: 0 }),
+        },
+        {
+          key: "current_value",
+          header: "Current Value",
+          sortable: true,
+          widthClassName: "min-w-32",
+          cell: (row) => formatCurrency(row.current_value, { maximumFractionDigits: 0 }),
+        },
+        {
+          key: "monthly_change",
+          header: "Monthly Change",
+          sortable: true,
+          widthClassName: "min-w-32",
+          cell: (row) => <span className={row.monthly_change >= 0 ? "text-emerald-700" : "text-rose-700"}>{formatCurrency(row.monthly_change, { maximumFractionDigits: 0 })}</span>,
+        },
+        {
+          key: "status",
+          header: "Status",
+          widthClassName: "min-w-24 capitalize",
+          cell: (row) => row.status,
+        },
+        {
+          key: "actions",
+          header: "Actions",
+          widthClassName: "min-w-56",
+          className: "text-right",
+          headerClassName: "text-right",
+          cell: (row) => (
+            <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+              <Button type="button" variant="outline" size="sm" onClick={() => onOpenHistory(row)}>History</Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => onView(row)}>
+                <Eye className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(row)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => onDelete(row)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ),
+        },
+      ]}
+      rows={rows}
+      getRowId={(row) => row.id}
       onRowClick={onView}
-      search={{ value: searchValue, onChange: onSearchChange, placeholder: "Search mutual funds" }}
+      search={{ value: searchValue, onChange: onSearchChange, placeholder: "Search investments" }}
       filters={
         <>
-          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={regionFilter} onChange={(event) => onRegionFilterChange(event.target.value)}>
-            <option value="all">All regions</option>
-            <option value="Domestic">Domestic</option>
-            <option value="International">International</option>
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={categoryFilter} onChange={(event) => onCategoryFilterChange(event.target.value as "all" | InvestmentCategory)}>
+            <option value="all">All categories</option>
+            {categoryOptions.map((category) => (
+              <option key={category.value} value={category.value}>{category.label}</option>
+            ))}
+          </select>
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value as "all" | InvestmentStatus)}>
+            <option value="all">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="closed">Closed</option>
           </select>
         </>
       }
-      sort={{ key: sortKey, direction: sortDirection, onChange: (key, direction) => onSortChange(key as InvestmentTableProps["sortKey"], direction) }}
-      pagination={{ page, pageSize, totalRows, onPageChange, onPageSizeChange, pageSizeOptions: [10, 20, 50] }}
-      emptyTitle="No mutual funds yet"
-      emptyDescription="Add your first holding to unlock allocation, return, and diversification insights."
-      selection={{
-        exportFileName: "mutual-funds.csv",
-        onDeleteSelected: onBulkDelete,
-        ownerOptions: ownerOptions.map((owner) => ({ label: owner, value: owner })),
-        onChangeOwnerSelected: onBulkChangeOwner,
+      sort={{
+        key: sortKey,
+        direction: sortDirection,
+        onChange: (nextSortKey, nextDirection) => onSortChange(nextSortKey as SortKey, nextDirection),
       }}
+      pagination={{ page, pageSize, totalRows, onPageChange, onPageSizeChange }}
+      emptyTitle="No investments yet"
+      emptyDescription="Use a category page to add your first holding and start tracking month-end movement."
+      selection={{ enabled: false }}
     />
   );
 }

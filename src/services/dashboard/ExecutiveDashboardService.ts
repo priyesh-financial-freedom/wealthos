@@ -1,6 +1,7 @@
 import { getBalanceSheetData, type BalanceSheetData } from "@/services/balanceSheet";
 import { DecisionEngine, type DecisionRecommendation } from "@/services/decision";
 import { healthScoreService, type HealthScore } from "@/services/health";
+import { getHouseholdDashboardSummary } from "@/services/households";
 import { goalService } from "@/services/planning/goals";
 import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
 import { monthlyReviewService, type MonthlyReviewWorkspace } from "@/services/projection";
@@ -46,6 +47,12 @@ export interface ExecutiveCashFlowPoint {
 export interface ExecutiveDashboardData {
   asOfLabel: string;
   emptyState: boolean;
+  household: {
+    householdName: string;
+    membersCount: number;
+    planningHorizonLabel: string;
+    currentFinancialMonthLabel: string;
+  } | null;
   health: HealthScore;
   kpis: {
     netWorth: number;
@@ -236,11 +243,12 @@ function buildRecentActivity(params: {
 
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, monthlyReview, simulation] = await Promise.all([
+    const [balanceSheetData, goals, monthlyReview, simulation, householdSummary] = await Promise.all([
       traceAsync("getBalanceSheetData", () => getBalanceSheetData()),
       traceAsync("goalService.listGoals(includeProgress=true)", () => goalService.listGoals({ includeProgress: true })).catch(() => []),
       traceAsync("monthlyReviewService.getMonthlyReviewWorkspace", () => monthlyReviewService.getMonthlyReviewWorkspace()).catch(() => null),
       traceAsync("loadSimulation", () => loadSimulation()).catch(() => null),
+      traceAsync("getHouseholdDashboardSummary", () => getHouseholdDashboardSummary()).catch(() => null),
     ]);
 
     const health = await traceAsync("healthScoreService.calculateHealthScore", () =>
@@ -270,6 +278,7 @@ export class ExecutiveDashboardService {
     const output: ExecutiveDashboardData = {
       asOfLabel: monthlyReview?.selectedPeriod?.label ?? monthToLabel(simulation?.summary.projectionEnd ?? ""),
       emptyState: totalAssetBase <= 0 && totalLiabilities <= 0,
+      household: householdSummary,
       health,
       kpis: {
         netWorth: Number(balanceSheetData.summary.netWorth ?? 0),

@@ -13,7 +13,8 @@ export type DataGridSortDirection = "asc" | "desc";
 
 export interface DataGridColumn<T> {
   key: string;
-  header: string;
+  header: ReactNode;
+  exportHeader?: string;
   cell: (row: T) => ReactNode;
   sortable?: boolean;
   widthClassName?: string;
@@ -68,6 +69,7 @@ interface DataGridProps<T> {
     onPageSizeChange?: (pageSize: number) => void;
     pageSizeOptions?: number[];
   };
+  tableViewportClassName?: string;
   maxBodyHeightClassName?: string;
   rowClassName?: (row: T) => string | undefined;
   selection?: DataGridSelectionConfig<T>;
@@ -116,6 +118,7 @@ export function DataGrid<T>({
   actions,
   sort,
   pagination,
+  tableViewportClassName,
   maxBodyHeightClassName,
   rowClassName,
   selection,
@@ -126,14 +129,28 @@ export function DataGrid<T>({
   const [selectedOwner, setSelectedOwner] = useState(selection?.ownerOptions?.[0]?.value ?? "");
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
-  const selectedRows = useMemo(() => Array.from(selectedRowsById.values()), [selectedRowsById]);
-  const selectedRowIds = useMemo(() => Array.from(selectedRowsById.keys()), [selectedRowsById]);
+  const selectedRowIds = useMemo(() => (selectionEnabled ? Array.from(selectedRowsById.keys()) : []), [selectedRowsById, selectionEnabled]);
+  const rowsById = useMemo(() => new Map(rows.map((row) => [getRowId(row), row] as const)), [getRowId, rows]);
+  const selectedRows = useMemo(
+    () => selectedRowIds.map((rowId) => rowsById.get(rowId) ?? selectedRowsById.get(rowId)).filter(Boolean) as T[],
+    [rowsById, selectedRowIds, selectedRowsById],
+  );
   const selectedCount = selectedRows.length;
   const totalPages = pagination ? Math.max(1, Math.ceil(pagination.totalRows / pagination.pageSize)) : 1;
+  const statusOptions = selection?.statusOptions ?? [];
+  const ownerOptions = selection?.ownerOptions ?? [];
+  const effectiveSelectedStatus =
+    statusOptions.length === 0
+      ? ""
+      : (statusOptions.some((option) => option.value === selectedStatus) ? selectedStatus : (statusOptions[0]?.value ?? ""));
+  const effectiveSelectedOwner =
+    ownerOptions.length === 0
+      ? ""
+      : (ownerOptions.some((option) => option.value === selectedOwner) ? selectedOwner : (ownerOptions[0]?.value ?? ""));
 
   const visibleRowIds = useMemo(() => rows.map((row) => getRowId(row)), [rows, getRowId]);
-  const allVisibleSelected = visibleRowIds.length > 0 && visibleRowIds.every((rowId) => selectedRowsById.has(rowId));
-  const someVisibleSelected = visibleRowIds.some((rowId) => selectedRowsById.has(rowId));
+  const allVisibleSelected = selectionEnabled && visibleRowIds.length > 0 && visibleRowIds.every((rowId) => selectedRowsById.has(rowId));
+  const someVisibleSelected = selectionEnabled && visibleRowIds.some((rowId) => selectedRowsById.has(rowId));
 
   useEffect(() => {
     if (!headerCheckboxRef.current) {
@@ -144,52 +161,8 @@ export function DataGrid<T>({
   }, [allVisibleSelected, someVisibleSelected]);
 
   useEffect(() => {
-    if (!selectionEnabled) {
-      setSelectedRowsById(new Map());
-      return;
-    }
-
-    setSelectedRowsById((current) => {
-      let changed = false;
-      const next = new Map(current);
-
-      for (const row of rows) {
-        const rowId = getRowId(row);
-        if (next.has(rowId) && next.get(rowId) !== row) {
-          next.set(rowId, row);
-          changed = true;
-        }
-      }
-
-      return changed ? next : current;
-    });
-  }, [getRowId, rows, selectionEnabled]);
-
-  useEffect(() => {
     selection?.onSelectionChange?.(selectedRows, selectedRowIds);
   }, [selectedRowIds, selectedRows, selection]);
-
-  useEffect(() => {
-    const statusOptions = selection?.statusOptions ?? [];
-    if (statusOptions.length > 0 && !statusOptions.some((option) => option.value === selectedStatus)) {
-      setSelectedStatus(statusOptions[0]?.value ?? "");
-    }
-
-    if (statusOptions.length === 0 && selectedStatus !== "") {
-      setSelectedStatus("");
-    }
-  }, [selectedStatus, selection?.statusOptions]);
-
-  useEffect(() => {
-    const ownerOptions = selection?.ownerOptions ?? [];
-    if (ownerOptions.length > 0 && !ownerOptions.some((option) => option.value === selectedOwner)) {
-      setSelectedOwner(ownerOptions[0]?.value ?? "");
-    }
-
-    if (ownerOptions.length === 0 && selectedOwner !== "") {
-      setSelectedOwner("");
-    }
-  }, [selectedOwner, selection?.ownerOptions]);
 
   function setRowSelected(row: T, checked: boolean) {
     const rowId = getRowId(row);
@@ -232,7 +205,9 @@ export function DataGrid<T>({
     }
 
     const exportableColumns = columns.filter((column) => column.key !== "actions");
-    const header = exportableColumns.map((column) => toCsvCell(column.header)).join(",");
+    const header = exportableColumns
+      .map((column) => toCsvCell(column.exportHeader ?? (typeof column.header === "string" ? column.header : column.key)))
+      .join(",");
     const body = selectedRows
       .map((row) =>
         exportableColumns
@@ -255,7 +230,7 @@ export function DataGrid<T>({
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
       <div className="flex flex-col gap-4 border-b border-slate-200 px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -299,14 +274,14 @@ export function DataGrid<T>({
                 <select
                   id={`${title}-bulk-status`}
                   className="h-8 rounded-md border border-slate-300 px-2 text-xs"
-                  value={selectedStatus}
+                  value={effectiveSelectedStatus}
                   onChange={(event) => setSelectedStatus(event.target.value)}
                 >
-                  {selection.statusOptions.map((option) => (
+                  {statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
-                <Button type="button" variant="outline" size="sm" onClick={() => void selection.onChangeStatusSelected?.(selectedRows, selectedStatus)}>
+                <Button type="button" variant="outline" size="sm" onClick={() => void selection.onChangeStatusSelected?.(selectedRows, effectiveSelectedStatus)}>
                   Change Status
                 </Button>
               </>
@@ -317,14 +292,14 @@ export function DataGrid<T>({
                 <select
                   id={`${title}-bulk-owner`}
                   className="h-8 rounded-md border border-slate-300 px-2 text-xs"
-                  value={selectedOwner}
+                  value={effectiveSelectedOwner}
                   onChange={(event) => setSelectedOwner(event.target.value)}
                 >
-                  {selection.ownerOptions.map((option) => (
+                  {ownerOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
-                <Button type="button" variant="outline" size="sm" onClick={() => void selection.onChangeOwnerSelected?.(selectedRows, selectedOwner)}>
+                <Button type="button" variant="outline" size="sm" onClick={() => void selection.onChangeOwnerSelected?.(selectedRows, effectiveSelectedOwner)}>
                   Change Owner
                 </Button>
               </>
@@ -341,8 +316,8 @@ export function DataGrid<T>({
       ) : rows.length === 0 ? (
         <EmptyState title={emptyTitle} description={emptyDescription} className="m-4 min-h-52" />
       ) : (
-        <>
-          <div className={cn(maxBodyHeightClassName ? "overflow-auto" : "overflow-x-auto", maxBodyHeightClassName)}>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className={cn("min-h-0 flex-1 overflow-auto", tableViewportClassName ?? maxBodyHeightClassName ?? "max-h-[32rem]")}>
             <table className="min-w-max w-full divide-y divide-slate-200 text-sm">
               <thead className="sticky top-0 z-10 bg-slate-50">
                 <tr>
@@ -448,7 +423,7 @@ export function DataGrid<T>({
               </div>
             </div>
           ) : null}
-        </>
+        </div>
       )}
     </div>
   );

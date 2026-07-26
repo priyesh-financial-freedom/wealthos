@@ -16,6 +16,8 @@ export interface BankAccount {
   opening_balance: number;
   interest_rate: number;
   owner: string | null;
+  include_in_net_worth: boolean;
+  include_in_cash_position: boolean;
   nominee: string | null;
   joint_holder: string | null;
   notes: string | null;
@@ -30,13 +32,15 @@ export interface BankAccountInsert {
   bank: string;
   account_name: string;
   nickname?: string | null;
-  account_number: string;
+  account_number?: string;
   ifsc?: string | null;
   currency?: string;
   current_balance: number;
   opening_balance: number;
   interest_rate?: number;
   owner?: string | null;
+  include_in_net_worth?: boolean;
+  include_in_cash_position?: boolean;
   nominee?: string | null;
   joint_holder?: string | null;
   notes?: string | null;
@@ -84,20 +88,8 @@ export interface BankAccountMonthlySnapshotUpdate extends Partial<BankAccountMon
   id: string;
 }
 
-export interface CashTrendPoint {
-  month: string;
-  totalCash: number;
-  inflow: number;
-  outflow: number;
-}
-
 export interface BankAccountsDashboardModel {
   totalCash: number;
-  monthlyInflow: number;
-  monthlyOutflow: number;
-  liquidityRatio: number | null;
-  latestAverageBalance: number;
-  latestInterestEarned: number;
-  cashTrend: CashTrendPoint[];
-  accountTypeAllocation: Array<{ name: string; value: number }>;
+  activeAccountsCount: number;
+  lastUpdatedMonth: string;
 }

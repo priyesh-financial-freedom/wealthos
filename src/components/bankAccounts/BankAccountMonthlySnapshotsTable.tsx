@@ -25,7 +25,7 @@ function monthLabel(month: number, year: number) {
 
 export function BankAccountMonthlySnapshotsTable({ snapshots, accounts, onEdit, onDelete }: BankAccountMonthlySnapshotsTableProps) {
   if (snapshots.length === 0) {
-    return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No monthly updates found.</div>;
+    return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No monthly history found.</div>;
   }
 
   return (
@@ -34,15 +34,10 @@ export function BankAccountMonthlySnapshotsTable({ snapshots, accounts, onEdit, 
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Month</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Account</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Opening</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Inflow</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Outflow</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Closing</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Monthly Change</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Avg Balance</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Interest Earned</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600">Financial Month</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600">Bank Account</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600">Closing Balance</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600">Notes</th>
               <th className="px-4 py-3 text-right font-medium text-slate-600">Actions</th>
             </tr>
           </thead>
@@ -51,13 +46,8 @@ export function BankAccountMonthlySnapshotsTable({ snapshots, accounts, onEdit, 
               <tr key={snapshot.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-700">{monthLabel(snapshot.snapshot_month, snapshot.snapshot_year)}</td>
                 <td className="px-4 py-3 text-slate-700">{accountLabel(accounts, snapshot.bank_account_id)}</td>
-                <td className="px-4 py-3 text-slate-700">₹{snapshot.opening_balance.toLocaleString("en-IN")}</td>
-                <td className="px-4 py-3 text-emerald-700">₹{snapshot.deposits.toLocaleString("en-IN")}</td>
-                <td className="px-4 py-3 text-rose-700">₹{snapshot.withdrawals.toLocaleString("en-IN")}</td>
                 <td className="px-4 py-3 text-slate-900">₹{snapshot.closing_balance.toLocaleString("en-IN")}</td>
-                <td className={`px-4 py-3 font-medium ${snapshot.monthly_change >= 0 ? "text-emerald-700" : "text-rose-700"}`}>₹{snapshot.monthly_change.toLocaleString("en-IN")}</td>
-                <td className="px-4 py-3 text-slate-700">₹{snapshot.average_balance.toLocaleString("en-IN")}</td>
-                <td className="px-4 py-3 text-slate-700">₹{snapshot.interest_earned.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 text-slate-700">{snapshot.notes || "—"}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <Button type="button" variant="ghost" size="icon" onClick={() => onEdit(snapshot)}>

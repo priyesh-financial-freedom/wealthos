@@ -21,7 +21,6 @@ function AppLayoutContent({ children }: AppLayoutProps) {
 
   const activeHref = useMemo(() => {
     const requestedType = searchParams.get("type");
-    const investmentCategory = searchParams.get("category");
     const rawLiabilitiesBucket = searchParams.get("bucket");
     const liabilitiesBucket = rawLiabilitiesBucket === "vehicle-loans" ? "car-loans" : rawLiabilitiesBucket;
 
@@ -29,8 +28,8 @@ function AppLayoutContent({ children }: AppLayoutProps) {
       return `/retirement?type=${requestedType}`;
     }
 
-    if (pathname === "/investments" && (investmentCategory === "Mutual Funds" || investmentCategory === "Stocks" || investmentCategory === "Bonds")) {
-      return `/investments?category=${encodeURIComponent(investmentCategory)}`;
+    if (pathname === "/investments" || pathname.startsWith("/investments/")) {
+      return "/investments";
     }
 
     if (pathname === "/liabilities" && liabilitiesBucket) {

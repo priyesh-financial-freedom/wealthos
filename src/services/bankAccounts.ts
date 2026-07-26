@@ -7,7 +7,6 @@ import type {
   BankAccountMonthlySnapshotUpdate,
   BankAccountsDashboardModel,
   BankAccountUpdate,
-  CashTrendPoint,
 } from "@/types/bankAccount";
 
 export interface BankAccountsSummary {
@@ -58,16 +57,75 @@ function withMaskedAccountNumber(account: BankAccount): BankAccount {
   };
 }
 
-function monthKey(year: number, month: number) {
-  return `${year}-${String(month).padStart(2, "0")}`;
-}
-
 function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(new Date(year, month - 1, 1));
 }
 
 function toNumber(value: number | string | null | undefined) {
   return Number(value ?? 0);
+}
+
+function buildSyntheticAccountNumber(input: { bank: string; accountName: string; owner?: string | null }) {
+  const normalizedBank = input.bank.trim().toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 6) || "bank";
+  const normalizedAccount = input.accountName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 6) || "acct";
+  const normalizedOwner = (input.owner ?? "owner").trim().toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 4) || "ownr";
+
+  return `${normalizedBank}-${normalizedAccount}-${normalizedOwner}`;
+}
+
+async function syncBankAccountCurrentBalance(client: ReturnType<typeof assertSupabaseClient>, userId: string, bankAccountId: string) {
+  const { data: latestSnapshot, error: snapshotError } = await client
+    .from("bank_account_monthly_snapshots")
+    .select("closing_balance")
+    .eq("user_id", userId)
+    .eq("bank_account_id", bankAccountId)
+    .order("snapshot_year", { ascending: false })
+    .order("snapshot_month", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (snapshotError) {
+    throw new Error(snapshotError.message);
+  }
+
+  if (latestSnapshot) {
+    const { error: updateError } = await client
+      .from("bank_accounts")
+      .update({ current_balance: Number(latestSnapshot.closing_balance ?? 0) })
+      .eq("id", bankAccountId)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+    return;
+  }
+
+  const { data: account, error: accountError } = await client
+    .from("bank_accounts")
+    .select("opening_balance")
+    .eq("id", bankAccountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (accountError) {
+    throw new Error(accountError.message);
+  }
+
+  if (!account) {
+    return;
+  }
+
+  const { error: resetError } = await client
+    .from("bank_accounts")
+    .update({ current_balance: Number(account.opening_balance ?? 0) })
+    .eq("id", bankAccountId)
+    .eq("user_id", userId);
+
+  if (resetError) {
+    throw new Error(resetError.message);
+  }
 }
 
 export async function getBankAccounts(): Promise<BankAccount[]> {
@@ -84,15 +142,23 @@ export async function getBankAccounts(): Promise<BankAccount[]> {
 
 export async function createBankAccount(input: BankAccountInsert): Promise<BankAccount> {
   const { client, user } = await requireAuthenticatedUser();
+  const accountName = input.account_name.trim();
+  const nickname = input.nickname?.trim() || accountName;
+  const accountNumber = input.account_number?.trim() || buildSyntheticAccountNumber({ bank: input.bank, accountName, owner: input.owner });
 
   const { data, error } = await client
     .from("bank_accounts")
     .insert({
       ...input,
+      account_name: accountName,
+      nickname,
+      account_number: accountNumber,
       user_id: user.id,
       currency: input.currency ?? "INR",
       status: input.status ?? "active",
       interest_rate: input.interest_rate ?? 0,
+      include_in_net_worth: input.include_in_net_worth ?? true,
+      include_in_cash_position: input.include_in_cash_position ?? true,
     })
     .select()
     .single();
@@ -108,9 +174,15 @@ export async function updateBankAccount(input: BankAccountUpdate): Promise<BankA
   const { client, user } = await requireAuthenticatedUser();
 
   const { id, ...updates } = input;
+  const normalizedUpdates = {
+    ...updates,
+    ...(updates.account_name !== undefined ? { account_name: updates.account_name.trim() } : {}),
+    ...(updates.nickname !== undefined ? { nickname: updates.nickname?.trim() || updates.account_name?.trim() || null } : {}),
+    ...(updates.account_number !== undefined && updates.account_number ? { account_number: updates.account_number.trim() } : {}),
+  };
   const { data, error } = await client
     .from("bank_accounts")
-    .update(updates)
+    .update(normalizedUpdates)
     .eq("id", id)
     .eq("user_id", user.id)
     .select()
@@ -178,6 +250,8 @@ export async function createBankAccountMonthlySnapshot(input: BankAccountMonthly
     throw new Error(error.message);
   }
 
+  await syncBankAccountCurrentBalance(client, user.id, input.bank_account_id);
+
   return data as BankAccountMonthlySnapshot;
 }
 
@@ -197,29 +271,45 @@ export async function updateBankAccountMonthlySnapshot(input: BankAccountMonthly
     throw new Error(error.message);
   }
 
+  await syncBankAccountCurrentBalance(client, user.id, data.bank_account_id as string);
+
   return data as BankAccountMonthlySnapshot;
 }
 
 export async function deleteBankAccountMonthlySnapshot(id: string): Promise<void> {
   const { client, user } = await requireAuthenticatedUser();
 
+  const { data: existingSnapshot, error: existingSnapshotError } = await client
+    .from("bank_account_monthly_snapshots")
+    .select("bank_account_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existingSnapshotError) {
+    throw new Error(existingSnapshotError.message);
+  }
+
   const { error } = await client.from("bank_account_monthly_snapshots").delete().eq("id", id).eq("user_id", user.id);
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (existingSnapshot?.bank_account_id) {
+    await syncBankAccountCurrentBalance(client, user.id, existingSnapshot.bank_account_id as string);
   }
 }
 
 export function buildBankAccountsDashboardModel(
   accounts: BankAccount[],
   snapshots: BankAccountMonthlySnapshot[],
-  totalLiabilities = 0,
 ): BankAccountsDashboardModel {
   const totalCash = accounts
-    .filter((account) => account.status !== "closed")
+    .filter((account) => account.status === "active" && account.include_in_cash_position)
     .reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0);
 
-  const sortedSnapshots = [...snapshots].sort((left, right) => {
+  const latestSnapshot = [...snapshots].sort((left, right) => {
     if (left.snapshot_year !== right.snapshot_year) {
       return right.snapshot_year - left.snapshot_year;
     }
@@ -227,66 +317,17 @@ export function buildBankAccountsDashboardModel(
       return right.snapshot_month - left.snapshot_month;
     }
     return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
-  });
-
-  const latestKey = sortedSnapshots.length > 0 ? monthKey(sortedSnapshots[0].snapshot_year, sortedSnapshots[0].snapshot_month) : null;
-  const latestSnapshots = latestKey
-    ? sortedSnapshots.filter((snapshot) => monthKey(snapshot.snapshot_year, snapshot.snapshot_month) === latestKey)
-    : [];
-
-  const monthlyInflow = latestSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.deposits ?? 0), 0);
-  const monthlyOutflow = latestSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.withdrawals ?? 0), 0);
-  const latestAverageBalance = latestSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.average_balance ?? 0), 0);
-  const latestInterestEarned = latestSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.interest_earned ?? 0), 0);
-
-  const groupedTrend = snapshots.reduce<Record<string, CashTrendPoint>>((acc, snapshot) => {
-    const key = monthKey(snapshot.snapshot_year, snapshot.snapshot_month);
-    if (!acc[key]) {
-      acc[key] = {
-        month: monthLabel(snapshot.snapshot_year, snapshot.snapshot_month),
-        totalCash: 0,
-        inflow: 0,
-        outflow: 0,
-      };
-    }
-
-    acc[key].totalCash += Number(snapshot.closing_balance ?? 0);
-    acc[key].inflow += Number(snapshot.deposits ?? 0);
-    acc[key].outflow += Number(snapshot.withdrawals ?? 0);
-
-    return acc;
-  }, {});
-
-  const cashTrend = Object.entries(groupedTrend)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .slice(-12)
-    .map(([, point]) => point);
-
-  const accountTypeAllocation = Object.entries(
-    accounts.reduce<Record<string, number>>((acc, account) => {
-      acc[account.account_type] = (acc[account.account_type] ?? 0) + Number(account.current_balance ?? 0);
-      return acc;
-    }, {}),
-  )
-    .map(([name, value]) => ({ name, value }))
-    .sort((left, right) => right.value - left.value);
-
-  const liquidityRatio = totalLiabilities > 0 ? totalCash / totalLiabilities : null;
+  })[0];
 
   return {
     totalCash,
-    monthlyInflow,
-    monthlyOutflow,
-    liquidityRatio,
-    latestAverageBalance,
-    latestInterestEarned,
-    cashTrend,
-    accountTypeAllocation,
+    activeAccountsCount: accounts.filter((account) => account.status === "active").length,
+    lastUpdatedMonth: latestSnapshot ? monthLabel(latestSnapshot.snapshot_year, latestSnapshot.snapshot_month) : "No history yet",
   };
 }
 
 export function buildBankAccountsSummary(accounts: BankAccount[]): BankAccountsSummary {
-  const activeAccounts = accounts.filter((account) => account.status !== "closed");
+  const activeAccounts = accounts.filter((account) => account.status === "active" && account.include_in_net_worth);
 
   return {
     totalActiveBalance: activeAccounts.reduce((sum, account) => sum + Number(account.current_balance ?? 0), 0),

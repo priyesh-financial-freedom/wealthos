@@ -19,6 +19,7 @@ export function LiabilityTable({ liabilities, onView, onEdit, onDelete, onBulkDe
     <DataGrid
       title="Liability inventory"
       description="Manage debt accounts, repayment plans, and status"
+      tableViewportClassName="max-h-[32rem]"
       columns={[
         { key: "account_name", header: "Account", widthClassName: "min-w-44", className: "font-medium text-slate-900", cell: (liability) => liability.account_name },
         { key: "type", header: "Type", widthClassName: "min-w-36", cell: (liability) => <LiabilityTypeBadge type={liability.liability_type} /> },

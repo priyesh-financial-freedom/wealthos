@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { FormActions, FormField, FormGrid } from "@/components/ui/form-layout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import type { BankAccount, BankAccountInsert, BankAccountStatus, BankAccountType } from "@/types/bankAccount";
+
+const OWNER_OPTIONS = ["Priyesh", "Shobhana", "Joint"] as const;
 
 interface BankAccountFormProps {
   initialData?: BankAccount | null;
@@ -19,39 +20,27 @@ interface BankAccountFormProps {
 type BankAccountFormState = {
   account_type: BankAccountType;
   bank: string;
-  account_name: string;
-  nickname: string;
-  account_number: string;
-  ifsc: string;
-  currency: string;
+  account_nickname: string;
   current_balance: number | string;
   opening_balance: number | string;
   interest_rate: number | string;
   owner: string;
-  nominee: string;
-  joint_holder: string;
-  notes: string;
-  documents_placeholder: string;
-  status: BankAccountStatus;
+  include_in_net_worth: boolean;
+  include_in_cash_position: boolean;
+  status: Extract<BankAccountStatus, "active" | "closed">;
 };
 
 const defaultState = (initialData?: BankAccount | null): BankAccountFormState => ({
   account_type: initialData?.account_type ?? "Savings",
   bank: initialData?.bank ?? "",
-  account_name: initialData?.account_name ?? "",
-  nickname: initialData?.nickname ?? "",
-  account_number: initialData?.account_number ?? "",
-  ifsc: initialData?.ifsc ?? "",
-  currency: initialData?.currency ?? "INR",
+  account_nickname: initialData?.nickname ?? initialData?.account_name ?? "",
   current_balance: initialData?.current_balance ?? 0,
   opening_balance: initialData?.opening_balance ?? 0,
   interest_rate: initialData?.interest_rate ?? 0,
   owner: initialData?.owner ?? "",
-  nominee: initialData?.nominee ?? "",
-  joint_holder: initialData?.joint_holder ?? "",
-  notes: initialData?.notes ?? "",
-  documents_placeholder: initialData?.documents_placeholder ?? "",
-  status: initialData?.status ?? "active",
+  include_in_net_worth: initialData?.include_in_net_worth ?? true,
+  include_in_cash_position: initialData?.include_in_cash_position ?? true,
+  status: initialData?.status === "closed" ? "closed" : "active",
 });
 
 export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }: BankAccountFormProps) {
@@ -68,11 +57,8 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
     if (!formValues.bank.trim()) {
       nextErrors.bank = "Bank is required";
     }
-    if (!formValues.account_name.trim()) {
-      nextErrors.account_name = "Account name is required";
-    }
-    if (!formValues.account_number.trim()) {
-      nextErrors.account_number = "Account number is required";
+    if (!formValues.account_nickname.trim()) {
+      nextErrors.account_nickname = "Account nickname is required";
     }
     if (Number(formValues.current_balance) < 0) {
       nextErrors.current_balance = "Current balance must be positive";
@@ -98,19 +84,14 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
     await onSubmit({
       account_type: formValues.account_type,
       bank: formValues.bank.trim(),
-      account_name: formValues.account_name.trim(),
-      nickname: formValues.nickname.trim() || null,
-      account_number: formValues.account_number.trim(),
-      ifsc: formValues.ifsc.trim() || null,
-      currency: formValues.currency.trim().toUpperCase(),
+      account_name: formValues.account_nickname.trim(),
+      nickname: formValues.account_nickname.trim(),
       current_balance: Number(formValues.current_balance),
       opening_balance: Number(formValues.opening_balance),
-      interest_rate: Number(formValues.interest_rate),
+      interest_rate: Number(formValues.interest_rate || 0),
       owner: formValues.owner.trim() || null,
-      nominee: formValues.nominee.trim() || null,
-      joint_holder: formValues.joint_holder.trim() || null,
-      notes: formValues.notes.trim() || null,
-      documents_placeholder: formValues.documents_placeholder.trim() || null,
+      include_in_net_worth: formValues.include_in_net_worth,
+      include_in_cash_position: formValues.include_in_cash_position,
       status: formValues.status,
     });
   }
@@ -136,37 +117,24 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
         </FormField>
 
         <FormField>
-          <Label htmlFor="account_name">Account Name</Label>
-          <Input id="account_name" value={formValues.account_name} onChange={(event) => updateField("account_name", event.target.value)} />
-          {errors.account_name ? <p className="text-sm text-rose-600">{errors.account_name}</p> : null}
+          <Label htmlFor="account_nickname">Account Nickname</Label>
+          <Input id="account_nickname" value={formValues.account_nickname} onChange={(event) => updateField("account_nickname", event.target.value)} placeholder="Emergency Fund, Salary Account..." />
+          {errors.account_nickname ? <p className="text-sm text-rose-600">{errors.account_nickname}</p> : null}
         </FormField>
 
         <FormField>
-          <Label htmlFor="nickname">Nickname</Label>
-          <Input id="nickname" value={formValues.nickname} onChange={(event) => updateField("nickname", event.target.value)} />
-        </FormField>
-
-        <FormField>
-          <Label htmlFor="account_number">Account Number</Label>
-          <Input id="account_number" value={formValues.account_number} onChange={(event) => updateField("account_number", event.target.value)} />
-          {errors.account_number ? <p className="text-sm text-rose-600">{errors.account_number}</p> : null}
-        </FormField>
-
-        <FormField>
-          <Label htmlFor="ifsc">IFSC</Label>
-          <Input id="ifsc" value={formValues.ifsc} onChange={(event) => updateField("ifsc", event.target.value)} />
-        </FormField>
-
-        <FormField>
-          <Label htmlFor="currency">Currency</Label>
-          <Input id="currency" value={formValues.currency} onChange={(event) => updateField("currency", event.target.value)} maxLength={6} />
+          <Label htmlFor="owner">Owner</Label>
+          <select id="owner" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.owner} onChange={(event) => updateField("owner", event.target.value)}>
+            {OWNER_OPTIONS.map((owner) => (
+              <option key={owner} value={owner}>{owner}</option>
+            ))}
+          </select>
         </FormField>
 
         <FormField>
           <Label htmlFor="status">Status</Label>
-          <select id="status" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.status} onChange={(event) => updateField("status", event.target.value as BankAccountStatus)}>
+          <select id="status" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.status} onChange={(event) => updateField("status", event.target.value as Extract<BankAccountStatus, "active" | "closed">)}>
             <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
             <option value="closed">Closed</option>
           </select>
         </FormField>
@@ -189,31 +157,36 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
           {errors.interest_rate ? <p className="text-sm text-rose-600">{errors.interest_rate}</p> : null}
         </FormField>
 
-        <FormField>
-          <Label htmlFor="owner">Owner</Label>
-          <Input id="owner" value={formValues.owner} onChange={(event) => updateField("owner", event.target.value)} />
-        </FormField>
-
-        <FormField>
-          <Label htmlFor="nominee">Nominee</Label>
-          <Input id="nominee" value={formValues.nominee} onChange={(event) => updateField("nominee", event.target.value)} />
-        </FormField>
-
-        <FormField>
-          <Label htmlFor="joint_holder">Joint Holder</Label>
-          <Input id="joint_holder" value={formValues.joint_holder} onChange={(event) => updateField("joint_holder", event.target.value)} />
-        </FormField>
-
         <FormField className="md:col-span-2">
-          <Label htmlFor="documents_placeholder">Documents Placeholder</Label>
-          <Input id="documents_placeholder" value={formValues.documents_placeholder} onChange={(event) => updateField("documents_placeholder", event.target.value)} placeholder="Statements, KYC, passbook scans" />
+          <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+            <label className="flex items-start gap-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={formValues.include_in_net_worth}
+                onChange={(event) => updateField("include_in_net_worth", event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium text-slate-900">Include in Net Worth</span>
+                <span className="block text-slate-600">Use this account in overall net worth calculations.</span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={formValues.include_in_cash_position}
+                onChange={(event) => updateField("include_in_cash_position", event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium text-slate-900">Include in Cash Position</span>
+                <span className="block text-slate-600">Count this account in total cash reporting.</span>
+              </span>
+            </label>
+          </div>
         </FormField>
       </FormGrid>
-
-      <FormField>
-        <Label htmlFor="notes">Notes</Label>
-        <Textarea id="notes" rows={4} value={formValues.notes} onChange={(event) => updateField("notes", event.target.value)} />
-      </FormField>
 
       <FormActions>
         <Button type="button" variant="outline" onClick={onCancel}>

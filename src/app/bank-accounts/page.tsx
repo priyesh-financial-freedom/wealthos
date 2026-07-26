@@ -29,7 +29,6 @@ import {
   updateBankAccount,
   updateBankAccountMonthlySnapshot,
 } from "@/services/bankAccounts";
-import { getBalanceSheetData } from "@/services/balanceSheet";
 import type {
   BankAccount,
   BankAccountInsert,
@@ -37,10 +36,11 @@ import type {
   BankAccountMonthlySnapshotInsert,
 } from "@/types/bankAccount";
 
+const OWNER_OPTIONS = ["Priyesh", "Shobhana", "Joint"];
+
 export default function BankAccountsPage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [snapshots, setSnapshots] = useState<BankAccountMonthlySnapshot[]>([]);
-  const [totalLiabilities, setTotalLiabilities] = useState(0);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -52,10 +52,12 @@ export default function BankAccountsPage() {
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
 
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [editingSnapshot, setEditingSnapshot] = useState<BankAccountMonthlySnapshot | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<BankAccount | null>(null);
+  const [historyAccount, setHistoryAccount] = useState<BankAccount | null>(null);
   const [deleteAccountTarget, setDeleteAccountTarget] = useState<BankAccount | null>(null);
   const [deleteSnapshotTarget, setDeleteSnapshotTarget] = useState<BankAccountMonthlySnapshot | null>(null);
 
@@ -66,15 +68,13 @@ export default function BankAccountsPage() {
   async function refreshData() {
     try {
       setLoading(true);
-      const [accounts, snapshots, balanceSheetData] = await Promise.all([
+      const [accounts, snapshots] = await Promise.all([
         getBankAccounts(),
         getBankAccountMonthlySnapshots(),
-        getBalanceSheetData().catch(() => null),
       ]);
 
       setAccounts(accounts);
       setSnapshots(snapshots);
-      setTotalLiabilities(balanceSheetData?.summary.totalLiabilities ?? 0);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load bank accounts data");
@@ -88,10 +88,9 @@ export default function BankAccountsPage() {
 
     async function loadInitialData() {
       try {
-        const [accounts, snapshots, balanceSheetData] = await Promise.all([
+        const [accounts, snapshots] = await Promise.all([
           getBankAccounts(),
           getBankAccountMonthlySnapshots(),
-          getBalanceSheetData().catch(() => null),
         ]);
 
         if (!isMounted) {
@@ -100,7 +99,6 @@ export default function BankAccountsPage() {
 
         setAccounts(accounts);
         setSnapshots(snapshots);
-        setTotalLiabilities(balanceSheetData?.summary.totalLiabilities ?? 0);
         setError(null);
       } catch (err) {
         if (isMounted) {
@@ -166,24 +164,15 @@ export default function BankAccountsPage() {
     });
   }, [accounts, query, sortDirection, sortKey, statusFilter, typeFilter]);
 
-  const dashboardModel = useMemo(
-    () => buildBankAccountsDashboardModel(filteredAccounts, snapshots, totalLiabilities),
-    [filteredAccounts, snapshots, totalLiabilities],
-  );
+  const dashboardModel = useMemo(() => buildBankAccountsDashboardModel(accounts, snapshots), [accounts, snapshots]);
 
-  const ownerOptions = useMemo(() => {
-    const owners = new Set<string>();
-
-    for (const account of accounts) {
-      if (account.owner && account.owner.trim()) {
-        owners.add(account.owner.trim());
-      }
-    }
-
-    return owners.size > 0 ? Array.from(owners).sort((left, right) => left.localeCompare(right)) : ["Self"];
-  }, [accounts]);
+  const ownerOptions = OWNER_OPTIONS;
 
   const paginatedAccounts = useMemo(() => filteredAccounts.slice((page - 1) * pageSize, page * pageSize), [filteredAccounts, page, pageSize]);
+  const historySnapshots = useMemo(
+    () => (historyAccount ? snapshots.filter((snapshot) => snapshot.bank_account_id === historyAccount.id) : []),
+    [historyAccount, snapshots],
+  );
 
   async function handleCreateAccount(values: BankAccountInsert) {
     setSubmitting(true);
@@ -320,7 +309,7 @@ export default function BankAccountsPage() {
     try {
       await createBankAccountMonthlySnapshot(values);
       setSnapshotDialogOpen(false);
-      setNotice("Monthly update created successfully.");
+      setNotice("Monthly history saved successfully.");
       await refreshData();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
@@ -343,7 +332,7 @@ export default function BankAccountsPage() {
       await updateBankAccountMonthlySnapshot({ id: editingSnapshot.id, ...values });
       setSnapshotDialogOpen(false);
       setEditingSnapshot(null);
-      setNotice("Monthly update saved successfully.");
+      setNotice("Monthly history saved successfully.");
       await refreshData();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
@@ -361,7 +350,7 @@ export default function BankAccountsPage() {
     try {
       await deleteBankAccountMonthlySnapshot(snapshot.id);
       setDeleteSnapshotTarget(null);
-      setNotice("Monthly update deleted successfully.");
+      setNotice("Monthly history deleted successfully.");
       await refreshData();
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
@@ -392,20 +381,21 @@ export default function BankAccountsPage() {
   return (
     <AppLayout>
       <PageContainer>
-        <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Bank Accounts" }]} />
+        <PageBreadcrumb items={[{ label: "Cash & Banking", href: "/bank-accounts" }, { label: "Bank Accounts" }]} />
 
         <PageToolbar>
-          <PageHeader title="Bank Accounts" description="Premium treasury workspace for liquidity, cash flow, and monthly banking intelligence." />
+          <PageHeader title="Bank Accounts" description="Track bank balances using month-end positions, not transaction ledgers." />
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={() => {
                 setEditingSnapshot(null);
+                setHistoryAccount(null);
                 setSnapshotDialogOpen(true);
               }}
               disabled={submitting || accounts.length === 0}
             >
-              Add Monthly Update
+              Add Monthly History
             </Button>
             <Button
               onClick={() => {
@@ -462,6 +452,10 @@ export default function BankAccountsPage() {
             setPage(1);
           }}
           onView={(account) => setSelectedAccount(account)}
+          onOpenHistory={(account) => {
+            setHistoryAccount(account);
+            setHistoryDialogOpen(true);
+          }}
           onEdit={(account) => {
             setEditingAccount(account);
             setAccountDialogOpen(true);
@@ -476,18 +470,19 @@ export default function BankAccountsPage() {
         <ContentContainer>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Monthly Banking Updates</h3>
-              <p className="text-sm text-slate-600">Track opening, inflow, outflow, and closing balances every month</p>
+              <h3 className="text-base font-semibold text-slate-900">Monthly Balance History</h3>
+              <p className="text-sm text-slate-600">One month-end closing balance record per account and financial month</p>
             </div>
             <Button
               variant="outline"
               onClick={() => {
                 setEditingSnapshot(null);
+                setHistoryAccount(null);
                 setSnapshotDialogOpen(true);
               }}
               disabled={submitting || accounts.length === 0}
             >
-              Add Monthly Update
+              Add Monthly History
             </Button>
           </div>
 
@@ -554,17 +549,57 @@ export default function BankAccountsPage() {
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{editingSnapshot ? "Edit monthly update" : "Add monthly update"}</DialogTitle>
+            <DialogTitle>{editingSnapshot ? "Edit monthly history" : "Add monthly history"}</DialogTitle>
           </DialogHeader>
           <BankAccountMonthlySnapshotForm
             accounts={accounts}
             initialData={editingSnapshot}
+            preselectedAccountId={historyAccount?.id ?? null}
             onSubmit={editingSnapshot ? handleUpdateSnapshot : handleCreateSnapshot}
             onCancel={() => {
               setSnapshotDialogOpen(false);
               setEditingSnapshot(null);
             }}
             submitting={submitting}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={historyDialogOpen}
+        onOpenChange={(open) => {
+          setHistoryDialogOpen(open);
+          if (!open) {
+            setHistoryAccount(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{historyAccount ? `Monthly History · ${historyAccount.bank} · ${historyAccount.nickname || historyAccount.account_name}` : "Monthly History"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditingSnapshot(null);
+                setSnapshotDialogOpen(true);
+              }}
+              disabled={submitting || !historyAccount}
+            >
+              Add Monthly History
+            </Button>
+          </div>
+
+          <BankAccountMonthlySnapshotsTable
+            snapshots={historySnapshots}
+            accounts={accounts}
+            onEdit={(snapshot) => {
+              setEditingSnapshot(snapshot);
+              setSnapshotDialogOpen(true);
+            }}
+            onDelete={(snapshot) => setDeleteSnapshotTarget(snapshot)}
           />
         </DialogContent>
       </Dialog>
@@ -587,9 +622,9 @@ export default function BankAccountsPage() {
       <Dialog open={Boolean(deleteSnapshotTarget)} onOpenChange={(open) => !open && setDeleteSnapshotTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete monthly update</DialogTitle>
+            <DialogTitle>Delete monthly history</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-600">Are you sure you want to delete this monthly update?</p>
+          <p className="text-sm text-slate-600">Are you sure you want to delete this monthly history record?</p>
           <div className="mt-4 flex justify-end gap-3">
             <Button variant="outline" onClick={() => setDeleteSnapshotTarget(null)} disabled={submitting}>Cancel</Button>
             <Button variant="outline" onClick={() => deleteSnapshotTarget && handleDeleteSnapshot(deleteSnapshotTarget)} disabled={submitting}>

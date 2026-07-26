@@ -360,6 +360,7 @@ export default function RealEstatePage() {
           <DataGrid
             title="Property inventory"
             description="Track location, ownership, and current market value"
+            tableViewportClassName="max-h-[32rem]"
             columns={[
               { key: "property_name", header: "Property Name", widthClassName: "min-w-52", className: "font-medium text-slate-900", cell: (property) => property.property_name },
               { key: "city", header: "City", widthClassName: "min-w-32", cell: (property) => property.city },

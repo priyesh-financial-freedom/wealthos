@@ -1,4 +1,4 @@
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Clock3, Eye, Pencil, Trash2 } from "lucide-react";
 
 import { BankAccountTypeBadge } from "@/components/bankAccounts/BankAccountTypeBadge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ interface BankAccountTableProps {
   onView: (account: BankAccount) => void;
   onEdit: (account: BankAccount) => void;
   onDelete: (account: BankAccount) => void;
+  onOpenHistory: (account: BankAccount) => void;
   onBulkDelete: (accounts: BankAccount[]) => Promise<void> | void;
   onBulkChangeStatus: (accounts: BankAccount[], status: BankAccountStatus) => Promise<void> | void;
   onBulkChangeOwner: (accounts: BankAccount[], owner: string) => Promise<void> | void;
@@ -47,6 +48,7 @@ export function BankAccountTable({
   onPageChange,
   onPageSizeChange,
   onView,
+  onOpenHistory,
   onEdit,
   onDelete,
   onBulkDelete,
@@ -57,23 +59,36 @@ export function BankAccountTable({
   return (
     <DataGrid
       title="Bank accounts inventory"
-      description="Manage balances, ownership, and account profile details"
+      description="Track monthly balances, ownership, and cash inclusion settings"
       columns={[
-        { key: "bank", header: "Bank", sortable: true, widthClassName: "min-w-40", cell: (account) => account.bank },
-        { key: "account_name", header: "Account Name", sortable: true, widthClassName: "min-w-48", className: "font-medium text-slate-900", cell: (account) => account.account_name },
+        { key: "bank", header: "Bank Name", sortable: true, widthClassName: "min-w-40", cell: (account) => account.bank },
+        {
+          key: "account_name",
+          header: "Account Nickname",
+          sortable: true,
+          widthClassName: "min-w-48",
+          className: "font-medium text-slate-900",
+          cell: (account) => account.nickname || account.account_name,
+        },
         { key: "type", header: "Type", widthClassName: "min-w-32", cell: (account) => <BankAccountTypeBadge type={account.account_type} /> },
-        { key: "masked_number", header: "Masked Number", widthClassName: "min-w-36", cell: (account) => account.masked_account_number },
+        { key: "opening_balance", header: "Opening Balance", widthClassName: "min-w-36 text-slate-900", cell: (account) => formatCurrency(account.opening_balance, { maximumFractionDigits: 0 }) },
         { key: "current_balance", header: "Current Balance", sortable: true, widthClassName: "min-w-40 text-slate-900", cell: (account) => formatCurrency(account.current_balance, { maximumFractionDigits: 0 }) },
         { key: "owner", header: "Owner", widthClassName: "min-w-36", cell: (account) => account.owner || "—" },
-        { key: "status", header: "Status", widthClassName: "min-w-28 capitalize", cell: (account) => account.status },
+        { key: "include_in_net_worth", header: "Net Worth", widthClassName: "min-w-28", cell: (account) => (account.include_in_net_worth ? "Included" : "Excluded") },
+        { key: "include_in_cash_position", header: "Cash Position", widthClassName: "min-w-28", cell: (account) => (account.include_in_cash_position ? "Included" : "Excluded") },
+        { key: "status", header: "Status", widthClassName: "min-w-28 capitalize", cell: (account) => (account.status === "active" ? "Active" : "Closed") },
         {
           key: "actions",
           header: "Actions",
-          widthClassName: "min-w-32",
+          widthClassName: "min-w-56",
           className: "text-right",
           headerClassName: "text-right",
           cell: (account) => (
             <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+              <Button type="button" variant="outline" size="sm" onClick={() => onOpenHistory(account)}>
+                <Clock3 className="h-4 w-4" />
+                Monthly History
+              </Button>
               <Button type="button" variant="ghost" size="icon" onClick={() => onView(account)}>
                 <Eye className="h-4 w-4" />
               </Button>
@@ -104,7 +119,6 @@ export function BankAccountTable({
           <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
             <option value="all">All statuses</option>
             <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
             <option value="closed">Closed</option>
           </select>
         </>
@@ -118,7 +132,6 @@ export function BankAccountTable({
         onDeleteSelected: onBulkDelete,
         statusOptions: [
           { label: "Active", value: "active" },
-          { label: "Inactive", value: "inactive" },
           { label: "Closed", value: "closed" },
         ],
         onChangeStatusSelected: (selectedAccounts, status) => onBulkChangeStatus(selectedAccounts, status as BankAccountStatus),

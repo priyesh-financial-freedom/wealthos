@@ -11,6 +11,7 @@ import type { BankAccount, BankAccountMonthlySnapshot, BankAccountMonthlySnapsho
 interface BankAccountMonthlySnapshotFormProps {
   accounts: BankAccount[];
   initialData?: BankAccountMonthlySnapshot | null;
+  preselectedAccountId?: string | null;
   onSubmit: (values: BankAccountMonthlySnapshotInsert) => Promise<void> | void;
   onCancel: () => void;
   submitting?: boolean;
@@ -18,52 +19,64 @@ interface BankAccountMonthlySnapshotFormProps {
 
 type SnapshotFormState = {
   bank_account_id: string;
-  snapshot_month: number | string;
-  snapshot_year: number | string;
-  opening_balance: number | string;
-  deposits: number | string;
-  withdrawals: number | string;
+  financial_month: string;
   closing_balance: number | string;
-  interest_rate: number | string;
   notes: string;
 };
 
 const now = new Date();
 
-const defaultState = (accounts: BankAccount[], initialData?: BankAccountMonthlySnapshot | null): SnapshotFormState => ({
-  bank_account_id: initialData?.bank_account_id ?? accounts[0]?.id ?? "",
-  snapshot_month: initialData?.snapshot_month ?? now.getMonth() + 1,
-  snapshot_year: initialData?.snapshot_year ?? now.getFullYear(),
-  opening_balance: initialData?.opening_balance ?? 0,
-  deposits: initialData?.deposits ?? 0,
-  withdrawals: initialData?.withdrawals ?? 0,
+function toFinancialMonthValue(month: number, year: number) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function parseFinancialMonth(value: string) {
+  const [yearRaw, monthRaw] = value.split("-");
+  return {
+    snapshot_year: Number(yearRaw),
+    snapshot_month: Number(monthRaw),
+  };
+}
+
+function openingBalanceForAccount(account: BankAccount | null, initialData?: BankAccountMonthlySnapshot | null) {
+  if (initialData) {
+    return initialData.opening_balance ?? 0;
+  }
+
+  return account?.current_balance ?? account?.opening_balance ?? 0;
+}
+
+const defaultState = (accounts: BankAccount[], initialData?: BankAccountMonthlySnapshot | null, preselectedAccountId?: string | null): SnapshotFormState => ({
+  bank_account_id: initialData?.bank_account_id ?? preselectedAccountId ?? accounts[0]?.id ?? "",
+  financial_month: initialData ? toFinancialMonthValue(initialData.snapshot_month, initialData.snapshot_year) : toFinancialMonthValue(now.getMonth() + 1, now.getFullYear()),
   closing_balance: initialData?.closing_balance ?? 0,
-  interest_rate: initialData?.interest_rate ?? 0,
   notes: initialData?.notes ?? "",
 });
 
-export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit, onCancel, submitting }: BankAccountMonthlySnapshotFormProps) {
-  const [formValues, setFormValues] = useState<SnapshotFormState>(() => defaultState(accounts, initialData));
+export function BankAccountMonthlySnapshotForm({ accounts, initialData, preselectedAccountId, onSubmit, onCancel, submitting }: BankAccountMonthlySnapshotFormProps) {
+  const [formValues, setFormValues] = useState<SnapshotFormState>(() => defaultState(accounts, initialData, preselectedAccountId));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   function updateField<K extends keyof SnapshotFormState>(field: K, value: SnapshotFormState[K]) {
     setFormValues((current) => ({ ...current, [field]: value }));
   }
 
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === formValues.bank_account_id) ?? null,
+    [accounts, formValues.bank_account_id],
+  );
+
   const computedPreview = useMemo(() => {
-    const opening = Number(formValues.opening_balance ?? 0);
-    const deposits = Number(formValues.deposits ?? 0);
-    const withdrawals = Number(formValues.withdrawals ?? 0);
+    const opening = openingBalanceForAccount(selectedAccount, initialData);
     const closing = Number(formValues.closing_balance ?? 0);
-    const rate = Number(formValues.interest_rate ?? 0);
+    const rate = Number(selectedAccount?.interest_rate ?? initialData?.interest_rate ?? 0);
 
     const monthlyChange = closing - opening;
-    const cashFlow = deposits - withdrawals;
     const averageBalance = (opening + closing) / 2;
     const interestEarned = averageBalance * (rate / 1200);
 
-    return { monthlyChange, cashFlow, averageBalance, interestEarned };
-  }, [formValues]);
+    return { opening, monthlyChange, averageBalance, interestEarned };
+  }, [formValues.closing_balance, initialData, selectedAccount]);
 
   function validate() {
     const nextErrors: Record<string, string> = {};
@@ -71,18 +84,12 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
     if (!formValues.bank_account_id) {
       nextErrors.bank_account_id = "Account is required";
     }
-    if (Number(formValues.snapshot_month) < 1 || Number(formValues.snapshot_month) > 12) {
-      nextErrors.snapshot_month = "Month must be between 1 and 12";
-    }
-    if (Number(formValues.snapshot_year) < 2000) {
-      nextErrors.snapshot_year = "Year must be 2000 or later";
+    if (!formValues.financial_month) {
+      nextErrors.financial_month = "Financial month is required";
     }
 
-    const numericFields: Array<keyof SnapshotFormState> = ["opening_balance", "deposits", "withdrawals", "closing_balance", "interest_rate"];
-    for (const field of numericFields) {
-      if (Number(formValues[field]) < 0) {
-        nextErrors[field] = "Value must be positive";
-      }
+    if (Number(formValues.closing_balance) < 0) {
+      nextErrors.closing_balance = "Closing balance must be positive";
     }
 
     return nextErrors;
@@ -96,15 +103,18 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
       return;
     }
 
+    const { snapshot_month, snapshot_year } = parseFinancialMonth(formValues.financial_month);
+    const openingBalance = openingBalanceForAccount(selectedAccount, initialData);
+
     await onSubmit({
       bank_account_id: formValues.bank_account_id,
-      snapshot_month: Number(formValues.snapshot_month),
-      snapshot_year: Number(formValues.snapshot_year),
-      opening_balance: Number(formValues.opening_balance),
-      deposits: Number(formValues.deposits),
-      withdrawals: Number(formValues.withdrawals),
+      snapshot_month,
+      snapshot_year,
+      opening_balance: Number(openingBalance),
+      deposits: 0,
+      withdrawals: 0,
       closing_balance: Number(formValues.closing_balance),
-      interest_rate: Number(formValues.interest_rate),
+      interest_rate: Number(selectedAccount?.interest_rate ?? initialData?.interest_rate ?? 0),
       notes: formValues.notes.trim() || null,
     });
   }
@@ -114,10 +124,10 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="bank_account_id">Bank Account</Label>
-          <select id="bank_account_id" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.bank_account_id} onChange={(event) => updateField("bank_account_id", event.target.value)}>
+          <select id="bank_account_id" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.bank_account_id} onChange={(event) => updateField("bank_account_id", event.target.value)} disabled={Boolean(preselectedAccountId && !initialData)}>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
-                {account.bank} • {account.account_name} ({account.masked_account_number})
+                {account.bank} • {account.nickname ?? account.account_name}
               </option>
             ))}
           </select>
@@ -125,33 +135,9 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="snapshot_month">Month</Label>
-          <Input id="snapshot_month" type="number" min="1" max="12" value={formValues.snapshot_month} onChange={(event) => updateField("snapshot_month", event.target.value)} />
-          {errors.snapshot_month ? <p className="text-sm text-rose-600">{errors.snapshot_month}</p> : null}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="snapshot_year">Year</Label>
-          <Input id="snapshot_year" type="number" min="2000" value={formValues.snapshot_year} onChange={(event) => updateField("snapshot_year", event.target.value)} />
-          {errors.snapshot_year ? <p className="text-sm text-rose-600">{errors.snapshot_year}</p> : null}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="opening_balance">Opening Balance</Label>
-          <Input id="opening_balance" type="number" step="0.01" value={formValues.opening_balance} onChange={(event) => updateField("opening_balance", event.target.value)} />
-          {errors.opening_balance ? <p className="text-sm text-rose-600">{errors.opening_balance}</p> : null}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="deposits">Deposits</Label>
-          <Input id="deposits" type="number" step="0.01" value={formValues.deposits} onChange={(event) => updateField("deposits", event.target.value)} />
-          {errors.deposits ? <p className="text-sm text-rose-600">{errors.deposits}</p> : null}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="withdrawals">Withdrawals</Label>
-          <Input id="withdrawals" type="number" step="0.01" value={formValues.withdrawals} onChange={(event) => updateField("withdrawals", event.target.value)} />
-          {errors.withdrawals ? <p className="text-sm text-rose-600">{errors.withdrawals}</p> : null}
+          <Label htmlFor="financial_month">Financial Month</Label>
+          <Input id="financial_month" type="month" value={formValues.financial_month} onChange={(event) => updateField("financial_month", event.target.value)} />
+          {errors.financial_month ? <p className="text-sm text-rose-600">{errors.financial_month}</p> : null}
         </div>
 
         <div className="space-y-2">
@@ -159,21 +145,15 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
           <Input id="closing_balance" type="number" step="0.01" value={formValues.closing_balance} onChange={(event) => updateField("closing_balance", event.target.value)} />
           {errors.closing_balance ? <p className="text-sm text-rose-600">{errors.closing_balance}</p> : null}
         </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="interest_rate">Interest Rate (%)</Label>
-          <Input id="interest_rate" type="number" step="0.001" value={formValues.interest_rate} onChange={(event) => updateField("interest_rate", event.target.value)} />
-          {errors.interest_rate ? <p className="text-sm text-rose-600">{errors.interest_rate}</p> : null}
-        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-medium text-slate-700">Auto-calculated preview</p>
+        <p className="text-sm font-medium text-slate-700">Month-end preview</p>
         <div className="mt-2 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
+          <p>Opening Balance: <span className="font-semibold text-slate-900">₹{computedPreview.opening.toLocaleString("en-IN")}</span></p>
           <p>Monthly Change: <span className="font-semibold text-slate-900">₹{computedPreview.monthlyChange.toLocaleString("en-IN")}</span></p>
-          <p>Cash Flow: <span className="font-semibold text-slate-900">₹{computedPreview.cashFlow.toLocaleString("en-IN")}</span></p>
           <p>Average Balance: <span className="font-semibold text-slate-900">₹{computedPreview.averageBalance.toLocaleString("en-IN")}</span></p>
-          <p>Interest Earned: <span className="font-semibold text-slate-900">₹{computedPreview.interestEarned.toLocaleString("en-IN")}</span></p>
+          <p>Estimated Interest: <span className="font-semibold text-slate-900">₹{computedPreview.interestEarned.toLocaleString("en-IN")}</span></p>
         </div>
       </div>
 
@@ -187,7 +167,7 @@ export function BankAccountMonthlySnapshotForm({ accounts, initialData, onSubmit
           Cancel
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? "Saving..." : initialData ? "Save changes" : "Add monthly update"}
+          {submitting ? "Saving..." : initialData ? "Save changes" : "Add monthly history"}
         </Button>
       </div>
     </form>
