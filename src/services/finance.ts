@@ -1,6 +1,8 @@
 import type { Asset } from "@/types/asset";
 import type { Liability } from "@/types/liability";
 
+import { formulaRegistry } from "@/services/formulas";
+
 export interface AllocationItem {
   name: string;
   value: number;
@@ -56,6 +58,16 @@ interface LiquidHoldingLike {
 
 const liquidAssetTypes = new Set(["cash", "checking", "savings"]);
 const liquidInvestmentCategories = new Set(["Cash Equivalents"]);
+
+export const financeFormulaReferences = {
+  assets: formulaRegistry.reference("AS-001"),
+  liabilities: formulaRegistry.reference("LI-001"),
+  investments: formulaRegistry.reference("INV-001"),
+  cashHoldings: formulaRegistry.reference("CASH-001"),
+  netWorth: formulaRegistry.reference("NW-001"),
+  debtRatio: formulaRegistry.reference("DR-001"),
+  monthlyEmi: formulaRegistry.reference("EMI-001"),
+};
 
 export function calculateAssets(assets: Asset[]): number {
   return assets.reduce((sum, asset) => sum + Number(asset.current_value ?? 0), 0);
