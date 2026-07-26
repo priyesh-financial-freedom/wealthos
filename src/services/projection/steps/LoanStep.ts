@@ -1,16 +1,19 @@
 import { updateProjectionRecord, type ProjectionContext } from "@/services/projection/ProjectionContext";
 import type { ProjectionStep } from "@/services/projection/steps/ProjectionStep";
 import { calculateLoanMonth } from "@/services/planning/LoanCalculator";
-import { isSupportedLoanType } from "@/services/planning/LoanTypes";
+import { isSupportedLoanType, type LoanType } from "@/services/planning/LoanTypes";
 
 import { annualCompoundedValue, roundCurrency } from "./step-helpers";
+
+type ActiveLoanLiability = ProjectionContext["liabilities"][number] & { liability_type: LoanType };
 
 export class LoanStep implements ProjectionStep {
   readonly id = "loan-step";
 
   execute(context: ProjectionContext): ProjectionContext {
     const activeLiabilities = context.liabilities.filter(
-      (liability) => liability.status !== "closed" && liability.status !== "paid_off" && isSupportedLoanType(liability.liability_type),
+      (liability): liability is ActiveLoanLiability =>
+        liability.status !== "closed" && liability.status !== "paid_off" && isSupportedLoanType(liability.liability_type),
     );
 
     const totalOutstanding = activeLiabilities.reduce((sum, liability) => sum + Number(liability.outstanding_amount ?? 0), 0);
@@ -25,6 +28,7 @@ export class LoanStep implements ProjectionStep {
       return calculateLoanMonth({
         loanId: liability.id,
         loanType: liability.liability_type,
+        startMonth: context.currentMonth,
         monthKey: context.currentMonth,
         openingBalance,
         annualInterestRate: Number(liability.interest_rate ?? context.assumptions.loans.averageInterestRate ?? 0),
