@@ -62,7 +62,7 @@ export default function DashboardPage() {
         <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Executive Dashboard" }]} />
         <PageHeader
           title="Executive Dashboard"
-          description="A true executive command center with health, goals, decisions, and projected cash flow in one place."
+          description="Simple executive view of net worth, investments, loans, goals, and monthly summary."
         />
 
         <ContentContainer className="border-none bg-transparent p-0 shadow-none">

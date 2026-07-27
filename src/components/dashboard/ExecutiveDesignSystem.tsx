@@ -11,6 +11,8 @@ interface ExecutiveKpiCardProps {
   detail: string;
   icon: LucideIcon;
   tone?: "blue" | "emerald" | "purple" | "amber" | "red" | "cyan";
+  className?: string;
+  valueClassName?: string;
 }
 
 const KPI_TONES: Record<NonNullable<ExecutiveKpiCardProps["tone"]>, string> = {
@@ -22,13 +24,13 @@ const KPI_TONES: Record<NonNullable<ExecutiveKpiCardProps["tone"]>, string> = {
   cyan: "from-cyan-600/16 to-cyan-500/6 text-cyan-700",
 };
 
-export function ExecutiveKpiCard({ title, value, detail, icon: Icon, tone = "blue" }: ExecutiveKpiCardProps) {
+export function ExecutiveKpiCard({ title, value, detail, icon: Icon, tone = "blue", className, valueClassName }: ExecutiveKpiCardProps) {
   return (
-    <article className="executive-card rounded-[22px] border border-executive-slate-200 bg-white p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_58px_-34px_rgba(37,99,235,0.45)]">
+    <article className={cn("executive-card h-full rounded-[22px] border border-executive-slate-200 bg-white p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_58px_-34px_rgba(37,99,235,0.45)]", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="executive-label">{title}</p>
-          <p className="mt-3 text-[1.65rem] font-semibold leading-none tracking-[-0.02em] text-executive-slate-900">{value}</p>
+          <p className={cn("mt-3 text-[1.65rem] font-semibold leading-none tracking-[-0.02em] text-executive-slate-900", valueClassName)}>{value}</p>
         </div>
         <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br", KPI_TONES[tone])}>
           <Icon className="h-5 w-5" />

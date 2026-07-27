@@ -9,6 +9,16 @@ export {
 export { FinancialRuleRegistry } from "./rules/registry";
 export { createDefaultFinancialRuleRegistry } from "./rules/defaultRegistry";
 export { MonthlyProjectionDomainState } from "./rules/state";
+export {
+  createDefaultProductRegistry,
+  HomeLoanProduct,
+  MutualFundProduct,
+  NPSProduct,
+  PPFProduct,
+  ProductRegistry,
+  PropertyProduct,
+  SalaryProduct,
+} from "./products";
 export { createProjectionContext, monthKeyForContextIndex } from "./context";
 export { addMonths, compareMonthKeys, parseMonthKey, toMonthKey } from "./calendar";
 export { calculateMonthlyEventImpact } from "./events";
@@ -61,3 +71,19 @@ export type {
   RollingProjectionInput,
   VarianceInput,
 } from "./types";
+export type {
+  FinancialProduct,
+  HomeLoanProductData,
+  LoanPrepaymentDefinition,
+  MutualFundProductData,
+  MutualFundSIPDefinition,
+  NPSContributionDefinition,
+  NPSProductData,
+  PPFContributionDefinition,
+  PPFProductData,
+  ProductValidationIssue,
+  ProductValidationResult,
+  PropertyAssetDefinition,
+  PropertyProductData,
+  SalaryProductData,
+} from "./products";
