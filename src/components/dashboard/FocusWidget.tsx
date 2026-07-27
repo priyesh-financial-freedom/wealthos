@@ -1,6 +1,7 @@
 import { AlertTriangle, CircleCheck } from "lucide-react";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
+import { WidgetHeader, WidgetMetric, WidgetMetricGrid } from "@/components/dashboard/WidgetPrimitives";
 
 interface FocusWidgetProps {
   goalsAtRisk: number;
@@ -29,41 +30,22 @@ export function FocusWidget({ goalsAtRisk, goalsOnTrack, monthlySavings, hasLiab
   }
 
   return (
-    <DashboardCard className="h-full">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Where Should I Focus</p>
-          <h3 className="mt-2 text-xl font-semibold text-slate-900">Priority Areas</h3>
-        </div>
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
-      </div>
+    <DashboardCard>
+      <WidgetHeader eyebrow="Where should I focus" title="Priority areas" icon={AlertTriangle} iconTone="amber" />
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-6 space-y-3">
         {focusItems.map((item) => (
-          <div key={item} className="flex items-start gap-2 rounded-2xl bg-slate-50 px-3 py-3">
+          <div key={item} className="flex items-start gap-2 rounded-2xl bg-slate-50 px-4 py-3.5">
             <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-            <p className="text-sm text-slate-700">{item}</p>
+            <p className="text-sm leading-6 text-slate-700">{item}</p>
           </div>
         ))}
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        <Stat label="Goals On Track" value={String(goalsOnTrack)} />
-        <Stat label="Goals At Risk" value={String(goalsAtRisk)} tone={goalsAtRisk > 0 ? "warning" : "default"} />
-      </div>
+      <WidgetMetricGrid>
+        <WidgetMetric label="Goals On Track" value={String(goalsOnTrack)} />
+        <WidgetMetric label="Goals At Risk" value={String(goalsAtRisk)} tone={goalsAtRisk > 0 ? "warning" : "default"} />
+      </WidgetMetricGrid>
     </DashboardCard>
-  );
-}
-
-function Stat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {
-  const toneClass = tone === "warning" ? "text-amber-800" : "text-slate-900";
-
-  return (
-    <div className="rounded-2xl bg-slate-50 px-3 py-3">
-      <p className="text-xs uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className={`mt-2 text-lg font-semibold ${toneClass}`}>{value}</p>
-    </div>
   );
 }

@@ -37,17 +37,17 @@ export function FinancialHealth({ score, rating, detail }: FinancialHealthProps)
   const Icon = style.icon;
 
   return (
-    <div className="flex items-center gap-4 rounded-2xl bg-slate-50 px-4 py-3">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm shadow-slate-200/70">
-        <Icon className={cn("h-5 w-5", style.iconClass)} />
+    <div className="flex max-w-full items-start gap-3 rounded-2xl bg-white/90 px-3.5 py-3 ring-1 ring-slate-900/5 sm:min-w-[320px]">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm shadow-slate-200/70">
+        <Icon className={cn("h-4.5 w-4.5", style.iconClass)} />
       </div>
-      <div>
-        <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Financial Health Score</p>
-        <div className="mt-1 flex items-center gap-2">
-          <p className="text-2xl font-semibold text-slate-900">{score === null ? "Coming Soon" : score}</p>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Financial Health Score</p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          <p className="text-3xl font-semibold leading-none text-slate-900 tabular-nums">{score === null ? "Coming Soon" : score}</p>
           <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", style.badge)}>{rating}</span>
         </div>
-        {detail ? <p className="mt-1 text-xs text-slate-600">{detail}</p> : null}
+        {detail ? <p className="mt-1 text-xs leading-5 text-slate-600 line-clamp-2">{detail}</p> : null}
       </div>
     </div>
   );

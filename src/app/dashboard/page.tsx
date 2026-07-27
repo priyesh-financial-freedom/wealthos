@@ -57,7 +57,7 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
-      <PageContainer>
+      <PageContainer className="mx-auto w-full max-w-[1220px]">
         <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Executive Dashboard" }]} />
 
         <ContentContainer className="border-none bg-transparent p-0 shadow-none">

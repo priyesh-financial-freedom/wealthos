@@ -11,6 +11,7 @@ import { createPlanningScenarioProductionSimulationEngine } from "@/services/pla
 import { projectionEngine, projectionInputService } from "@/services/projection";
 import { projectionEventsService } from "@/services/projection/events";
 import { getRetirementSummary } from "@/services/retirement";
+import { snapshotReadModel } from "@/services/snapshots";
 import type { SimulationResult } from "@/services/simulation";
 import type { ProjectionScenario } from "@/types/projection";
 
@@ -30,18 +31,30 @@ export interface ExecutiveDashboardData {
     assets: number;
     liabilities: number;
     monthlySavings: number;
+    plannedNetWorth: number | null;
+    netWorthVariance: number | null;
+    topContributors: Array<{
+      label: string;
+      value: number;
+      type: "asset" | "liability";
+    }>;
+    lastMonthlyReview: string | null;
   };
   investments: {
     currentPortfolio: number;
     monthlyInvestment: number;
     projectedValue: number;
     expectedCagr: number;
+    plannedPortfolio: number | null;
+    portfolioVariance: number | null;
   };
   loans: {
     outstanding: number;
     emi: number;
     interestRate: number;
     activeLoans: number;
+    plannedOutstanding: number | null;
+    outstandingVariance: number | null;
   };
   goals: {
     total: number;
@@ -68,6 +81,8 @@ export interface ExecutiveDashboardData {
     available: boolean;
     totalRetirementAssets: number;
     accountsCount: number;
+    plannedTotalRetirementAssets: number | null;
+    retirementVariance: number | null;
   };
   upcoming: {
     available: boolean;
@@ -97,6 +112,15 @@ function monthToLabel(monthKey: string): string {
 function toNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toOptionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function computeLargestShare(allocation: Array<{ value: number }>): number {
@@ -152,6 +176,10 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
   savings: number;
   investments: number;
   netWorthChange: number;
+  plannedNetWorth: number | null;
+  plannedInvestments: number | null;
+  plannedLiabilities: number | null;
+  plannedRetirement: number | null;
 } | null> {
   const scenario: ProjectionScenario = {
     id: DEFAULT_SCENARIO_KEY,
@@ -191,12 +219,46 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
     savings,
     investments: toNumber(firstRecord.investmentContributions),
     netWorthChange: toNumber(firstSnapshot?.closingBalance) - toNumber(firstSnapshot?.openingBalance),
+    plannedNetWorth: firstSnapshot ? toNumber(firstSnapshot.closingBalance) : null,
+    plannedInvestments: firstSnapshot ? toNumber(firstSnapshot.closingBalances?.investments) : null,
+    plannedLiabilities: firstSnapshot ? toNumber(firstSnapshot.closingBalances?.liabilities) : null,
+    plannedRetirement: firstSnapshot ? toNumber(firstSnapshot.closingBalances?.retirement) : null,
   };
+}
+
+function buildTopContributors(data: Awaited<ReturnType<typeof getBalanceSheetData>>): Array<{
+  label: string;
+  value: number;
+  type: "asset" | "liability";
+}> {
+  const assets = (data.summary.assetSections ?? [])
+    .map((item) => ({ label: item.label, value: toNumber(item.value), type: "asset" as const }))
+    .filter((item) => item.value > 0)
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 2);
+
+  const liabilities = (data.summary.liabilitySections ?? [])
+    .map((item) => ({ label: item.label, value: toNumber(item.value), type: "liability" as const }))
+    .filter((item) => item.value > 0)
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 1);
+
+  return [...assets, ...liabilities];
+}
+
+async function loadLastMonthlyReviewLabel(): Promise<string | null> {
+  const monthEndHistory = await snapshotReadModel.loadHistory({ source: "month-end-close" }).catch(() => []);
+  if (monthEndHistory.length > 0) {
+    return monthEndHistory[0].monthLabel;
+  }
+
+  const legacyHistory = await snapshotReadModel.loadHistory({ source: "legacy-monthly-snapshot" }).catch(() => []);
+  return legacyHistory[0]?.monthLabel ?? null;
 }
 
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events] = await Promise.all([
+    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview] = await Promise.all([
       getBalanceSheetData(),
       goalService.listGoals({ includeProgress: true }).catch(() => []),
       assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
@@ -205,6 +267,7 @@ export class ExecutiveDashboardService {
       compensationService.getSummary(DEFAULT_SCENARIO_KEY).catch(() => null),
       getRetirementSummary().catch(() => null),
       projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => null),
+      loadLastMonthlyReviewLabel().catch(() => null),
     ]);
 
     const projectionMonthly = assumptions
@@ -251,6 +314,21 @@ export class ExecutiveDashboardService {
       [],
     );
     const projectedInvestmentValue = simulation?.monthlySnapshots.at(-1)?.closingBalances.investments ?? investmentSummary.totalInvestmentValue;
+    const plannedNetWorth = projectionMonthly?.plannedNetWorth ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.netWorth);
+    const plannedInvestments = projectionMonthly?.plannedInvestments ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.investments);
+    const plannedLiabilities = projectionMonthly?.plannedLiabilities ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.liabilities);
+    const plannedRetirement = projectionMonthly?.plannedRetirement ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.retirement);
+    const plannedNonRetirementInvestments = plannedInvestments !== null
+      ? Math.max(0, plannedInvestments - (plannedRetirement ?? 0))
+      : null;
+    const currentNonRetirementInvestments = Number(balanceSheetData.summary.categoryTotals.investments ?? 0)
+      + Number(balanceSheetData.summary.categoryTotals.fixedDeposits ?? 0)
+      + Number(balanceSheetData.summary.categoryTotals.goldAndSilver ?? 0);
+    const hasPlannedNetWorth = plannedNetWorth !== null;
+    const hasPlannedInvestments = plannedNonRetirementInvestments !== null;
+    const hasPlannedLiabilities = plannedLiabilities !== null;
+    const hasPlannedRetirement = plannedRetirement !== null;
+    const topContributors = buildTopContributors(balanceSheetData);
     const largestAssetShare = computeLargestShare(balanceSheetData.summary.assetAllocation ?? []);
     const largestInvestmentShare = computeLargestShare(investmentSummary.assetAllocation ?? []);
     const monthlyNetWorthChange = projectionMonthly?.netWorthChange ?? Number(simulation?.summary.netWorthChange ?? 0);
@@ -260,8 +338,13 @@ export class ExecutiveDashboardService {
       largestAssetShare,
       largestInvestmentShare,
     });
+    const summaryForInsights = {
+      ...balanceSheetData.summary,
+      assetAllocation: balanceSheetData.summary.assetAllocation ?? [],
+      liabilityAllocation: balanceSheetData.summary.liabilityAllocation ?? [],
+    };
     const dailyInsight = buildExecutiveInsights(
-      balanceSheetData.summary,
+      summaryForInsights,
       balanceSheetData.assets,
       balanceSheetData.liabilities,
       balanceSheetData.investments,
@@ -289,18 +372,26 @@ export class ExecutiveDashboardService {
         assets: assetSummary.totalAssets,
         liabilities: Number(balanceSheetData.summary.totalLiabilities ?? 0),
         monthlySavings: monthlyCashFlow.monthlySavings,
+        plannedNetWorth: hasPlannedNetWorth ? plannedNetWorth : null,
+        netWorthVariance: hasPlannedNetWorth ? Number(balanceSheetData.summary.netWorth ?? 0) - plannedNetWorth : null,
+        topContributors,
+        lastMonthlyReview,
       },
       investments: {
-        currentPortfolio: Number(investmentSummary.totalInvestmentValue ?? 0),
+        currentPortfolio: currentNonRetirementInvestments,
         monthlyInvestment: projectionMonthly?.investments ?? monthlyInvestmentFallback,
         projectedValue: Number(projectedInvestmentValue ?? 0),
         expectedCagr: Number(investmentSummary.cagr ?? assumptions?.investments.expectedReturnRate ?? 0),
+        plannedPortfolio: hasPlannedInvestments ? plannedNonRetirementInvestments : null,
+        portfolioVariance: hasPlannedInvestments ? currentNonRetirementInvestments - plannedNonRetirementInvestments : null,
       },
       loans: {
         outstanding: loanSummary.totalOutstanding,
         emi: loanSummary.totalEmi,
         interestRate: loanSummary.averageInterestRate,
         activeLoans: loanSummary.activeLoans,
+        plannedOutstanding: hasPlannedLiabilities ? plannedLiabilities : null,
+        outstandingVariance: hasPlannedLiabilities ? loanSummary.totalOutstanding - plannedLiabilities : null,
       },
       goals: {
         total: goals.length,
@@ -327,6 +418,8 @@ export class ExecutiveDashboardService {
         available: retirementSummary !== null,
         totalRetirementAssets: toNumber(retirementSummary?.totalRetirementAssets),
         accountsCount: toNumber(retirementSummary?.count),
+        plannedTotalRetirementAssets: hasPlannedRetirement ? plannedRetirement : null,
+        retirementVariance: hasPlannedRetirement ? toNumber(retirementSummary?.totalRetirementAssets) - plannedRetirement : null,
       },
       upcoming: {
         available: events !== null,
