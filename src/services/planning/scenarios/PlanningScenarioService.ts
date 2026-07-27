@@ -1,4 +1,5 @@
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
+import { compensationService } from "@/services/compensation";
 import { FinancialSimulationEngine } from "@/services/simulation";
 import { projectionEventsService } from "@/services/projection/events";
 import type { AssumptionsBundle } from "@/types/assumptions";
@@ -167,7 +168,7 @@ export class PlanningScenarioService {
       },
       assumptionProvider: {
         loadAssumptions: async () => {
-          return assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY);
+          return compensationService.getCompensatedAssumptionsBundle(DEFAULT_SCENARIO_KEY);
         },
       },
       eventProvider: {
@@ -366,7 +367,7 @@ export class PlanningScenarioService {
 
   async runSimulation(scenarioId: string): Promise<SimulationResult> {
     const scenario = await this.getScenarioOrThrow(scenarioId);
-    const bundle = await assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY);
+    const bundle = await compensationService.getCompensatedAssumptionsBundle(DEFAULT_SCENARIO_KEY);
     const overrides = await this.loadOverrides(scenarioId);
     const request = buildSimulationRequest(scenarioId, bundle, overrides);
     const outcome = await this.simulationEngine.run(request);
@@ -433,7 +434,7 @@ export function createPlanningScenarioSimulationEngine(params: {
   };
 
   const assumptionProvider: AssumptionProvider = params.assumptionProvider ?? {
-    loadAssumptions: async () => assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY),
+    loadAssumptions: async () => compensationService.getCompensatedAssumptionsBundle(DEFAULT_SCENARIO_KEY),
   };
 
   const eventProvider: EventProvider = params.eventProvider ?? {

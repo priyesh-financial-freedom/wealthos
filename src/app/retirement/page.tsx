@@ -23,6 +23,7 @@ import {
   getRetirementAccounts,
   updateRetirementAccount,
 } from "@/services/retirement";
+import { compensationService, type CompensationSummary } from "@/services/compensation";
 import type {
   RetirementAccount,
   RetirementAccountInsert,
@@ -45,16 +46,21 @@ export default function RetirementPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [accountModal, setAccountModal] = useState<AccountModalState>(null);
   const [detailAccount, setDetailAccount] = useState<RetirementAccount | null>(null);
+  const [compensationSummary, setCompensationSummary] = useState<CompensationSummary | null>(null);
 
   async function loadData() {
     setError(null);
 
     try {
-      const retirementAccounts = await getRetirementAccounts();
+      const [retirementAccounts, compensation] = await Promise.all([
+        getRetirementAccounts(),
+        compensationService.getSummary().catch(() => null),
+      ]);
       const retirementModel = buildRetirementDashboardModel(retirementAccounts);
 
       setAccounts(retirementAccounts);
       setDashboardModel(retirementModel);
+      setCompensationSummary(compensation);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load retirement data");
     }
@@ -249,6 +255,29 @@ export default function RetirementPage() {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-sm text-slate-500">Visible retirement accounts</p>
                   <p className="mt-2 text-2xl font-semibold text-slate-900">{filteredAccounts.length}</p>
+                </div>
+              </div>
+            </DashboardCard>
+
+            <DashboardCard>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Employee PF + VPF / Month</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    ₹{(compensationSummary ? compensationSummary.employeePf + compensationSummary.vpf : 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Employer EPF / Month</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    ₹{(compensationSummary?.employerEpf ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.08em] text-slate-500">NPS / Month</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    ₹{(compensationSummary?.nps ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                  </p>
                 </div>
               </div>
             </DashboardCard>

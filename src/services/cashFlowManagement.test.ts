@@ -9,6 +9,7 @@ const runtime = vi.hoisted(() => ({
   deleteEvent: vi.fn(),
   listLoans: vi.fn(),
   getInvestments: vi.fn(),
+  compensationSummary: vi.fn(),
 }));
 
 vi.mock("@/services/projection", () => ({
@@ -29,6 +30,12 @@ vi.mock("@/services/loanManagement", () => ({
 
 vi.mock("@/services/investments", () => ({
   getInvestments: runtime.getInvestments,
+}));
+
+vi.mock("@/services/compensation", () => ({
+  compensationService: {
+    getSummary: runtime.compensationSummary,
+  },
 }));
 
 import {
@@ -98,7 +105,7 @@ describe("cash flow validation", () => {
     });
 
     expect(issues.map((issue) => issue.field)).toEqual(
-      expect.arrayContaining(["name", "monthlyAmount", "annualIncrement"]),
+      expect.arrayContaining(["name", "type", "monthlyAmount", "annualIncrement"]),
     );
   });
 
@@ -230,6 +237,7 @@ describe("cash flow projection input", () => {
 describe("CashFlowManagementService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    runtime.compensationSummary.mockResolvedValue(null);
   });
 
   it("lists income and manual expenses from cash-flow events", async () => {
@@ -246,21 +254,28 @@ describe("CashFlowManagementService", () => {
     expect(expenses[0].name).toBe("Living Expenses");
   });
 
-  it("adds, edits and deletes income", async () => {
-    runtime.createEvent.mockResolvedValue(makeIncomeEvent());
-    runtime.listEvents.mockResolvedValue([makeIncomeEvent()]);
-    runtime.updateEvent.mockResolvedValue(makeIncomeEvent({ amount: 120000 }));
+  it("adds, edits and deletes non-employment income", async () => {
+    runtime.createEvent.mockResolvedValue(makeIncomeEvent({
+      id: "income-2",
+      metadata: { entryKind: "income", incomeType: "Other", annualIncrement: 8, notes: "Other" },
+    }));
+    runtime.listEvents.mockResolvedValue([makeIncomeEvent({ id: "income-2", metadata: { entryKind: "income", incomeType: "Other", annualIncrement: 8, notes: "Other" } })]);
+    runtime.updateEvent.mockResolvedValue(makeIncomeEvent({
+      id: "income-2",
+      amount: 120000,
+      metadata: { entryKind: "income", incomeType: "Other", annualIncrement: 8, notes: "Other" },
+    }));
     runtime.deleteEvent.mockResolvedValue(undefined);
 
     const service = new CashFlowManagementService();
     const created = await service.addIncome({
-      name: "Primary Salary",
-      type: "Salary",
+      name: "Consulting",
+      type: "Other",
       monthlyAmount: 100000,
       annualIncrement: 8,
       startDate: "2026-01-01",
       status: "Active",
-      notes: "Main salary",
+      notes: "Other income",
     });
 
     const updated = await service.editIncome(created.id, { monthlyAmount: 120000 });
@@ -330,6 +345,35 @@ describe("CashFlowManagementService", () => {
   });
 
   it("builds transparent snapshot and summary through service", async () => {
+    runtime.compensationSummary.mockResolvedValue({
+      profile: {
+        employer: "Acme",
+        grossSalaryPerMonth: 140000,
+        effectiveMonth: "2026-01",
+        annualIncrementPercent: 8,
+        incrementMonth: 4,
+        basicPercentOfGross: 40,
+        employeePfPercent: 12,
+        vpfPercent: 0,
+        employerEpfPercent: 12,
+        professionalTax: 0,
+        incomeTaxPercent: 0,
+        currentNps: 0,
+        annualBonus: 120000,
+        bonusMonth: 3,
+      },
+      basicSalary: 56000,
+      employeePf: 6720,
+      vpf: 0,
+      employerEpf: 6720,
+      professionalTax: 0,
+      incomeTax: 0,
+      nps: 0,
+      netMonthlySalary: 100000,
+      monthlyBonusEquivalent: 10000,
+      annualGross: 1800000,
+      annualFixedCompensation: 1680000,
+    });
     runtime.listEvents.mockResolvedValue([makeIncomeEvent(), makeExpenseEvent()]);
     runtime.listLoans.mockResolvedValue([
       {
@@ -356,9 +400,9 @@ describe("CashFlowManagementService", () => {
     expect(snapshot.incomeBreakdown.salary).toBe(100000);
     expect(snapshot.commitmentGroups.find((group) => group.source === "Loan Management")?.subtotal).toBe(30000);
     expect(snapshot.commitmentGroups.find((group) => group.source === "Investment Management")?.subtotal).toBe(15000);
-    expect(snapshot.summary.monthlyIncome).toBe(100000);
+    expect(snapshot.summary.monthlyIncome).toBe(110000);
     expect(snapshot.summary.monthlyManualExpenses).toBe(40000);
     expect(snapshot.summary.monthlyAutomaticCommitments).toBe(45000);
-    expect(snapshot.summary.monthlySavings).toBe(15000);
+    expect(snapshot.summary.monthlySavings).toBe(25000);
   });
 });

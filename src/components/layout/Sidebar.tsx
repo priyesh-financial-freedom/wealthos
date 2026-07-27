@@ -100,6 +100,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const borrowingsActive = liabilitiesRootActive || homeLoansActive || carLoansActive || creditCardsActive;
 
   const goalsActive = activeHref === "/goals" || activeHref === "/planning/goals";
+  const compensationActive = activeHref === "/compensation";
   const cashFlowActive = activeHref === "/cash-flow" || activeHref === "/income" || activeHref === "/expenses";
   const reportsActive = ["/reports", "/history", "/documents"].includes(activeHref);
   const settingsHomeActive = activeHref === "/settings";
@@ -263,6 +264,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/goals" className={rowLinkClass({ active: goalsActive, level: 1, collapsed })}>
               <Target className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Goals</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/compensation" className={rowLinkClass({ active: compensationActive, level: 1, collapsed })}>
+              <Banknote className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Compensation</span> : null}
             </Link>
           </div>
 

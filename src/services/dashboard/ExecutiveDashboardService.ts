@@ -1,5 +1,6 @@
 import { DEFAULT_SCENARIO_KEY, assumptionsService } from "@/services/assumptions";
 import { buildCashFlowSummary, cashFlowManagementService } from "@/services/cashFlowManagement";
+import { compensationService } from "@/services/compensation";
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { buildAssetSummaryFromAssets } from "@/services/assetManagement";
 import { buildInvestmentSummary } from "@/services/investments";
@@ -147,12 +148,13 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
 
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary] = await Promise.all([
+    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary] = await Promise.all([
       getBalanceSheetData(),
       goalService.listGoals({ includeProgress: true }).catch(() => []),
       assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
       loadSimulation().catch(() => null),
       cashFlowManagementService.getCashFlowSummary().catch(() => null),
+      compensationService.getSummary(DEFAULT_SCENARIO_KEY).catch(() => null),
     ]);
 
     const projectionMonthly = assumptions
@@ -166,7 +168,9 @@ export class ExecutiveDashboardService {
     const goalsOnTrack = goals.filter((goal) => goal.status === "ON_TRACK" || goal.status === "COMPLETED").length;
     const atRiskGoals = goals.filter((goal) => goal.status === "AT_RISK").length;
     const completedGoals = goals.filter((goal) => goal.status === "COMPLETED").length;
-    const monthlyIncomeFallback = toNumber(assumptions?.income.monthlyIncome) + toNumber(assumptions?.income.otherMonthlyIncome);
+    const monthlyIncomeFallback = toNumber(compensationSummary?.netMonthlySalary)
+      + toNumber(compensationSummary?.monthlyBonusEquivalent)
+      + toNumber(assumptions?.income.otherMonthlyIncome);
     const monthlyExpensesFallback = toNumber(projectionMonthly?.expenses);
     const monthlyInvestmentFallback = toNumber(assumptions?.investments.monthlySipAmount) + toNumber(assumptions?.investments.stockInvestmentAmount);
     const monthlyCashFlow = persistedCashFlowSummary ?? buildCashFlowSummary(

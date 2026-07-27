@@ -55,11 +55,11 @@ const emptySnapshot: CashFlowSnapshot = {
   summary: emptySummary,
 };
 
-const incomeTypeOptions: IncomeType[] = ["Salary", "Bonus", "Rental Income", "Interest", "Dividend", "Pension", "Other"];
+const incomeTypeOptions: IncomeType[] = ["Rental Income", "Interest", "Dividend", "Pension", "Other"];
 
 const defaultIncomeForm: IncomeFormState = {
   name: "",
-  type: "Salary",
+  type: "Other",
   monthlyAmount: 0,
   annualIncrement: 0,
   startDate: null,
@@ -79,6 +79,10 @@ function normalizeText(value: string): string | null {
 
 function normalizeDate(value: string): string | null {
   return value || null;
+}
+
+function isCompensationDerivedEntry(entry: IncomeEntry): boolean {
+  return entry.id.startsWith("compensation:");
 }
 
 export default function CashFlowPage() {
@@ -297,7 +301,7 @@ export default function CashFlowPage() {
                         snapshot.incomeEntries.map((entry) => (
                           <tr key={entry.id}>
                             <td className="px-3 py-3">
-                              <Link href="/income" className="font-medium text-slate-900 hover:text-blue-700 hover:underline">
+                              <Link href={isCompensationDerivedEntry(entry) ? "/compensation" : "/cash-flow"} className="font-medium text-slate-900 hover:text-blue-700 hover:underline">
                                 {entry.name}
                               </Link>
                             </td>
@@ -307,13 +311,21 @@ export default function CashFlowPage() {
                             <td className="px-3 py-3">{entry.status}</td>
                             <td className="px-3 py-3">
                               <div className="flex justify-end gap-2">
-                                <Button type="button" variant="outline" size="sm" onClick={() => startEditIncome(entry)}>
-                                  <Pencil className="h-4 w-4" />
-                                  Edit
-                                </Button>
-                                <Button type="button" variant="outline" size="sm" onClick={() => void deleteIncome(entry.id)}>
-                                  Delete
-                                </Button>
+                                {isCompensationDerivedEntry(entry) ? (
+                                  <Button asChild type="button" variant="outline" size="sm">
+                                    <Link href="/compensation">Manage</Link>
+                                  </Button>
+                                ) : (
+                                  <>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => startEditIncome(entry)}>
+                                      <Pencil className="h-4 w-4" />
+                                      Edit
+                                    </Button>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => void deleteIncome(entry.id)}>
+                                      Delete
+                                    </Button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -325,6 +337,7 @@ export default function CashFlowPage() {
 
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-medium text-slate-700">{editingIncomeId ? "Edit income" : "Add income"}</p>
+                  <p className="mt-1 text-xs text-slate-500">Salary and bonus come from Compensation and are read-only here.</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label htmlFor="income-name">Name</Label>

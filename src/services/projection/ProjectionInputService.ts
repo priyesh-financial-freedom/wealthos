@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { getAccounts } from "@/services/accounts";
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
+import { compensationService } from "@/services/compensation";
 import { getAssets } from "@/services/assets";
 import { getBankAccounts } from "@/services/bankAccounts";
 import { getFixedDeposits } from "@/services/fixedDeposits";
@@ -364,7 +365,7 @@ export class ProjectionInputService {
     const effectiveAssumptions = await assumptionsService.getEffectiveAssumptions({
       scenarioId: options.scenario.id === DEFAULT_SCENARIO_KEY ? null : options.scenario.id,
     });
-    const assumptions = await assumptionsService.getAssumptionsBundle(options.scenario.id || DEFAULT_SCENARIO_KEY);
+    const assumptions = await compensationService.getCompensatedAssumptionsBundle(options.scenario.id || DEFAULT_SCENARIO_KEY);
     const resolvedAssumptions = assumptionProvider.resolve({
       householdProfile: createHouseholdAssumptionProfile({
         assumptions: {

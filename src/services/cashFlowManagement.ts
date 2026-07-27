@@ -2,6 +2,7 @@ import {
   DEFAULT_PROJECTION_SCENARIO_KEY,
   projectionEventsService,
 } from "@/services/projection";
+import { compensationService } from "@/services/compensation";
 import { getInvestments } from "@/services/investments";
 import { loanManagementService } from "@/services/loanManagement";
 import type { FinancialEvent } from "@/types/projection";
@@ -210,6 +211,14 @@ function toIncome(event: FinancialEvent): IncomeEntry {
     status: statusFromEnabled(Boolean(event.isEnabled)),
     notes: metadata.notes ?? null,
   };
+}
+
+function isCompensationIncomeType(type: IncomeType): boolean {
+  return type === "Salary" || type === "Bonus";
+}
+
+function isCompensationIncomeId(id: string): boolean {
+  return id.startsWith("compensation:");
 }
 
 function toManualExpense(event: FinancialEvent): ExpenseEntry | null {
@@ -485,6 +494,10 @@ function buildLivingExpenseRecord(entries: readonly ExpenseEntry[]): LivingExpen
 export function validateIncome(input: IncomeCreateInput): IncomeValidationIssue[] {
   const issues: IncomeValidationIssue[] = [];
 
+  if (isCompensationIncomeType(input.type)) {
+    issues.push({ field: "type", message: "Salary and Bonus are managed in Compensation." });
+  }
+
   if (!String(input.name ?? "").trim()) {
     issues.push({ field: "name", message: "Name is required." });
   }
@@ -589,6 +602,43 @@ export class CashFlowManagementService {
       .map(toIncome);
   }
 
+  private async listCompensationIncomeEntries(scenarioKey = DEFAULT_PROJECTION_SCENARIO_KEY): Promise<IncomeEntry[]> {
+    const summary = await compensationService.getSummary(scenarioKey).catch(() => null);
+    if (!summary) {
+      return [];
+    }
+
+    const entries: IncomeEntry[] = [
+      {
+        id: "compensation:salary",
+        name: summary.profile.employer ? `${summary.profile.employer} Net Salary` : "Net Salary",
+        type: "Salary",
+        monthlyAmount: roundTwo(Math.max(0, summary.netMonthlySalary)),
+        annualIncrement: summary.profile.annualIncrementPercent,
+        startDate: `${summary.profile.effectiveMonth}-01`,
+        status: "Active",
+        notes: "Derived from Compensation Engine",
+      },
+      {
+        id: "compensation:bonus",
+        name: "Bonus (Monthly Equivalent)",
+        type: "Bonus",
+        monthlyAmount: roundTwo(Math.max(0, summary.monthlyBonusEquivalent)),
+        annualIncrement: summary.profile.annualIncrementPercent,
+        startDate: `${summary.profile.effectiveMonth}-01`,
+        status: "Active",
+        notes: "Derived from Compensation Engine",
+      },
+    ];
+
+    return entries.filter((entry) => entry.monthlyAmount > 0);
+  }
+
+  private async listManualIncome(scenarioKey = DEFAULT_PROJECTION_SCENARIO_KEY): Promise<IncomeEntry[]> {
+    const entries = await this.listIncome(scenarioKey);
+    return entries.filter((entry) => !isCompensationIncomeType(entry.type));
+  }
+
   async listManualExpenses(scenarioKey = DEFAULT_PROJECTION_SCENARIO_KEY): Promise<ExpenseEntry[]> {
     const events = await projectionEventsService.listEvents(scenarioKey);
     return events
@@ -643,6 +693,10 @@ export class CashFlowManagementService {
   }
 
   async editIncome(id: string, updates: IncomeUpdateInput): Promise<IncomeEntry> {
+    if (isCompensationIncomeId(id)) {
+      throw new Error("Compensation-derived income must be updated in Compensation.");
+    }
+
     const existing = await this.listIncome();
     const current = existing.find((entry) => entry.id === id);
     if (!current) {
@@ -665,6 +719,10 @@ export class CashFlowManagementService {
   }
 
   async deleteIncome(id: string): Promise<void> {
+    if (isCompensationIncomeId(id)) {
+      throw new Error("Compensation-derived income must be updated in Compensation.");
+    }
+
     await projectionEventsService.deleteEvent(id);
   }
 
@@ -768,11 +826,14 @@ export class CashFlowManagementService {
   }
 
   async getCashFlowSnapshot(scenarioKey = DEFAULT_PROJECTION_SCENARIO_KEY): Promise<CashFlowSnapshot> {
-    const [incomeEntries, manualExpenseEntries, automaticCommitments] = await Promise.all([
-      this.listIncome(scenarioKey),
+    const [manualIncomeEntries, compensationIncomeEntries, manualExpenseEntries, automaticCommitments] = await Promise.all([
+      this.listManualIncome(scenarioKey),
+      this.listCompensationIncomeEntries(scenarioKey),
       this.listManualExpenses(scenarioKey),
       this.listAutomaticCommitments(),
     ]);
+
+    const incomeEntries = [...compensationIncomeEntries, ...manualIncomeEntries];
 
     const incomeBreakdown = buildIncomeBreakdown(incomeEntries);
     const commitmentGroups = buildCommitmentGroups(automaticCommitments);
@@ -795,10 +856,13 @@ export class CashFlowManagementService {
   }
 
   async getProjectionInput(scenarioKey = DEFAULT_PROJECTION_SCENARIO_KEY): Promise<CashFlowProjectionInput> {
-    const [incomeEntries, manualExpenseEntries] = await Promise.all([
-      this.listIncome(scenarioKey),
+    const [manualIncomeEntries, compensationIncomeEntries, manualExpenseEntries] = await Promise.all([
+      this.listManualIncome(scenarioKey),
+      this.listCompensationIncomeEntries(scenarioKey),
       this.listManualExpenses(scenarioKey),
     ]);
+
+    const incomeEntries = [...compensationIncomeEntries, ...manualIncomeEntries];
 
     return buildCashFlowProjectionInput(incomeEntries, manualExpenseEntries);
   }

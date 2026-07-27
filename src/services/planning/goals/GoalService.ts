@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
+import { compensationService } from "@/services/compensation";
 import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios/browser";
 import { projectionEventsService } from "@/services/projection/events";
 import { FinancialSimulationEngine } from "@/services/simulation/FinancialSimulationEngine";
@@ -449,7 +450,7 @@ export class GoalService {
         loadSnapshot: async () => buildSnapshotFromLatestMonthEnd(),
       },
       assumptionProvider: {
-        loadAssumptions: async () => assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY),
+        loadAssumptions: async () => compensationService.getCompensatedAssumptionsBundle(DEFAULT_SCENARIO_KEY),
       },
       eventProvider: {
         loadEvents: async () => projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => []),

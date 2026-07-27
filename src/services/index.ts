@@ -10,6 +10,7 @@ export * from "@/services/core/event-engine";
 export * from "@/services/investmentManagement";
 export * from "@/services/loanManagement";
 export * from "@/services/assetManagement";
+export * from "@/services/compensation";
 export {
   MANUAL_EXPENSE_CATEGORIES,
   validateIncome,
