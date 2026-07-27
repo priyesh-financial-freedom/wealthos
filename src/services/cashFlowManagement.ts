@@ -616,12 +616,12 @@ export class CashFlowManagementService {
 
     const investmentCommitments: AutomaticCommitment[] = investments
       .filter((investment) => investment.status === "active")
-      .map((investment) => {
-        const monthlyAmount = roundTwo(Math.max(0, toNumber(investment.sip_amount ?? 0)));
-        if (monthlyAmount <= 0) {
-          return null;
-        }
-
+      .map((investment) => ({
+        investment,
+        monthlyAmount: roundTwo(Math.max(0, toNumber(investment.sip_amount ?? 0))),
+      }))
+      .filter((entry) => entry.monthlyAmount > 0)
+      .map(({ investment, monthlyAmount }) => {
         const commitmentType = commitmentTypeForInvestmentCategory(investment.category);
         return {
           id: `investment:${investment.id}:contribution`,
@@ -630,9 +630,8 @@ export class CashFlowManagementService {
           name: `${investment.investment_name} ${commitmentType}`,
           monthlyAmount,
           href: "/investments",
-        } satisfies AutomaticCommitment;
-      })
-      .filter((entry): entry is AutomaticCommitment => Boolean(entry));
+        };
+      });
 
     return [...loanCommitments, ...investmentCommitments];
   }

@@ -1,5 +1,4 @@
-import type { LoanAssumption } from "@/services/projection-engine";
-import type { ProjectionEvent } from "@/types/projection";
+import type { LoanAssumption, ProjectionEvent } from "@/services/projection-engine";
 import type { Liability, LiabilityInsert, LiabilityUpdate } from "@/types/liability";
 
 import {

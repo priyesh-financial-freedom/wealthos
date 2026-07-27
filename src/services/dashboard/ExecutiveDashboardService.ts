@@ -166,7 +166,7 @@ export class ExecutiveDashboardService {
     const goalsOnTrack = goals.filter((goal) => goal.status === "ON_TRACK" || goal.status === "COMPLETED").length;
     const atRiskGoals = goals.filter((goal) => goal.status === "AT_RISK").length;
     const completedGoals = goals.filter((goal) => goal.status === "COMPLETED").length;
-    const monthlyIncomeFallback = toNumber(assumptions?.income.monthlyIncome) + toNumber(assumptions?.income.otherMonthlyIncome) + toNumber(assumptions?.income.rentalIncome) + toNumber(assumptions?.income.businessIncome);
+    const monthlyIncomeFallback = toNumber(assumptions?.income.monthlyIncome) + toNumber(assumptions?.income.otherMonthlyIncome);
     const monthlyExpensesFallback = toNumber(projectionMonthly?.expenses);
     const monthlyInvestmentFallback = toNumber(assumptions?.investments.monthlySipAmount) + toNumber(assumptions?.investments.stockInvestmentAmount);
     const monthlyCashFlow = persistedCashFlowSummary ?? buildCashFlowSummary(

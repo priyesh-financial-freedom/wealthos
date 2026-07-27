@@ -10,4 +10,33 @@ export * from "@/services/core/event-engine";
 export * from "@/services/investmentManagement";
 export * from "@/services/loanManagement";
 export * from "@/services/assetManagement";
-export * from "@/services/cashFlowManagement";
+export {
+  MANUAL_EXPENSE_CATEGORIES,
+  validateIncome,
+  validateExpense,
+  buildCashFlowSummary,
+  buildCashFlowProjectionInput,
+  CashFlowManagementService,
+  cashFlowManagementService,
+} from "@/services/cashFlowManagement";
+export type {
+  IncomeType,
+  ExpenseCategory as CashFlowExpenseCategory,
+  CashFlowStatus,
+  IncomeEntry,
+  ExpenseEntry,
+  CommitmentSource,
+  AutomaticCommitment,
+  IncomeBreakdown,
+  CommitmentGroup,
+  LivingExpenseRecord,
+  CashFlowSnapshot,
+  IncomeCreateInput,
+  IncomeUpdateInput,
+  ExpenseCreateInput,
+  ExpenseUpdateInput,
+  IncomeValidationIssue,
+  ExpenseValidationIssue,
+  CashFlowSummary,
+  CashFlowProjectionInput,
+} from "@/services/cashFlowManagement";
