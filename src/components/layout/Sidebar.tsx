@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   PiggyBank,
   ReceiptText,
+  SlidersHorizontal,
   Settings,
   TrendingUp,
   Users,
@@ -81,6 +82,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   }
 
   const dashboardActive = activeHref === "/dashboard";
+  const planningActive = activeHref === "/planning" || activeHref === "/planning/my-financial-plan";
   const assetsActive = activeHref === "/assets";
   const bankAccountsActive = activeHref === "/bank-accounts";
   const cashBankingActive = bankAccountsActive;
@@ -125,6 +127,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/dashboard" className={rowLinkClass({ active: dashboardActive, level: 1, collapsed })}>
               <LayoutDashboard className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Dashboard</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/planning" className={rowLinkClass({ active: planningActive, level: 1, collapsed })}>
+              <SlidersHorizontal className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Planning</span> : null}
             </Link>
           </div>
 

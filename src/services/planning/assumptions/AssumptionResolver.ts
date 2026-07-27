@@ -230,6 +230,17 @@ export class AssumptionResolver {
       assignResolvedField(fields, key, resolvedField);
     }
 
+    if (typeof values.npsEquityReturn === "number") {
+      values.npsDebtReturn = values.npsEquityReturn;
+      assignResolvedField(fields, "npsDebtReturn", {
+        value: values.npsEquityReturn,
+        provenance: {
+          ...(fields.npsEquityReturn.provenance as any),
+          key: "npsDebtReturn",
+        },
+      });
+    }
+
     return freezeResolvedAssumptionProfile({
       values,
       fields,

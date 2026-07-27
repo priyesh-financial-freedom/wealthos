@@ -56,11 +56,13 @@ export interface EffectivePlanningAssumptions {
   silverReturn: number;
   realEstateReturn: number;
   cashReturn: number;
+  monthlySipAmount: number;
   epfReturn: number;
   ppfReturn: number;
   npsEquityReturn: number;
   npsDebtReturn: number;
   homeLoanInterest: number;
+  annualPrepaymentAmount: number;
   carLoanInterest: number;
   personalLoanInterest: number;
   loanPrepaymentStrategy: LoanPrepaymentStrategy;
@@ -180,8 +182,10 @@ export type PlanningEntityAssumptionKey =
   | "goldReturn"
   | "silverReturn"
   | "realEstateReturn"
+  | "monthlySipAmount"
   | "epfReturn"
   | "ppfReturn"
+  | "annualPrepaymentAmount"
   | "homeLoanInterest"
   | "carLoanInterest"
   | "personalLoanInterest";
@@ -344,11 +348,13 @@ export const PLANNING_ASSUMPTION_KEYS = [
   "silverReturn",
   "realEstateReturn",
   "cashReturn",
+  "monthlySipAmount",
   "epfReturn",
   "ppfReturn",
   "npsEquityReturn",
   "npsDebtReturn",
   "homeLoanInterest",
+  "annualPrepaymentAmount",
   "carLoanInterest",
   "personalLoanInterest",
   "loanPrepaymentStrategy",
@@ -384,11 +390,13 @@ export const DISPLAY_PLANNING_ASSUMPTION_KEYS = [
   "silverReturn",
   "realEstateReturn",
   "cashReturn",
+  "monthlySipAmount",
   "epfReturn",
   "ppfReturn",
   "npsEquityReturn",
   "npsDebtReturn",
   "homeLoanInterest",
+  "annualPrepaymentAmount",
   "carLoanInterest",
   "personalLoanInterest",
   "loanPrepaymentStrategy",
@@ -423,11 +431,13 @@ export const PLANNING_ASSUMPTION_COLUMN_BY_KEY = {
   silverReturn: "silver_return",
   realEstateReturn: "real_estate_return",
   cashReturn: "cash_return",
+  monthlySipAmount: "monthly_sip_amount",
   epfReturn: "epf_return",
   ppfReturn: "ppf_return",
   npsEquityReturn: "nps_equity_return",
   npsDebtReturn: "nps_debt_return",
   homeLoanInterest: "home_loan_interest",
+  annualPrepaymentAmount: "annual_prepayment_amount",
   carLoanInterest: "car_loan_interest",
   personalLoanInterest: "personal_loan_interest",
   loanPrepaymentStrategy: "loan_prepayment_strategy",

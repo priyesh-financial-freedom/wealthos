@@ -40,11 +40,13 @@ interface PlanningAssumptionRow {
   silver_return: number | null;
   real_estate_return: number | null;
   cash_return: number | null;
+  monthly_sip_amount: number | null;
   epf_return: number | null;
   ppf_return: number | null;
   nps_equity_return: number | null;
   nps_debt_return: number | null;
   home_loan_interest: number | null;
+  annual_prepayment_amount: number | null;
   car_loan_interest: number | null;
   personal_loan_interest: number | null;
   loan_prepayment_strategy: string | null;

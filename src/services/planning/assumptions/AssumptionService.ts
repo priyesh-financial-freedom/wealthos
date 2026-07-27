@@ -51,7 +51,7 @@ const LEGACY_BUNDLE_DEFAULTS: AssumptionsBundle = {
     salaryStopYear: new Date().getFullYear() + (SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.retirementAge - SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.currentAge),
   },
   investments: {
-    monthlySipAmount: 0,
+    monthlySipAmount: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.monthlySipAmount,
     stockInvestmentAmount: 0,
     annualIncrementRate: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.salaryGrowthRate,
     expectedReturnRate: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.equityReturn,
@@ -68,7 +68,7 @@ const LEGACY_BUNDLE_DEFAULTS: AssumptionsBundle = {
   loans: {
     averageInterestRate: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.homeLoanInterest,
     emiIncrementRate: 0,
-    annualPrepaymentAmount: 0,
+    annualPrepaymentAmount: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.annualPrepaymentAmount,
     annualPrepaymentMonth: 3,
     useExtraCashForPrepayment: SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.loanPrepaymentStrategy !== "NONE",
   },
@@ -305,6 +305,7 @@ function mapLegacyBundle(effective: EffectivePlanningAssumptions): AssumptionsBu
     },
     investments: {
       ...LEGACY_BUNDLE_DEFAULTS.investments,
+      monthlySipAmount: effective.monthlySipAmount,
       expectedReturnRate: effective.equityReturn,
       fixedDepositRate: effective.debtReturn,
       goldAppreciationRate: effective.goldReturn,
@@ -320,6 +321,7 @@ function mapLegacyBundle(effective: EffectivePlanningAssumptions): AssumptionsBu
     loans: {
       ...LEGACY_BUNDLE_DEFAULTS.loans,
       averageInterestRate: effective.homeLoanInterest,
+      annualPrepaymentAmount: effective.annualPrepaymentAmount,
       useExtraCashForPrepayment: effective.loanPrepaymentStrategy !== "NONE",
     },
     retirement: {

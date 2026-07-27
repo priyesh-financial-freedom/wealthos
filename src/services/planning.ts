@@ -45,12 +45,12 @@ function buildBaseSummary(): PlanningDashboardSummary {
 		},
 		modules: [
 			{
-				id: "assumptions",
-				title: "Assumptions",
-				description: "Control the single source of truth for inflation, returns, taxes and retirement policy inputs.",
+				id: "my-financial-plan",
+				title: "My Financial Plan",
+				description: "Set the future assumptions that shape every projection in one place.",
 				status: "Central planning foundation",
-				actionLabel: "Open assumptions",
-				actionHref: "/planning/assumptions",
+				actionLabel: "Open plan",
+				actionHref: "/planning/my-financial-plan",
 				icon: "SlidersHorizontal",
 			},
 			{
