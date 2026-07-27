@@ -3,11 +3,14 @@ import { buildCashFlowSummary, cashFlowManagementService } from "@/services/cash
 import { compensationService } from "@/services/compensation";
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { buildAssetSummaryFromAssets } from "@/services/assetManagement";
+import { buildExecutiveInsights, buildFinancialHealthScore } from "@/services/finance";
 import { buildInvestmentSummary } from "@/services/investments";
 import { buildLoanSummaryFromLiabilities } from "@/services/loanManagement";
 import { goalService } from "@/services/planning/goals";
 import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
 import { projectionEngine, projectionInputService } from "@/services/projection";
+import { projectionEventsService } from "@/services/projection/events";
+import { getRetirementSummary } from "@/services/retirement";
 import type { SimulationResult } from "@/services/simulation";
 import type { ProjectionScenario } from "@/types/projection";
 
@@ -54,6 +57,29 @@ export interface ExecutiveDashboardData {
     investments: number;
     netWorthChange: number;
   };
+  financialHealth: {
+    score: number;
+    label: string;
+    detail: string;
+    rating: "Excellent" | "Good" | "Needs Attention";
+  };
+  dailyInsight: string;
+  retirement: {
+    available: boolean;
+    totalRetirementAssets: number;
+    accountsCount: number;
+  };
+  upcoming: {
+    available: boolean;
+    items: Array<{
+      id: string;
+      name: string;
+      date: string;
+      amount: number;
+      module: string;
+      type: string;
+    }>;
+  };
 }
 
 function monthToLabel(monthKey: string): string {
@@ -71,6 +97,28 @@ function monthToLabel(monthKey: string): string {
 function toNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function computeLargestShare(allocation: Array<{ value: number }>): number {
+  const total = allocation.reduce((sum, item) => sum + toNumber(item.value), 0);
+  if (total <= 0) {
+    return 0;
+  }
+
+  const largest = allocation.reduce((max, item) => Math.max(max, toNumber(item.value)), 0);
+  return largest / total;
+}
+
+function mapScoreToRating(score: number): "Excellent" | "Good" | "Needs Attention" {
+  if (score >= 85) {
+    return "Excellent";
+  }
+
+  if (score >= 70) {
+    return "Good";
+  }
+
+  return "Needs Attention";
 }
 
 const simulationEngine = createPlanningScenarioProductionSimulationEngine();
@@ -148,13 +196,15 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
 
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary] = await Promise.all([
+    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events] = await Promise.all([
       getBalanceSheetData(),
       goalService.listGoals({ includeProgress: true }).catch(() => []),
       assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
       loadSimulation().catch(() => null),
       cashFlowManagementService.getCashFlowSummary().catch(() => null),
       compensationService.getSummary(DEFAULT_SCENARIO_KEY).catch(() => null),
+      getRetirementSummary().catch(() => null),
+      projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => null),
     ]);
 
     const projectionMonthly = assumptions
@@ -201,6 +251,35 @@ export class ExecutiveDashboardService {
       [],
     );
     const projectedInvestmentValue = simulation?.monthlySnapshots.at(-1)?.closingBalances.investments ?? investmentSummary.totalInvestmentValue;
+    const largestAssetShare = computeLargestShare(balanceSheetData.summary.assetAllocation ?? []);
+    const largestInvestmentShare = computeLargestShare(investmentSummary.assetAllocation ?? []);
+    const monthlyNetWorthChange = projectionMonthly?.netWorthChange ?? Number(simulation?.summary.netWorthChange ?? 0);
+    const financialHealth = buildFinancialHealthScore({
+      summary: balanceSheetData.summary,
+      latestMonthlyGrowth: monthlyNetWorthChange,
+      largestAssetShare,
+      largestInvestmentShare,
+    });
+    const dailyInsight = buildExecutiveInsights(
+      balanceSheetData.summary,
+      balanceSheetData.assets,
+      balanceSheetData.liabilities,
+      balanceSheetData.investments,
+    )[0]?.detail ?? "Coming Soon";
+
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const upcomingItems = (events ?? [])
+      .filter((event) => event.isEnabled && event.date >= todayIso)
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .slice(0, 5)
+      .map((event) => ({
+        id: event.id,
+        name: event.name,
+        date: event.date,
+        amount: event.amount,
+        module: event.module,
+        type: event.type,
+      }));
 
     const output: ExecutiveDashboardData = {
       asOfLabel: monthToLabel(simulation?.summary.projectionEnd ?? assumptions?.planning.startMonth ?? ""),
@@ -235,7 +314,23 @@ export class ExecutiveDashboardService {
         expenses: monthlyCashFlow.monthlyExpenses,
         savings: monthlyCashFlow.monthlySavings,
         investments: projectionMonthly?.investments ?? monthlyInvestmentFallback,
-        netWorthChange: projectionMonthly?.netWorthChange ?? Number(simulation?.summary.netWorthChange ?? 0),
+        netWorthChange: monthlyNetWorthChange,
+      },
+      financialHealth: {
+        score: financialHealth.score,
+        label: financialHealth.label,
+        detail: financialHealth.detail,
+        rating: mapScoreToRating(financialHealth.score),
+      },
+      dailyInsight,
+      retirement: {
+        available: retirementSummary !== null,
+        totalRetirementAssets: toNumber(retirementSummary?.totalRetirementAssets),
+        accountsCount: toNumber(retirementSummary?.count),
+      },
+      upcoming: {
+        available: events !== null,
+        items: upcomingItems,
       },
     };
 

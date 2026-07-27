@@ -46,12 +46,37 @@ const populatedData = {
     investments: 20000,
     netWorthChange: 25000,
   },
+  financialHealth: {
+    score: 88,
+    label: "Strong",
+    detail: "Balance sheet quality is strong.",
+    rating: "Excellent" as const,
+  },
+  dailyInsight: "Liquidity is healthy.",
+  retirement: {
+    available: true,
+    totalRetirementAssets: 450000,
+    accountsCount: 3,
+  },
+  upcoming: {
+    available: true,
+    items: [
+      {
+        id: "event-1",
+        name: "SIP Contribution",
+        date: "2026-07-28",
+        amount: 12000,
+        module: "investments",
+        type: "contribution",
+      },
+    ],
+  },
 };
 
 describe("ExecutiveDashboard", () => {
   it("renders loading state", () => {
     const html = renderToStaticMarkup(<ExecutiveDashboard loading data={null} error={null} />);
-    expect(html).toContain("Loading executive dashboard");
+    expect(html).toContain("animate-pulse");
   });
 
   it("renders error state", () => {
@@ -61,19 +86,19 @@ describe("ExecutiveDashboard", () => {
 
   it("renders empty state", () => {
     const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} data={{ ...populatedData, emptyState: true }} error={null} />);
-    expect(html).toContain("Add financial data to unlock the executive dashboard");
+    expect(html).toContain("Add financial data to unlock Project North Star");
   });
 
   it("renders all required sections", () => {
     const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} data={populatedData} error={null} />);
 
-    expect(html).toContain("Net Worth");
-    expect(html).toContain("Total Assets");
-    expect(html).toContain("Total Liabilities");
-    expect(html).toContain("Monthly Savings");
+    expect(html).toContain("Project North Star");
+    expect(html).toContain("Financial Health Score");
+    expect(html).toContain("Where Am I Today");
+    expect(html).toContain("Where Should I Focus");
     expect(html).toContain("Investments");
-    expect(html).toContain("Loans");
-    expect(html).toContain("Goals");
-    expect(html).toContain("Monthly Summary");
+    expect(html).toContain("Liabilities");
+    expect(html).toContain("Retirement");
+    expect(html).toContain("What&#x27;s Coming Up");
   });
 });

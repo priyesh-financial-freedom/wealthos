@@ -7,7 +7,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { PageBreadcrumb } from "@/components/layout/PageBreadcrumb";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { executiveDashboardService, type ExecutiveDashboardData } from "@/services/dashboard";
 
 export default function DashboardPage() {
@@ -60,10 +59,6 @@ export default function DashboardPage() {
     <AppLayout>
       <PageContainer>
         <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Executive Dashboard" }]} />
-        <PageHeader
-          title="Executive Dashboard"
-          description="Simple executive view of net worth, investments, loans, goals, and monthly summary."
-        />
 
         <ContentContainer className="border-none bg-transparent p-0 shadow-none">
           <ExecutiveDashboard loading={loading} data={data} error={error} />

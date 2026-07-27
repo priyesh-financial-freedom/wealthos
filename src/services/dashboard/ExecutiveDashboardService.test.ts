@@ -77,14 +77,24 @@ describe("ExecutiveDashboardService", () => {
       liabilities: [{ id: "loan-1" }],
       summary: {
         totalBalanceSheetAssets: 1500000,
+        totalAssets: 900000,
+        totalInvestments: 600000,
         totalLiabilities: 400000,
         netWorth: 1100000,
+        debtRatio: 0.26,
         monthlyEmi: 32000,
+        cashHoldings: 150000,
+        cashRatio: 0.1,
+        assetAllocation: [],
+        liabilityAllocation: [],
+        largestAsset: null,
+        largestLiability: null,
       },
     });
 
     runtime.buildInvestmentSummary.mockReturnValue({
       totalInvestmentValue: 600000,
+      assetAllocation: [],
       cagr: 11,
     });
 
