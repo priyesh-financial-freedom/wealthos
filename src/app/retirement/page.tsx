@@ -36,11 +36,20 @@ type AccountModalState =
   | null;
 
 export default function RetirementPage() {
+  const initialTypeFilter = useMemo<"all" | RetirementAccountType>(() => {
+    if (typeof window === "undefined") {
+      return "all";
+    }
+
+    const requestedType = new URLSearchParams(window.location.search).get("type");
+    return requestedType === "PPF" || requestedType === "EPF" || requestedType === "NPS" ? requestedType : "all";
+  }, []);
+
   const [accounts, setAccounts] = useState<RetirementAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingAccount, setSavingAccount] = useState(false);
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | RetirementAccountType>("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | RetirementAccountType>(initialTypeFilter);
   const [sortValue, setSortValue] = useState("current_balance:desc");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -106,16 +115,6 @@ export default function RetirementPage() {
     const timer = window.setTimeout(() => setError(null), 4500);
     return () => window.clearTimeout(timer);
   }, [error]);
-
-  useEffect(() => {
-    const requestedType = new URLSearchParams(window.location.search).get("type");
-    if (requestedType === "PPF" || requestedType === "EPF" || requestedType === "NPS") {
-      setTypeFilter(requestedType);
-      return;
-    }
-
-    setTypeFilter("all");
-  }, []);
 
   const filteredAccounts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();

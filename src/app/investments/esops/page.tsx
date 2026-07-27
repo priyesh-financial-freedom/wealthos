@@ -104,7 +104,35 @@ export default function EsopsPage() {
   }
 
   useEffect(() => {
-    void refresh();
+    let isMounted = true;
+
+    async function initialize() {
+      try {
+        const data = await listEsops();
+        if (!isMounted) {
+          return;
+        }
+
+        setRows(data);
+        setError(null);
+      } catch (loadError) {
+        if (!isMounted) {
+          return;
+        }
+
+        setError(loadError instanceof Error ? loadError.message : "Unable to load ESOP grants.");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void initialize();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {

@@ -183,28 +183,43 @@ export default function MonthEndClosePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [showLiabilities, setShowLiabilities] = useState(true);
 
-  async function loadWorkspace() {
-    try {
-      setLoading(true);
-      setError(null);
-      const nextWorkspace = await getMonthEndCloseWorkspace();
-      setWorkspace(nextWorkspace);
-      setActualValues(
-        nextWorkspace.items.reduce<Record<string, string>>((acc, item) => {
-          acc[item.rowKey] = String(item.actualValue);
-          return acc;
-        }, {}),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load month-end close workspace");
-      setWorkspace(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void loadWorkspace();
+    let isMounted = true;
+
+    async function initialize() {
+      try {
+        const nextWorkspace = await getMonthEndCloseWorkspace();
+        if (!isMounted) {
+          return;
+        }
+
+        setWorkspace(nextWorkspace);
+        setActualValues(
+          nextWorkspace.items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.rowKey] = String(item.actualValue);
+            return acc;
+          }, {}),
+        );
+        setError(null);
+      } catch (err) {
+        if (!isMounted) {
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : "Unable to load month-end close workspace");
+        setWorkspace(null);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void initialize();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {

@@ -84,7 +84,7 @@ export interface ProjectionEntity {
   assumptionSource?: string;
 }
 
-export interface ProjectionMutableLedgerRecord extends MonthlyLedgerRecord {}
+export type ProjectionMutableLedgerRecord = MonthlyLedgerRecord;
 
 export interface ProjectionContext {
   scenario: ProjectionScenario;

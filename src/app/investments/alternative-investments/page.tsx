@@ -94,7 +94,35 @@ export default function AlternativeInvestmentsPage() {
   }
 
   useEffect(() => {
-    void refresh();
+    let isMounted = true;
+
+    async function initialize() {
+      try {
+        const data = await listAlternativeInvestments();
+        if (!isMounted) {
+          return;
+        }
+
+        setRows(data);
+        setError(null);
+      } catch (loadError) {
+        if (!isMounted) {
+          return;
+        }
+
+        setError(loadError instanceof Error ? loadError.message : "Unable to load alternative investments.");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void initialize();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {

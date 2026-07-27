@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
 import { projectionEngine, projectionInputService, type ProjectionResult } from "@/services/projection";
-import type { MonthlyLedgerEntry, MonthlySnapshot, ProjectedEntity, ProjectionScenario } from "@/types/projection";
+import type { MonthlyLedgerEntry, ProjectedEntity, ProjectionScenario } from "@/types/projection";
 
 function formatInr(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -142,45 +142,58 @@ export default function ProjectionViewerPage() {
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
   const [drillDownOpen, setDrillDownOpen] = useState(false);
 
-  async function loadProjection() {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const scenario: ProjectionScenario = {
-        id: DEFAULT_SCENARIO_KEY,
-        name: "Default projection",
-        description: "In-memory projection viewer for debugging.",
-        startMonth: "",
-        planningHorizonYear: 0,
-        assumptions: [],
-        events: [],
-        isDefault: true,
-      };
-
-      const context = await projectionInputService.buildContext({
-        scenario,
-        startSource: { kind: "live-balance-sheet" },
-      });
-      const result = await projectionEngine.run(context);
-      setProjection(result);
-
-      const latest = result.snapshots[result.snapshots.length - 1];
-      setSelectedMonthKey(latest?.month ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to run projection");
-      setProjection(null);
-      setSelectedMonthKey(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void loadProjection();
+    let isMounted = true;
+
+    async function initialize() {
+      try {
+        const scenario: ProjectionScenario = {
+          id: DEFAULT_SCENARIO_KEY,
+          name: "Default projection",
+          description: "In-memory projection viewer for debugging.",
+          startMonth: "",
+          planningHorizonYear: 0,
+          assumptions: [],
+          events: [],
+          isDefault: true,
+        };
+
+        const context = await projectionInputService.buildContext({
+          scenario,
+          startSource: { kind: "live-balance-sheet" },
+        });
+        const result = await projectionEngine.run(context);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setProjection(result);
+        setSelectedMonthKey(result.snapshots[result.snapshots.length - 1]?.month ?? null);
+        setError(null);
+      } catch (err) {
+        if (!isMounted) {
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : "Unable to run projection");
+        setProjection(null);
+        setSelectedMonthKey(null);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void initialize();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const snapshots = projection?.snapshots ?? [];
+  const snapshots = useMemo(() => projection?.snapshots ?? [], [projection]);
 
   const selectedSnapshot = useMemo(() => {
     if (!selectedMonthKey) {

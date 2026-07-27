@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { FinancialSimulationEngine, buildSimulationContext, buildSimulationInput } from "./FinancialSimulationEngine";
+import { FinancialSimulationEngine } from "./FinancialSimulationEngine";
 import { SimulationRunner, buildSummary } from "./SimulationRunner";
+import type { SimulationContext } from "./SimulationTypes";
 import type { AssumptionsBundle } from "@/types/assumptions";
-import type { FinancialEvent, MonthlySnapshot, ProjectedEntity, ProjectionBalanceState } from "@/types/projection";
+import type { FinancialEvent, MonthlySnapshot, ProjectedEntity } from "@/types/projection";
 
 function buildSnapshot() {
   return {
@@ -123,9 +124,9 @@ function buildMonthlySnapshots(): MonthlySnapshot[] {
 }
 
 class StubProjectionCalculator {
-  constructor(private readonly onCalculate?: (context: unknown) => void) {}
+  constructor(private readonly onCalculate?: (context: SimulationContext) => void) {}
 
-  async calculate(context: any) {
+  async calculate(context: SimulationContext) {
     this.onCalculate?.(context);
 
     return {
@@ -170,7 +171,7 @@ describe("FinancialSimulationEngine", () => {
   });
 
   it("applies overrides before projection execution", async () => {
-    let capturedContext: any = null;
+    let capturedContext: SimulationContext | null = null;
     const engine = new FinancialSimulationEngine({
       snapshotProvider: { loadSnapshot: async () => buildSnapshot() },
       assumptionProvider: { loadAssumptions: async () => buildAssumptions() },
