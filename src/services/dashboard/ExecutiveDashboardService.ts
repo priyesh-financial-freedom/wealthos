@@ -1,72 +1,43 @@
-import { getBalanceSheetData, type BalanceSheetData } from "@/services/balanceSheet";
-import { DecisionEngine, type DecisionRecommendation } from "@/services/decision";
-import { healthScoreService, type HealthScore } from "@/services/health";
-import { getHouseholdDashboardSummary } from "@/services/households";
+import { DEFAULT_SCENARIO_KEY, assumptionsService } from "@/services/assumptions";
+import { buildCashFlowSummary, cashFlowManagementService } from "@/services/cashFlowManagement";
+import { getBalanceSheetData } from "@/services/balanceSheet";
+import { buildAssetSummaryFromAssets } from "@/services/assetManagement";
+import { buildInvestmentSummary } from "@/services/investments";
+import { buildLoanSummaryFromLiabilities } from "@/services/loanManagement";
 import { goalService } from "@/services/planning/goals";
 import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
-import { monthlyReviewService, type MonthlyReviewWorkspace } from "@/services/projection";
-import type { FinancialGoalWithProgress } from "@/types/financialGoal";
+import { projectionEngine, projectionInputService } from "@/services/projection";
 import type { SimulationResult } from "@/services/simulation";
-
-class MissingMonthlyReviewWorkspaceError extends Error {
-  constructor() {
-    super("Monthly review workspace is unavailable.");
-    this.name = "MissingMonthlyReviewWorkspaceError";
-  }
-}
-
-export interface ExecutiveTimelineItem {
-  id: string;
-  title: string;
-  detail: string;
-  timeLabel: string;
-}
+import type { ProjectionScenario } from "@/types/projection";
 
 export interface ExecutiveGoalProgressItem {
   id: string;
   name: string;
-  status: FinancialGoalWithProgress["status"];
   progressPercent: number;
   targetAmount: number;
-  projectedAmount: number;
-  targetDate: string;
-}
-
-export interface ExecutiveAllocationItem {
-  name: string;
-  value: number;
-  sharePercent: number;
-}
-
-export interface ExecutiveCashFlowPoint {
-  month: string;
-  value: number;
-  delta: number;
+  gap: number;
 }
 
 export interface ExecutiveDashboardData {
   asOfLabel: string;
   emptyState: boolean;
-  household: {
-    householdName: string;
-    membersCount: number;
-    planningHorizonLabel: string;
-    currentFinancialMonthLabel: string;
-  } | null;
-  health: HealthScore;
-  kpis: {
+  executiveSummary: {
     netWorth: number;
-    totalGoals: number;
-    goalsOnTrack: number;
-    openDecisions: number;
-    criticalDecisions: number;
-    retirementCoveragePercent: number;
-    retirementAssets: number;
+    assets: number;
+    liabilities: number;
+    monthlySavings: number;
   };
-  decisionCenter: {
-    openCount: number;
-    criticalCount: number;
-    items: DecisionRecommendation[];
+  investments: {
+    currentPortfolio: number;
+    monthlyInvestment: number;
+    projectedValue: number;
+    expectedCagr: number;
+  };
+  loans: {
+    outstanding: number;
+    emi: number;
+    interestRate: number;
+    activeLoans: number;
   };
   goals: {
     total: number;
@@ -75,39 +46,13 @@ export interface ExecutiveDashboardData {
     completed: number;
     items: ExecutiveGoalProgressItem[];
   };
-  wealthAllocation: {
-    assets: ExecutiveAllocationItem[];
-    liabilities: ExecutiveAllocationItem[];
+  monthlySummary: {
+    income: number;
+    expenses: number;
+    savings: number;
+    investments: number;
+    netWorthChange: number;
   };
-  cashFlow: {
-    currentCash: number;
-    averageMonthlyDelta: number;
-    negativeMonths: number;
-    projectedNetWorthChange: number;
-    points: ExecutiveCashFlowPoint[];
-  };
-  recentActivity: ExecutiveTimelineItem[];
-}
-
-function safeDateLabel(isoValue: string): string {
-  const timestamp = Date.parse(isoValue);
-  if (!Number.isFinite(timestamp)) {
-    return "Recently";
-  }
-
-  const elapsedMs = Math.max(0, Date.now() - timestamp);
-  const minutes = Math.floor(elapsedMs / 60000);
-  if (minutes < 60) {
-    return `${minutes} min ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours} hr ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function monthToLabel(monthKey: string): string {
@@ -122,24 +67,14 @@ function monthToLabel(monthKey: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(new Date(year, month - 1, 1));
 }
 
-function shareOf(value: number, total: number): number {
-  if (total <= 0) {
-    return 0;
-  }
-
-  return (value / total) * 100;
+function toNumber(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
-async function traceAsync<T>(label: string, operation: () => Promise<T>): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    throw error;
-  }
-}
+const simulationEngine = createPlanningScenarioProductionSimulationEngine();
 
 async function loadSimulation(): Promise<SimulationResult | null> {
-  const simulationEngine = createPlanningScenarioProductionSimulationEngine();
   const outcome = await simulationEngine.run({ snapshotId: "executive-dashboard" });
 
   if (!outcome.ok) {
@@ -149,150 +84,140 @@ async function loadSimulation(): Promise<SimulationResult | null> {
   return outcome.result;
 }
 
-async function loadDecisionPreview(input: {
-  balanceSheet: BalanceSheetData;
-  health: HealthScore;
-  goals: FinancialGoalWithProgress[];
-  monthlyReview: MonthlyReviewWorkspace | null;
-  simulation: SimulationResult | null;
-}): Promise<DecisionRecommendation[]> {
-  const simulation = input.simulation;
-  if (!simulation) {
-    return [];
-  }
-
-  const decisionPreviewEngine = new DecisionEngine({
-    balanceSheetLoader: async () => input.balanceSheet,
-    healthScoreLoader: async () => input.health,
-    goalsLoader: async () => input.goals,
-    scenarioLoader: async () => [],
-    monthlyReviewLoader: async () => {
-      if (!input.monthlyReview) {
-        throw new MissingMonthlyReviewWorkspaceError();
-      }
-
-      return input.monthlyReview;
-    },
-    baselineSimulationLoader: async () => simulation,
-  });
-
-  return decisionPreviewEngine.generateRecommendations().catch(() => []);
-}
-
-function buildGoalProgressItems(goals: FinancialGoalWithProgress[]): ExecutiveGoalProgressItem[] {
+function buildGoalProgressItems(goals: Awaited<ReturnType<typeof goalService.listGoals>>): ExecutiveGoalProgressItem[] {
   return [...goals]
     .sort((left, right) => Number(right.progress?.progress_percent ?? 0) - Number(left.progress?.progress_percent ?? 0))
     .slice(0, 5)
     .map((goal) => ({
       id: goal.id,
       name: goal.name,
-      status: goal.status,
       progressPercent: Number(goal.progress?.progress_percent ?? 0),
       targetAmount: Number(goal.progress?.target_amount ?? goal.target_amount ?? 0),
-      projectedAmount: Number(goal.progress?.projected_amount ?? 0),
-      targetDate: goal.target_date,
+      gap: Math.max(0, Number(goal.progress?.target_amount ?? goal.target_amount ?? 0) - Number(goal.progress?.projected_amount ?? 0)),
     }));
 }
 
-function buildRecentActivity(params: {
-  goals: FinancialGoalWithProgress[];
-  decisions: DecisionRecommendation[];
-  monthlyReview: MonthlyReviewWorkspace | null;
-  simulation: SimulationResult | null;
-}): ExecutiveTimelineItem[] {
-  const timeline: ExecutiveTimelineItem[] = [];
+async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: number): Promise<{
+  income: number;
+  expenses: number;
+  savings: number;
+  investments: number;
+  netWorthChange: number;
+} | null> {
+  const scenario: ProjectionScenario = {
+    id: DEFAULT_SCENARIO_KEY,
+    name: "Executive dashboard projection",
+    description: "Executive dashboard monthly summary.",
+    startMonth,
+    planningHorizonYear: endYear,
+    assumptions: [],
+    events: [],
+    isDefault: true,
+  };
 
-  if (params.monthlyReview?.selectedPeriod && params.monthlyReview.summary) {
-    timeline.push({
-      id: `monthly-close-${params.monthlyReview.selectedPeriod.closeId}`,
-      title: `${params.monthlyReview.selectedPeriod.label} close reviewed`,
-      detail: `Net worth variance ${params.monthlyReview.summary.projectionVariance.toLocaleString("en-IN")} against projection baseline.`,
-      timeLabel: "Latest close",
-    });
+  const context = await projectionInputService.buildContext({
+    scenario,
+    startSource: { kind: "latest-closed-month-end" },
+  }).catch(() => null);
+
+  if (!context) {
+    return null;
   }
 
-  for (const goal of [...params.goals].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at)).slice(0, 3)) {
-    timeline.push({
-      id: `goal-${goal.id}`,
-      title: `Goal updated: ${goal.name}`,
-      detail: `${Number(goal.progress?.progress_percent ?? 0).toFixed(1)}% funded toward target.`,
-      timeLabel: safeDateLabel(goal.updated_at),
-    });
+  const projection = await projectionEngine.run(context).catch(() => null);
+  const firstRecord = projection?.monthlyLedger[0];
+  const firstSnapshot = projection?.snapshots[0];
+
+  if (!firstRecord) {
+    return null;
   }
 
-  for (const recommendation of params.decisions.filter((item) => item.status === "Open").slice(0, 3)) {
-    timeline.push({
-      id: `decision-${recommendation.id}`,
-      title: `Decision flagged: ${recommendation.title}`,
-      detail: `${recommendation.priority} priority in ${recommendation.category}.`,
-      timeLabel: safeDateLabel(recommendation.createdAt),
-    });
-  }
+  const income = toNumber(firstRecord.salary) + toNumber(firstRecord.bonus) + toNumber(firstRecord.rentalIncome) + toNumber(firstRecord.businessIncome) + toNumber(firstRecord.otherIncome);
+  const expenses = toNumber(firstRecord.livingExpenses) + toNumber(firstRecord.insurancePremium) + toNumber(firstRecord.taxes) + toNumber(firstRecord.emis);
+  const savings = income - expenses;
 
-  if (params.simulation) {
-    timeline.push({
-      id: "simulation-refresh",
-      title: "Simulation baseline refreshed",
-      detail: `Projection runs through ${monthToLabel(params.simulation.summary.projectionEnd)} with net-worth delta ${params.simulation.summary.netWorthChange.toLocaleString("en-IN")}.`,
-      timeLabel: "Now",
-    });
-  }
-
-  return timeline.slice(0, 8);
+  return {
+    income,
+    expenses,
+    savings,
+    investments: toNumber(firstRecord.investmentContributions),
+    netWorthChange: toNumber(firstSnapshot?.closingBalance) - toNumber(firstSnapshot?.openingBalance),
+  };
 }
 
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, monthlyReview, simulation, householdSummary] = await Promise.all([
-      traceAsync("getBalanceSheetData", () => getBalanceSheetData()),
-      traceAsync("goalService.listGoals(includeProgress=true)", () => goalService.listGoals({ includeProgress: true })).catch(() => []),
-      traceAsync("monthlyReviewService.getMonthlyReviewWorkspace", () => monthlyReviewService.getMonthlyReviewWorkspace()).catch(() => null),
-      traceAsync("loadSimulation", () => loadSimulation()).catch(() => null),
-      traceAsync("getHouseholdDashboardSummary", () => getHouseholdDashboardSummary()).catch(() => null),
+    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary] = await Promise.all([
+      getBalanceSheetData(),
+      goalService.listGoals({ includeProgress: true }).catch(() => []),
+      assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
+      loadSimulation().catch(() => null),
+      cashFlowManagementService.getCashFlowSummary().catch(() => null),
     ]);
 
-    const health = await traceAsync("healthScoreService.calculateHealthScore", () =>
-      healthScoreService.calculateHealthScore({
-        summary: balanceSheetData.summary,
-        goals,
-        simulation: simulation ?? undefined,
-        monthlyReviewVariance: Number(monthlyReview?.summary?.projectionVariance ?? 0),
-      }),
-    );
+    const projectionMonthly = assumptions
+      ? await loadCurrentMonthProjectionSummary(assumptions.planning.startMonth, assumptions.planning.endYear).catch(() => null)
+      : null;
 
-    const decisions = await traceAsync("loadDecisionPreview", () => loadDecisionPreview({ balanceSheet: balanceSheetData, health, goals, monthlyReview, simulation }));
-
-    const totalAssetBase = Number(balanceSheetData.summary.totalBalanceSheetAssets ?? 0);
-    const totalLiabilities = Number(balanceSheetData.summary.totalLiabilities ?? 0);
-    const openDecisions = decisions.filter((item) => item.status === "Open");
+    const investmentSummary = buildInvestmentSummary(balanceSheetData.investments);
+    const assetSummary = buildAssetSummaryFromAssets(balanceSheetData.assets);
+    const loanSummary = buildLoanSummaryFromLiabilities(balanceSheetData.liabilities);
     const goalItems = buildGoalProgressItems(goals);
     const goalsOnTrack = goals.filter((goal) => goal.status === "ON_TRACK" || goal.status === "COMPLETED").length;
     const atRiskGoals = goals.filter((goal) => goal.status === "AT_RISK").length;
     const completedGoals = goals.filter((goal) => goal.status === "COMPLETED").length;
-    const projectedCashPoints = (simulation?.cashFlowForecast.points ?? []).slice(-6);
-    const averageMonthlyDelta = projectedCashPoints.length > 0
-      ? projectedCashPoints.reduce((sum, point) => sum + Number(point.delta ?? 0), 0) / projectedCashPoints.length
-      : 0;
-    const negativeMonths = projectedCashPoints.filter((point) => Number(point.delta ?? 0) < 0).length;
+    const monthlyIncomeFallback = toNumber(assumptions?.income.monthlyIncome) + toNumber(assumptions?.income.otherMonthlyIncome) + toNumber(assumptions?.income.rentalIncome) + toNumber(assumptions?.income.businessIncome);
+    const monthlyExpensesFallback = toNumber(projectionMonthly?.expenses);
+    const monthlyInvestmentFallback = toNumber(assumptions?.investments.monthlySipAmount) + toNumber(assumptions?.investments.stockInvestmentAmount);
+    const monthlyCashFlow = persistedCashFlowSummary ?? buildCashFlowSummary(
+      [
+        {
+          id: "dashboard-income",
+          name: "Monthly income",
+          type: "Other",
+          monthlyAmount: projectionMonthly?.income ?? monthlyIncomeFallback,
+          annualIncrement: 0,
+          startDate: null,
+          status: "Active",
+          notes: null,
+        },
+      ],
+      [
+        {
+          id: "dashboard-expenses",
+          name: "Monthly expenses",
+          category: "Other",
+          monthlyAmount: projectionMonthly?.expenses ?? monthlyExpensesFallback,
+          annualInflation: 0,
+          startDate: null,
+          status: "Active",
+          notes: null,
+        },
+      ],
+      [],
+    );
+    const projectedInvestmentValue = simulation?.monthlySnapshots.at(-1)?.closingBalances.investments ?? investmentSummary.totalInvestmentValue;
 
     const output: ExecutiveDashboardData = {
-      asOfLabel: monthlyReview?.selectedPeriod?.label ?? monthToLabel(simulation?.summary.projectionEnd ?? ""),
-      emptyState: totalAssetBase <= 0 && totalLiabilities <= 0,
-      household: householdSummary,
-      health,
-      kpis: {
+      asOfLabel: monthToLabel(simulation?.summary.projectionEnd ?? assumptions?.planning.startMonth ?? ""),
+      emptyState: Number(balanceSheetData.summary.totalBalanceSheetAssets ?? 0) <= 0 && Number(balanceSheetData.summary.totalLiabilities ?? 0) <= 0,
+      executiveSummary: {
         netWorth: Number(balanceSheetData.summary.netWorth ?? 0),
-        totalGoals: goals.length,
-        goalsOnTrack,
-        openDecisions: openDecisions.length,
-        criticalDecisions: openDecisions.filter((item) => item.priority === "Critical").length,
-        retirementCoveragePercent: shareOf(Number(balanceSheetData.summary.categoryTotals.retirement ?? 0), Math.max(totalAssetBase, 1)),
-        retirementAssets: Number(balanceSheetData.summary.categoryTotals.retirement ?? 0),
+        assets: assetSummary.totalAssets,
+        liabilities: Number(balanceSheetData.summary.totalLiabilities ?? 0),
+        monthlySavings: monthlyCashFlow.monthlySavings,
       },
-      decisionCenter: {
-        openCount: openDecisions.length,
-        criticalCount: openDecisions.filter((item) => item.priority === "Critical").length,
-        items: openDecisions.slice(0, 4),
+      investments: {
+        currentPortfolio: Number(investmentSummary.totalInvestmentValue ?? 0),
+        monthlyInvestment: projectionMonthly?.investments ?? monthlyInvestmentFallback,
+        projectedValue: Number(projectedInvestmentValue ?? 0),
+        expectedCagr: Number(investmentSummary.cagr ?? assumptions?.investments.expectedReturnRate ?? 0),
+      },
+      loans: {
+        outstanding: loanSummary.totalOutstanding,
+        emi: loanSummary.totalEmi,
+        interestRate: loanSummary.averageInterestRate,
+        activeLoans: loanSummary.activeLoans,
       },
       goals: {
         total: goals.length,
@@ -301,35 +226,13 @@ export class ExecutiveDashboardService {
         completed: completedGoals,
         items: goalItems,
       },
-      wealthAllocation: {
-        assets: balanceSheetData.summary.assetAllocation.map((item) => ({
-          name: item.name,
-          value: item.value,
-          sharePercent: shareOf(item.value, Math.max(totalAssetBase, 1)),
-        })),
-        liabilities: balanceSheetData.summary.liabilityAllocation.map((item) => ({
-          name: item.name,
-          value: item.value,
-          sharePercent: shareOf(item.value, Math.max(totalLiabilities, 1)),
-        })),
+      monthlySummary: {
+        income: monthlyCashFlow.monthlyIncome,
+        expenses: monthlyCashFlow.monthlyExpenses,
+        savings: monthlyCashFlow.monthlySavings,
+        investments: projectionMonthly?.investments ?? monthlyInvestmentFallback,
+        netWorthChange: projectionMonthly?.netWorthChange ?? Number(simulation?.summary.netWorthChange ?? 0),
       },
-      cashFlow: {
-        currentCash: Number(balanceSheetData.summary.cashHoldings ?? 0),
-        averageMonthlyDelta,
-        negativeMonths,
-        projectedNetWorthChange: Number(simulation?.summary.netWorthChange ?? 0),
-        points: projectedCashPoints.map((point) => ({
-          month: monthToLabel(point.month),
-          value: Number(point.value ?? 0),
-          delta: Number(point.delta ?? 0),
-        })),
-      },
-      recentActivity: buildRecentActivity({
-        goals,
-        decisions,
-        monthlyReview,
-        simulation,
-      }),
     };
 
     return output;

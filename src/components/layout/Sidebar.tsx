@@ -81,6 +81,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   }
 
   const dashboardActive = activeHref === "/dashboard";
+  const assetsActive = activeHref === "/assets";
   const bankAccountsActive = activeHref === "/bank-accounts";
   const cashBankingActive = bankAccountsActive;
 
@@ -99,7 +100,8 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const borrowingsActive = liabilitiesRootActive || homeLoansActive || carLoansActive || creditCardsActive;
 
   const goalsActive = activeHref === "/goals" || activeHref === "/planning/goals";
-  const reportsActive = ["/reports", "/history", "/income", "/expenses", "/documents"].includes(activeHref);
+  const cashFlowActive = activeHref === "/cash-flow" || activeHref === "/income" || activeHref === "/expenses";
+  const reportsActive = ["/reports", "/history", "/documents"].includes(activeHref);
   const settingsHomeActive = activeHref === "/settings";
   const settingsFamilyActive = activeHref === "/settings/family" || activeHref === "/settings/household";
   const settingsProfileActive = activeHref === "/settings/my-profile";
@@ -122,6 +124,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/dashboard" className={rowLinkClass({ active: dashboardActive, level: 1, collapsed })}>
               <LayoutDashboard className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Dashboard</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/assets" className={rowLinkClass({ active: assetsActive, level: 1, collapsed })}>
+              <Landmark className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Assets</span> : null}
             </Link>
           </div>
 
@@ -254,6 +263,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/goals" className={rowLinkClass({ active: goalsActive, level: 1, collapsed })}>
               <Target className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Goals</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/cash-flow" className={rowLinkClass({ active: cashFlowActive, level: 1, collapsed })}>
+              <CircleDollarSign className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Cash Flow</span> : null}
             </Link>
           </div>
 
