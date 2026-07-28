@@ -17,6 +17,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
+import { inspectFinancialPositionRows, liabilityDomainService } from "@/domain/services/LiabilityDomainService";
+import { logFinancialPositionValidation } from "@/domain/services/FinancialPositionValidationReporter";
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { createLiability, deleteLiability, getLiabilities, updateLiability } from "@/services/liabilities";
 import { LIABILITY_TYPES, type Liability, type LiabilityInsert, type LiabilityType } from "@/types/liability";
@@ -256,6 +258,28 @@ function LiabilitiesPageContent() {
   const liabilitySummaryCards = useMemo(() => buildSummaryBuckets(filteredLiabilities), [filteredLiabilities]);
   const allocationRows = useMemo(() => buildAllocationRows(filteredLiabilities), [filteredLiabilities]);
   const emiRows = useMemo(() => buildEmiRows(filteredLiabilities), [filteredLiabilities]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || loading) {
+      return;
+    }
+
+    const canonicalInspection = inspectFinancialPositionRows(liabilities);
+    const canonicalValidation = liabilityDomainService.validateSnapshot(canonicalInspection.snapshot);
+
+    logFinancialPositionValidation({
+      screen: "Liabilities Dashboard",
+      legacyRows: filteredLiabilities.map((liability) => ({
+        id: liability.id,
+        label: liability.account_name,
+        liabilityType: liability.liability_type,
+        outstandingAmount: Number(liability.outstanding_amount ?? 0),
+        monthlyEmi: Number(liability.emi ?? 0),
+      })),
+      canonical: canonicalInspection,
+      validation: canonicalValidation,
+    });
+  }, [filteredLiabilities, liabilities, loading]);
 
   async function handleCreate(values: LiabilityInsert) {
     setSubmitting(true);

@@ -28,7 +28,7 @@ interface SidebarProps {
   collapsed: boolean;
 }
 
-type SidebarGroupKey = "cash-banking" | "investments" | "retirement" | "borrowings" | "settings";
+type SidebarGroupKey = "cash-banking" | "investments" | "retirement" | "borrowings" | "reports" | "settings";
 
 function rowLinkClass(params: { active: boolean; level: 1 | 2 | 3; collapsed: boolean }): string {
   const { active, level, collapsed } = params;
@@ -74,7 +74,8 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
 
   const cashBankingOpen = expandedGroup === "cash-banking";
   const retirementOpen = expandedGroup === "retirement";
-  const borrowingsOpen = expandedGroup === "borrowings";
+  const borrowingsOpen = expandedGroup === "borrowings" || activeHref === "/liabilities" || activeHref.startsWith("/liabilities?bucket=");
+  const reportsOpen = expandedGroup === "reports" || activeHref.startsWith("/reports/balance-sheet");
   const settingsOpen = expandedGroup === "settings";
 
   function toggleGroup(group: SidebarGroupKey) {
@@ -104,7 +105,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const goalsActive = activeHref === "/goals" || activeHref === "/planning/goals";
   const compensationActive = activeHref === "/compensation";
   const cashFlowActive = activeHref === "/cash-flow" || activeHref === "/income" || activeHref === "/expenses";
-  const reportsActive = ["/reports", "/history", "/documents"].includes(activeHref);
+  const reportsActive = ["/reports", "/history", "/documents"].includes(activeHref) || activeHref.startsWith("/reports/balance-sheet");
   const settingsHomeActive = activeHref === "/settings";
   const settingsFamilyActive = activeHref === "/settings/family" || activeHref === "/settings/household";
   const settingsProfileActive = activeHref === "/settings/my-profile";
@@ -228,7 +229,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
           <div className="space-y-1">
             <div className={rowWrapClass(1)}>
               <div className="flex items-center gap-2">
-                <Link href="/liabilities?bucket=home-loans" className={cn("min-w-0 flex-1", rowLinkClass({ active: borrowingsActive, level: 1, collapsed }))}>
+                <Link href="/liabilities" className={cn("min-w-0 flex-1", rowLinkClass({ active: borrowingsActive, level: 1, collapsed }))}>
                   <House className="h-4 w-4 shrink-0" />
                   {!collapsed ? <span className="truncate">Borrowings</span> : null}
                 </Link>
@@ -290,11 +291,34 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             </Link>
           </div>
 
-          <div className={rowWrapClass(1)}>
-            <Link href="/reports" className={rowLinkClass({ active: reportsActive, level: 1, collapsed })}>
-              <ReceiptText className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Reports</span> : null}
-            </Link>
+          <div className="space-y-1">
+            <div className={rowWrapClass(1)}>
+              <div className="flex items-center gap-2">
+                <Link href="/reports" className={cn("min-w-0 flex-1", rowLinkClass({ active: reportsActive, level: 1, collapsed }))}>
+                  <ReceiptText className="h-4 w-4 shrink-0" />
+                  {!collapsed ? <span className="truncate">Reports</span> : null}
+                </Link>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                  onClick={() => toggleGroup("reports")}
+                  aria-label={reportsOpen ? "Collapse Reports" : "Expand Reports"}
+                >
+                  {reportsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {reportsOpen ? (
+              <div className="space-y-1">
+                <div className={rowWrapClass(2)}>
+                  <Link href="/reports/balance-sheet" className={rowLinkClass({ active: activeHref.startsWith("/reports/balance-sheet"), level: 2, collapsed })}>
+                    <ReceiptText className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Balance Sheet</span> : null}
+                  </Link>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-1">

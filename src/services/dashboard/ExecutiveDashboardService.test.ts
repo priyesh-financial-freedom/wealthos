@@ -6,7 +6,6 @@ const runtime = vi.hoisted(() => ({
   buildCashFlowSummary: vi.fn(),
   getCashFlowSummary: vi.fn(),
   buildInvestmentSummary: vi.fn(),
-  buildLoanSummaryFromLiabilities: vi.fn(),
   listGoals: vi.fn(),
   getAssumptionsBundle: vi.fn(),
   simulationRun: vi.fn(),
@@ -34,7 +33,7 @@ vi.mock("@/services/investments", () => ({
 }));
 
 vi.mock("@/services/loanManagement", () => ({
-  buildLoanSummaryFromLiabilities: runtime.buildLoanSummaryFromLiabilities,
+  isManagedLoanType: vi.fn((type: string) => type === "Home Loan" || type === "Car Loan" || type === "Personal Loan" || type === "Education Loan" || type === "Loan Against Property"),
 }));
 
 vi.mock("@/services/planning/goals", () => ({
@@ -74,7 +73,18 @@ describe("ExecutiveDashboardService", () => {
     runtime.getBalanceSheetData.mockResolvedValue({
       assets: [{ id: "asset-1" }],
       investments: [{ id: "inv-1" }],
-      liabilities: [{ id: "loan-1" }],
+      liabilities: [
+        {
+          id: "loan-1",
+          user_id: "user-1",
+          account_name: "Mortgage",
+          liability_type: "Home Loan",
+          status: "active",
+          outstanding_amount: 400000,
+          interest_rate: 9.5,
+          emi: 32000,
+        },
+      ],
       summary: {
         totalBalanceSheetAssets: 1500000,
         totalAssets: 900000,
@@ -89,6 +99,11 @@ describe("ExecutiveDashboardService", () => {
         liabilityAllocation: [],
         largestAsset: null,
         largestLiability: null,
+        categoryTotals: {
+          investments: 600000,
+          fixedDeposits: 0,
+          goldAndSilver: 0,
+        },
       },
     });
 
@@ -102,15 +117,6 @@ describe("ExecutiveDashboardService", () => {
       totalAssets: 900000,
       assetCount: 1,
       largestAsset: null,
-    });
-
-    runtime.buildLoanSummaryFromLiabilities.mockReturnValue({
-      totalOutstanding: 400000,
-      totalEmi: 32000,
-      averageInterestRate: 9.5,
-      activeLoans: 2,
-      closedLoans: 1,
-      upcomingPrepayments: 1,
     });
 
     runtime.buildCashFlowSummary.mockImplementation((income, expenses, commitments) => ({
@@ -214,14 +220,16 @@ describe("ExecutiveDashboardService", () => {
     expect(runtime.buildAssetSummaryFromAssets).toHaveBeenCalledWith([{ id: "asset-1" }]);
     expect(runtime.getCashFlowSummary).toHaveBeenCalledTimes(1);
     expect(runtime.buildInvestmentSummary).toHaveBeenCalledWith([{ id: "inv-1" }]);
-    expect(runtime.buildLoanSummaryFromLiabilities).toHaveBeenCalled();
 
     expect(result.executiveSummary.netWorth).toBe(1100000);
     expect(result.executiveSummary.assets).toBe(900000);
+    expect(result.executiveSummary.liabilities).toBe(400000);
     expect(result.investments.currentPortfolio).toBe(600000);
     expect(result.investments.projectedValue).toBe(650000);
+    expect(result.loans.outstanding).toBe(400000);
+    expect(result.loans.emi).toBe(32000);
     expect(result.loans.interestRate).toBe(9.5);
-    expect(result.loans.activeLoans).toBe(2);
+    expect(result.loans.activeLoans).toBe(1);
     expect(result.goals.items[0].gap).toBe(300000);
     expect(result.monthlySummary.income).toBe(130000);
     expect(result.monthlySummary.expenses).toBe(107000);
@@ -239,6 +247,11 @@ describe("ExecutiveDashboardService", () => {
         totalLiabilities: 0,
         netWorth: 0,
         monthlyEmi: 0,
+        categoryTotals: {
+          investments: 0,
+          fixedDeposits: 0,
+          goldAndSilver: 0,
+        },
       },
     });
 

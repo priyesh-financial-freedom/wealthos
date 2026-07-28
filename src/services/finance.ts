@@ -1,6 +1,8 @@
 import type { Asset } from "@/types/asset";
 import type { Liability } from "@/types/liability";
 
+import { inspectFinancialPositionRows, liabilityDomainService } from "@/domain/services/LiabilityDomainService";
+import { logFinancialPositionValidation } from "@/domain/services/FinancialPositionValidationReporter";
 import { formulaRegistry } from "@/services/formulas";
 
 export interface AllocationItem {
@@ -157,6 +159,24 @@ export function buildDashboardSummary(assets: Asset[], liabilities: Liability[],
     }
     return current;
   }, null);
+
+  if (process.env.NODE_ENV !== "production") {
+    const canonicalInspection = inspectFinancialPositionRows(liabilities);
+    const canonicalValidation = liabilityDomainService.validateSnapshot(canonicalInspection.snapshot);
+
+    logFinancialPositionValidation({
+      screen: "Finance Summary",
+      legacyRows: liabilities.map((liability) => ({
+        id: liability.id,
+        label: liability.account_name,
+        liabilityType: liability.liability_type,
+        outstandingAmount: Number(liability.outstanding_amount ?? 0),
+        monthlyEmi: Number(liability.emi ?? 0),
+      })),
+      canonical: canonicalInspection,
+      validation: canonicalValidation,
+    });
+  }
 
   return {
     totalAssets,

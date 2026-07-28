@@ -5,6 +5,7 @@ import {
   createPlanningEntityAssumptionProfile,
   createPlanningEntitySleeveProfile,
 } from "./AssumptionProfiles";
+import { SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS } from "./AssumptionDefaults";
 import { ASSUMPTION_REGISTRY } from "./AssumptionRegistry";
 
 describe("AssumptionProfiles", () => {
@@ -62,7 +63,7 @@ describe("AssumptionProfiles", () => {
   });
 
   it("attaches planning-owned metadata to every registry entry", () => {
-    expect(ASSUMPTION_REGISTRY).toHaveLength(38);
+    expect(ASSUMPTION_REGISTRY).toHaveLength(Object.keys(SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS).length);
     expect(ASSUMPTION_REGISTRY.every((item) => item.owner && typeof item.owner.scope === "string")).toBe(true);
     expect(ASSUMPTION_REGISTRY.find((item) => item.key === "currentAge")?.owner).toEqual({ scope: "HOUSEHOLD" });
     expect(ASSUMPTION_REGISTRY.find((item) => item.key === "equityReturn")?.owner).toEqual({ scope: "ENTITY_TYPE", entityKey: "mutual-funds" });

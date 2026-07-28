@@ -5,7 +5,9 @@ import { getBalanceSheetData } from "@/services/balanceSheet";
 import { buildAssetSummaryFromAssets } from "@/services/assetManagement";
 import { buildExecutiveInsights, buildFinancialHealthScore } from "@/services/finance";
 import { buildInvestmentSummary } from "@/services/investments";
-import { buildLoanSummaryFromLiabilities } from "@/services/loanManagement";
+import { isManagedLoanType } from "@/services/loanManagement";
+import { inspectFinancialPositionRows, liabilityDomainService } from "@/domain/services/LiabilityDomainService";
+import { logFinancialPositionValidation } from "@/domain/services/FinancialPositionValidationReporter";
 import { goalService } from "@/services/planning/goals";
 import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
 import { projectionEngine, projectionInputService } from "@/services/projection";
@@ -14,6 +16,7 @@ import { getRetirementSummary } from "@/services/retirement";
 import { snapshotReadModel } from "@/services/snapshots";
 import type { SimulationResult } from "@/services/simulation";
 import type { ProjectionScenario } from "@/types/projection";
+import type { Liability } from "@/types/liability";
 
 export interface ExecutiveGoalProgressItem {
   id: string;
@@ -204,6 +207,7 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
   const projection = await projectionEngine.run(context).catch(() => null);
   const firstRecord = projection?.monthlyLedger[0];
   const firstSnapshot = projection?.snapshots[0];
+  const lastSnapshot = projection?.snapshots.at(-1) ?? firstSnapshot;
 
   if (!firstRecord) {
     return null;
@@ -219,10 +223,10 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
     savings,
     investments: toNumber(firstRecord.investmentContributions),
     netWorthChange: toNumber(firstSnapshot?.closingBalance) - toNumber(firstSnapshot?.openingBalance),
-    plannedNetWorth: firstSnapshot ? toNumber(firstSnapshot.closingBalance) : null,
-    plannedInvestments: firstSnapshot ? toNumber(firstSnapshot.closingBalances?.investments) : null,
-    plannedLiabilities: firstSnapshot ? toNumber(firstSnapshot.closingBalances?.liabilities) : null,
-    plannedRetirement: firstSnapshot ? toNumber(firstSnapshot.closingBalances?.retirement) : null,
+    plannedNetWorth: lastSnapshot ? toNumber(lastSnapshot.closingBalance) : null,
+    plannedInvestments: lastSnapshot ? toNumber(lastSnapshot.closingBalances?.investments) : null,
+    plannedLiabilities: lastSnapshot ? toNumber(lastSnapshot.closingBalances?.liabilities) : null,
+    plannedRetirement: lastSnapshot ? toNumber(lastSnapshot.closingBalances?.retirement) : null,
   };
 }
 
@@ -244,6 +248,83 @@ function buildTopContributors(data: Awaited<ReturnType<typeof getBalanceSheetDat
     .slice(0, 1);
 
   return [...assets, ...liabilities];
+}
+
+function toPipelineLiabilityRow(liability: Liability) {
+  const raw = liability as unknown as Record<string, unknown>;
+
+  return {
+    id: liability.id,
+    account_name: liability.account_name,
+    liability_type: liability.liability_type,
+    status: liability.status,
+    outstanding_amount: liability.outstanding_amount,
+    current_balance: raw.current_balance ?? null,
+    monthly_emi: raw.monthly_emi ?? liability.emi ?? null,
+  };
+}
+
+function resolveOutstandingForPolicy(liability: Liability): number {
+  const raw = liability as unknown as Record<string, unknown>;
+  return toNumber(liability.outstanding_amount ?? raw.current_balance ?? 0);
+}
+
+function normalizeStatus(liability: Liability): string {
+  return String(liability.status ?? "").trim().toLowerCase();
+}
+
+function classifyExclusionReasons(liability: Liability): Array<{ reason: string; policyRule: string }> {
+  const raw = liability as unknown as Record<string, unknown>;
+  const reasons: Array<{ reason: string; policyRule: string }> = [];
+
+  const rawOutstanding = raw.outstanding_amount;
+  const resolvedOutstanding = resolveOutstandingForPolicy(liability);
+  const status = normalizeStatus(liability);
+  const archived = status === "archived" || Boolean(raw.archived) || Boolean(raw.archived_at);
+  const deleted = status === "deleted" || Boolean(raw.deleted) || Boolean(raw.is_deleted) || Boolean(raw.deleted_at);
+
+  if (!(resolvedOutstanding > 0)) {
+    if (rawOutstanding === null || rawOutstanding === undefined || rawOutstanding === "") {
+      reasons.push({
+        reason: "outstanding_amount is null",
+        policyRule: "FinancialPositionPolicy v1.0 include rows with outstanding_amount > 0 (LiabilityDomainService.shouldIncludeRow)",
+      });
+    } else {
+      const numericOutstanding = Number(rawOutstanding);
+      if (Number.isFinite(numericOutstanding) && numericOutstanding < 0) {
+        reasons.push({
+          reason: "negative outstanding",
+          policyRule: "FinancialPositionPolicy v1.0 include rows with outstanding_amount > 0 (LiabilityDomainService.shouldIncludeRow)",
+        });
+      } else if (Number.isFinite(numericOutstanding) && numericOutstanding <= 0) {
+        reasons.push({
+          reason: "outstanding_amount <= 0",
+          policyRule: "FinancialPositionPolicy v1.0 include rows with outstanding_amount > 0 (LiabilityDomainService.shouldIncludeRow)",
+        });
+      } else {
+        reasons.push({
+          reason: "other",
+          policyRule: "FinancialPositionPolicy v1.0 include rows with outstanding_amount > 0 (LiabilityDomainService.shouldIncludeRow)",
+        });
+      }
+    }
+  }
+
+  if (archived) {
+    reasons.push({
+      reason: "archived",
+      policyRule: "FinancialPositionPolicy v1.0 excludes archived rows (LiabilityDomainService.isArchived)",
+    });
+  }
+
+  if (deleted) {
+    reasons.push({
+      reason: "deleted",
+      policyRule: "FinancialPositionPolicy v1.0 excludes deleted rows (LiabilityDomainService.isDeleted)",
+    });
+  }
+
+  return reasons;
 }
 
 async function loadLastMonthlyReviewLabel(): Promise<string | null> {
@@ -276,7 +357,6 @@ export class ExecutiveDashboardService {
 
     const investmentSummary = buildInvestmentSummary(balanceSheetData.investments);
     const assetSummary = buildAssetSummaryFromAssets(balanceSheetData.assets);
-    const loanSummary = buildLoanSummaryFromLiabilities(balanceSheetData.liabilities);
     const goalItems = buildGoalProgressItems(goals);
     const goalsOnTrack = goals.filter((goal) => goal.status === "ON_TRACK" || goal.status === "COMPLETED").length;
     const atRiskGoals = goals.filter((goal) => goal.status === "AT_RISK").length;
@@ -343,6 +423,106 @@ export class ExecutiveDashboardService {
       assetAllocation: balanceSheetData.summary.assetAllocation ?? [],
       liabilityAllocation: balanceSheetData.summary.liabilityAllocation ?? [],
     };
+
+    const canonicalInspection = inspectFinancialPositionRows(balanceSheetData.liabilities);
+    const canonicalSnapshot = canonicalInspection.snapshot;
+    const canonicalValidation = liabilityDomainService.validateSnapshot(canonicalInspection.snapshot);
+
+    if (process.env.NODE_ENV !== "production") {
+      const rowsForDomain = balanceSheetData.liabilities;
+      const includedRows = canonicalInspection.includedRows;
+      const excludedRows = canonicalInspection.diagnostics.excludedRows.map((excluded) => {
+        const liability = rowsForDomain.find((row) => row.id === excluded.id);
+        const reasons = liability
+          ? classifyExclusionReasons(liability)
+          : [{ reason: "other", policyRule: "Unable to map excluded id to liability row in dashboard input." }];
+
+        return {
+          id: excluded.id,
+          account_name: liability?.account_name ?? "Unknown",
+          reasons,
+        };
+      });
+
+      const carLoanRows = rowsForDomain.filter((row) => row.liability_type === "Car Loan");
+      const includedCarLoanIds = new Set(
+        includedRows
+          .filter((row) => row.liabilityType === "Car Loan")
+          .map((row) => row.id),
+      );
+      const excludedCarLoans = carLoanRows.filter((row) => !includedCarLoanIds.has(row.id));
+
+      const carLoanTrace = {
+        database_to_getLiabilities: carLoanRows.length > 0,
+        getLiabilities_to_getBalanceSheetData: carLoanRows.length > 0,
+        getBalanceSheetData_to_LiabilityDomainService: carLoanRows.length > 0,
+        liabilityDomainService_to_executiveDashboard_included: excludedCarLoans.length === 0 && carLoanRows.length > 0,
+        disappearsAt: carLoanRows.length === 0
+          ? "Before LiabilityDomainService (database/getLiabilities/getBalanceSheetData path)"
+          : excludedCarLoans.length > 0
+            ? "LiabilityDomainService policy exclusion"
+            : "Does not disappear in this pipeline",
+        carLoanRowIds: carLoanRows.map((row) => row.id),
+        excludedCarLoanRows: excludedCarLoans.map((row) => ({
+          id: row.id,
+          account_name: row.account_name,
+          reasons: classifyExclusionReasons(row),
+        })),
+      };
+
+      console.groupCollapsed("[Liability Pipeline] Stage 3 - Rows received by LiabilityDomainService (Executive Dashboard)");
+      console.table(rowsForDomain.map(toPipelineLiabilityRow));
+      console.info({ count: rowsForDomain.length });
+      console.groupEnd();
+
+      console.groupCollapsed("[Liability Pipeline] Stage 4 - Included rows (FinancialPositionPolicy v1.0)");
+      console.table(
+        includedRows.map((row) => ({
+          id: row.id,
+          account_name: row.label,
+          liability_type: row.liabilityType,
+          status: row.status,
+          outstanding_amount: row.outstandingAmount,
+          monthly_emi: row.monthlyEmi,
+        })),
+      );
+      console.info({ count: includedRows.length });
+      console.groupEnd();
+
+      console.groupCollapsed("[Liability Pipeline] Stage 5 - Excluded rows (FinancialPositionPolicy v1.0)");
+      console.table(
+        excludedRows.map((row) => ({
+          id: row.id,
+          account_name: row.account_name,
+          exclusion_reason: row.reasons.map((reason) => reason.reason).join(" | "),
+          policy_rule_applied: row.reasons.map((reason) => reason.policyRule).join(" | "),
+        })),
+      );
+      console.info({ count: excludedRows.length, details: excludedRows });
+      console.groupEnd();
+
+      console.groupCollapsed("[Liability Pipeline] Car Loan trace");
+      console.info(carLoanTrace);
+      console.groupEnd();
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      logFinancialPositionValidation({
+        screen: "Executive Dashboard",
+        legacyRows: balanceSheetData.liabilities
+          .filter((liability) => isManagedLoanType(liability.liability_type))
+          .map((liability) => ({
+            id: liability.id,
+            label: liability.account_name,
+            liabilityType: liability.liability_type,
+            outstandingAmount: Number(liability.outstanding_amount ?? 0),
+            monthlyEmi: Number(liability.emi ?? 0),
+          })),
+        canonical: canonicalInspection,
+        validation: canonicalValidation,
+      });
+    }
+
     const dailyInsight = buildExecutiveInsights(
       summaryForInsights,
       balanceSheetData.assets,
@@ -370,7 +550,7 @@ export class ExecutiveDashboardService {
       executiveSummary: {
         netWorth: Number(balanceSheetData.summary.netWorth ?? 0),
         assets: assetSummary.totalAssets,
-        liabilities: Number(balanceSheetData.summary.totalLiabilities ?? 0),
+        liabilities: canonicalSnapshot.totalOutstanding,
         monthlySavings: monthlyCashFlow.monthlySavings,
         plannedNetWorth: hasPlannedNetWorth ? plannedNetWorth : null,
         netWorthVariance: hasPlannedNetWorth ? Number(balanceSheetData.summary.netWorth ?? 0) - plannedNetWorth : null,
@@ -386,12 +566,12 @@ export class ExecutiveDashboardService {
         portfolioVariance: hasPlannedInvestments ? currentNonRetirementInvestments - plannedNonRetirementInvestments : null,
       },
       loans: {
-        outstanding: loanSummary.totalOutstanding,
-        emi: loanSummary.totalEmi,
-        interestRate: loanSummary.averageInterestRate,
-        activeLoans: loanSummary.activeLoans,
+        outstanding: canonicalSnapshot.totalOutstanding,
+        emi: canonicalSnapshot.totalMonthlyEmi,
+        interestRate: Number(canonicalSnapshot.weightedAverageInterest ?? 0),
+        activeLoans: canonicalSnapshot.activeLiabilityCount,
         plannedOutstanding: hasPlannedLiabilities ? plannedLiabilities : null,
-        outstandingVariance: hasPlannedLiabilities ? loanSummary.totalOutstanding - plannedLiabilities : null,
+        outstandingVariance: hasPlannedLiabilities ? canonicalSnapshot.totalOutstanding - plannedLiabilities : null,
       },
       goals: {
         total: goals.length,

@@ -30,22 +30,95 @@ create table if not exists public.financial_event_execution (
   retry_count integer not null default 0 check (retry_count >= 0)
 );
 
-create index if not exists financial_events_user_scheduled_idx
-  on public.financial_events (user_id, scheduled_at);
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'financial_events'
+      and column_name = 'scheduled_at'
+  ) then
+    drop index if exists public.financial_events_user_scheduled_idx;
+    create index financial_events_user_scheduled_idx
+      on public.financial_events (user_id, scheduled_at);
+  end if;
+end
+$$;
 
-create index if not exists financial_events_status_idx
-  on public.financial_events (status);
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'financial_events'
+      and column_name = 'status'
+  ) then
+    drop index if exists public.financial_events_status_idx;
+    create index financial_events_status_idx
+      on public.financial_events (status);
+  end if;
+end
+$$;
 
-create index if not exists financial_events_category_idx
-  on public.financial_events (event_category);
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'financial_events'
+      and column_name = 'event_category'
+  ) then
+    drop index if exists public.financial_events_category_idx;
+    create index financial_events_category_idx
+      on public.financial_events (event_category);
+  end if;
+end
+$$;
 
-create index if not exists financial_events_source_idx
-  on public.financial_events (source_type, source_id);
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'financial_events'
+      and column_name = 'source_type'
+  ) and exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'financial_events'
+      and column_name = 'source_id'
+  ) then
+    drop index if exists public.financial_events_source_idx;
+    create index financial_events_source_idx
+      on public.financial_events (source_type, source_id);
+  end if;
+end
+$$;
 
-create index if not exists financial_events_correlation_idx
-  on public.financial_events (correlation_id);
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'financial_events'
+      and column_name = 'correlation_id'
+  ) then
+    drop index if exists public.financial_events_correlation_idx;
+    create index financial_events_correlation_idx
+      on public.financial_events (correlation_id);
+  end if;
+end
+$$;
 
-create index if not exists financial_event_execution_event_id_idx
+drop index if exists public.financial_event_execution_event_id_idx;
+
+create index financial_event_execution_event_id_idx
   on public.financial_event_execution (event_id, execution_start desc);
 
 alter table public.financial_events enable row level security;

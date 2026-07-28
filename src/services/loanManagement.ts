@@ -150,7 +150,7 @@ function monthKey(dateIso: string): string {
   return `${year}-${month}`;
 }
 
-function isManagedLoanType(type: Liability["liability_type"]): boolean {
+export function isManagedLoanType(type: Liability["liability_type"]): boolean {
   return Boolean(liabilityTypeToLoanType[type]);
 }
 

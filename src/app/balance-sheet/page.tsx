@@ -13,6 +13,8 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingSpinner } from "@/components/ui/feedback";
 import { formatCurrency, formatPercent, truncateLabel } from "@/lib/formatters";
+import { inspectFinancialPositionRows, liabilityDomainService } from "@/domain/services/LiabilityDomainService";
+import { logFinancialPositionValidation } from "@/domain/services/FinancialPositionValidationReporter";
 import { snapshotReadModel, type SnapshotHistoryRecord } from "@/services/snapshots";
 import { getBalanceSheetData, type BalanceSheetSection, type BalanceSheetSummary } from "@/services/balanceSheet";
 
@@ -109,6 +111,22 @@ export default function BalanceSheetPage() {
         if (!mounted) {
           return;
         }
+
+        const canonicalInspection = inspectFinancialPositionRows(balanceSheetData.liabilities);
+        const canonicalValidation = liabilityDomainService.validateSnapshot(canonicalInspection.snapshot);
+
+        logFinancialPositionValidation({
+          screen: "Balance Sheet",
+          legacyRows: balanceSheetData.liabilities.map((liability) => ({
+            id: liability.id,
+            label: liability.account_name,
+            liabilityType: liability.liability_type,
+            outstandingAmount: Number(liability.outstanding_amount ?? 0),
+            monthlyEmi: Number(liability.emi ?? 0),
+          })),
+          canonical: canonicalInspection,
+          validation: canonicalValidation,
+        });
 
         setSummary(balanceSheetData.summary);
         setHistoryRecords(history);

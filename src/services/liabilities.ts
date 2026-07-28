@@ -62,6 +62,20 @@ async function requireAuthenticatedUser() {
   return { client, user };
 }
 
+function toPipelineLiabilityRow(liability: Liability) {
+  const raw = liability as unknown as Record<string, unknown>;
+
+  return {
+    id: liability.id,
+    account_name: liability.account_name,
+    liability_type: liability.liability_type,
+    status: liability.status,
+    outstanding_amount: liability.outstanding_amount,
+    current_balance: raw.current_balance ?? null,
+    monthly_emi: raw.monthly_emi ?? liability.emi ?? null,
+  };
+}
+
 export async function getLiabilities(): Promise<Liability[]> {
   const { client, user } = await requireAuthenticatedUser();
 
@@ -69,6 +83,14 @@ export async function getLiabilities(): Promise<Liability[]> {
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    const rows = (data ?? []) as Liability[];
+    console.groupCollapsed("[Liability Pipeline] Stage 1 - Raw rows from getLiabilities()");
+    console.table(rows.map(toPipelineLiabilityRow));
+    console.info({ count: rows.length, user_id: user.id });
+    console.groupEnd();
   }
 
   return (data ?? []) as Liability[];

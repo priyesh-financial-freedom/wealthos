@@ -277,6 +277,26 @@ export async function getBalanceSheetData(): Promise<BalanceSheetData> {
     trace("getRealEstateProperties", () => getRealEstateProperties(), [] as RealEstateProperty[]),
   ]);
 
+  if (process.env.NODE_ENV !== "production") {
+    console.groupCollapsed("[Liability Pipeline] Stage 2 - Rows received by getBalanceSheetData()");
+    console.table(
+      liabilities.map((liability) => {
+        const raw = liability as unknown as Record<string, unknown>;
+        return {
+          id: liability.id,
+          account_name: liability.account_name,
+          liability_type: liability.liability_type,
+          status: liability.status,
+          outstanding_amount: liability.outstanding_amount,
+          current_balance: raw.current_balance ?? null,
+          monthly_emi: raw.monthly_emi ?? liability.emi ?? null,
+        };
+      }),
+    );
+    console.info({ count: liabilities.length });
+    console.groupEnd();
+  }
+
   const payload: BalanceSheetData = {
     assets,
     liabilities,

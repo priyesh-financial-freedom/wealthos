@@ -23,16 +23,24 @@ create table if not exists public.liabilities (
 
 alter table public.liabilities enable row level security;
 
-create policy if not exists liabilities_select_own on public.liabilities
+drop policy if exists liabilities_select_own on public.liabilities;
+
+create policy liabilities_select_own on public.liabilities
   for select using (auth.uid() = user_id);
 
-create policy if not exists liabilities_insert_own on public.liabilities
+drop policy if exists liabilities_insert_own on public.liabilities;
+
+create policy liabilities_insert_own on public.liabilities
   for insert with check (auth.uid() = user_id);
 
-create policy if not exists liabilities_update_own on public.liabilities
+drop policy if exists liabilities_update_own on public.liabilities;
+
+create policy liabilities_update_own on public.liabilities
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-create policy if not exists liabilities_delete_own on public.liabilities
+drop policy if exists liabilities_delete_own on public.liabilities;
+
+create policy liabilities_delete_own on public.liabilities
   for delete using (auth.uid() = user_id);
 
 create or replace function public.update_liabilities_updated_at()

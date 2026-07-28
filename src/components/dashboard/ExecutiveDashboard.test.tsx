@@ -11,6 +11,8 @@ const populatedData = {
     assets: 1800000,
     liabilities: 600000,
     monthlySavings: 45000,
+    topContributors: [],
+    lastMonthlyReview: null,
   },
   investments: {
     currentPortfolio: 700000,
@@ -57,6 +59,8 @@ const populatedData = {
     available: true,
     totalRetirementAssets: 450000,
     accountsCount: 3,
+    plannedTotalRetirementAssets: null,
+    retirementVariance: null,
   },
   upcoming: {
     available: true,
@@ -94,11 +98,11 @@ describe("ExecutiveDashboard", () => {
 
     expect(html).toContain("Project North Star");
     expect(html).toContain("Financial Health Score");
-    expect(html).toContain("Where Am I Today");
-    expect(html).toContain("Where Should I Focus");
+    expect(html).toContain("Where am I today");
+    expect(html).toContain("Where should I focus");
     expect(html).toContain("Investments");
     expect(html).toContain("Liabilities");
     expect(html).toContain("Retirement");
-    expect(html).toContain("What&#x27;s Coming Up");
+    expect(html).toContain("What&#x27;s coming up");
   });
 });

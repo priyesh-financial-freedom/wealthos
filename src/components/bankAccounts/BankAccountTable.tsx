@@ -6,6 +6,11 @@ import { DataGrid, type DataGridSortDirection } from "@/components/ui/data-grid"
 import { formatCurrency } from "@/lib/formatters";
 import type { BankAccount, BankAccountStatus } from "@/types/bankAccount";
 
+function formatMaskedAccountNumber(maskedAccountNumber: string): string {
+  const suffix = maskedAccountNumber.slice(-4);
+  return suffix ? `••••${suffix}` : maskedAccountNumber;
+}
+
 interface BankAccountTableProps {
   accounts: BankAccount[];
   searchValue: string;
@@ -61,7 +66,24 @@ export function BankAccountTable({
       title="Bank accounts inventory"
       description="Track monthly balances, ownership, and cash inclusion settings"
       columns={[
-        { key: "bank", header: "Bank Name", sortable: true, widthClassName: "min-w-40", cell: (account) => account.bank },
+        {
+          key: "bank",
+          header: "Bank Name",
+          sortable: true,
+          widthClassName: "min-w-40",
+          cell: (account) => {
+            const maskedAccountNumber = account.masked_account_number?.trim();
+
+            return (
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate text-slate-900">{account.bank}</span>
+                {maskedAccountNumber ? (
+                  <span className="truncate text-xs text-slate-500">{formatMaskedAccountNumber(maskedAccountNumber)}</span>
+                ) : null}
+              </div>
+            );
+          },
+        },
         {
           key: "account_name",
           header: "Account Nickname",
