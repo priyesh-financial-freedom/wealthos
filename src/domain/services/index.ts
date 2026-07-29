@@ -5,6 +5,9 @@ export {
   SupabaseLiabilityDomainRepository,
 } from "./LiabilityDomainService";
 
+export { MonthEndCloseDomainService } from "./MonthEndCloseDomainService";
+export { SupabaseMonthEndCloseDomainRepository } from "./MonthEndCloseDomainRepository";
+
 export type {
   FinancialPositionBreakdown,
   FinancialPositionPolicyVersion,
@@ -21,3 +24,14 @@ export type {
   LiabilityExclusionReason,
   LiabilityPortfolioBucket,
 } from "./LiabilityDomainService";
+
+export type { MonthEndCloseDomainRepository } from "./MonthEndCloseDomainRepository";
+export type { SaveMonthEndCloseDraftResult } from "./MonthEndCloseDomainService";
+
+export {
+  FinancialPeriodDomainError,
+  FinancialPeriodDomainErrorCode,
+  FinancialPeriodStatus,
+  MonthEndCloseBalanceDomainError,
+  MonthEndCloseBalanceDomainErrorCode,
+} from "@/types/monthEndCloseDomain";

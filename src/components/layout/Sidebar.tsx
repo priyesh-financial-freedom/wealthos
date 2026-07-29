@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   Banknote,
   BookOpen,
+  ClipboardCheck,
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
@@ -84,6 +85,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
 
   const dashboardActive = activeHref === "/dashboard";
   const planningActive = activeHref === "/planning" || activeHref === "/planning/my-financial-plan";
+  const monthlyReviewActive = activeHref === "/monthly-review";
   const assetsActive = activeHref === "/assets";
   const bankAccountsActive = activeHref === "/bank-accounts";
   const cashBankingActive = bankAccountsActive;
@@ -135,6 +137,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             <Link href="/planning" className={rowLinkClass({ active: planningActive, level: 1, collapsed })}>
               <SlidersHorizontal className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Planning</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/monthly-review" className={rowLinkClass({ active: monthlyReviewActive, level: 1, collapsed })}>
+              <ClipboardCheck className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Monthly Review</span> : null}
             </Link>
           </div>
 

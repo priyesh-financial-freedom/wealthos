@@ -26,9 +26,9 @@ import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
 import { getAssets, updateAsset } from "@/services/assets";
 import { cashFlowManagementService } from "@/services/cashFlowManagement";
 import { compensationService, type CompensationSummary } from "@/services/compensation";
-import { getInvestments, updateInvestment } from "@/services/investments";
+import { getInvestments } from "@/services/investments";
 import { getLiabilities, updateLiability } from "@/services/liabilities";
-import { closeMonthEndClose, getMonthEndCloseWorkspace } from "@/services/monthEndClose";
+import { closeMonthEndClose, getMonthEndCloseWorkspace, saveMonthEndCloseDraft } from "@/services/monthEndClose";
 import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/MonthEndCloseService";
 import { projectionInputService } from "@/services/projection";
 import { getRetirementAccounts } from "@/services/retirement";
@@ -103,6 +103,91 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
 function toNumber(value: string) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toRoundedCurrency(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function sumValueMapByCategory(rows: Investment[], valuesById: Record<string, string>, category: Investment["category"]) {
+  return rows
+    .filter((item) => item.category === category)
+    .reduce((sum, item) => sum + toNumber(valuesById[item.id] ?? String(item.current_value ?? 0)), 0);
+}
+
+function buildInvestmentValueMap(workspace: MonthEndCloseWorkspace, investments: Investment[]) {
+  const workspaceByEntityId = new Map(
+    workspace.items
+      .filter((item) => item.entityType === "investment")
+      .map((item) => [item.entityId, item.actualValue]),
+  );
+
+  return investments.reduce<Record<string, string>>((acc, item) => {
+    const value = workspaceByEntityId.get(item.id);
+    acc[item.id] = String(value ?? Number(item.current_value ?? 0));
+    return acc;
+  }, {});
+}
+
+function allocateCategoryTotal(items: Investment[], total: number) {
+  if (items.length === 0) {
+    return [] as Array<{ id: string; nextValue: number }>;
+  }
+
+  const currentValues = items.map((item) => Math.max(0, Number(item.current_value ?? 0)));
+  const weightSum = currentValues.reduce((sum, value) => sum + value, 0);
+
+  if (weightSum > 0) {
+    let running = 0;
+    return items.map((item, index) => {
+      if (index === items.length - 1) {
+        return { id: item.id, nextValue: toRoundedCurrency(total - running) };
+      }
+
+      const allocated = toRoundedCurrency((total * currentValues[index]) / weightSum);
+      running += allocated;
+      return { id: item.id, nextValue: allocated };
+    });
+  }
+
+  const evenShare = toRoundedCurrency(total / items.length);
+  let running = 0;
+  return items.map((item, index) => {
+    if (index === items.length - 1) {
+      return { id: item.id, nextValue: toRoundedCurrency(total - running) };
+    }
+
+    running += evenShare;
+    return { id: item.id, nextValue: evenShare };
+  });
+}
+
+function buildMonthEndInvestmentActuals(params: {
+  investments: Investment[];
+  investmentValues: Record<string, string>;
+  investmentSummaryValues: { mutualFundsTotal: string; stocksTotal: string };
+}) {
+  const mutualFundInvestments = params.investments.filter((item) => item.category === "Mutual Funds");
+  const stockInvestments = params.investments.filter((item) => item.category === "Stocks");
+  const granularInvestments = params.investments.filter((item) => item.category !== "Mutual Funds" && item.category !== "Stocks");
+
+  const overrides = new Map<string, number>();
+
+  const mutualFundAllocations = allocateCategoryTotal(mutualFundInvestments, toNumber(params.investmentSummaryValues.mutualFundsTotal));
+  for (const allocation of mutualFundAllocations) {
+    overrides.set(allocation.id, allocation.nextValue);
+  }
+
+  const stockAllocations = allocateCategoryTotal(stockInvestments, toNumber(params.investmentSummaryValues.stocksTotal));
+  for (const allocation of stockAllocations) {
+    overrides.set(allocation.id, allocation.nextValue);
+  }
+
+  for (const item of granularInvestments) {
+    overrides.set(item.id, toNumber(params.investmentValues[item.id] ?? String(item.current_value ?? 0)));
+  }
+
+  return overrides;
 }
 
 function tone(value: number) {
@@ -242,6 +327,13 @@ export default function MonthlyReviewPage() {
   const [livingExpenseNotes, setLivingExpenseNotes] = useState<string>("");
 
   const [investmentValues, setInvestmentValues] = useState<Record<string, string>>({});
+  const [investmentSummaryValues, setInvestmentSummaryValues] = useState<{
+    mutualFundsTotal: string;
+    stocksTotal: string;
+  }>({
+    mutualFundsTotal: "0",
+    stocksTotal: "0",
+  });
   const [assetValues, setAssetValues] = useState<Record<string, string>>({});
   const [loanValues, setLoanValues] = useState<Record<string, string>>({});
 
@@ -285,9 +377,22 @@ export default function MonthlyReviewPage() {
       setLivingExpenseNotes(cashSnapshot?.livingExpense.notes ?? "");
 
       setInvestmentValues(investmentRows.reduce<Record<string, string>>((acc, item) => {
-        acc[item.id] = String(item.current_value ?? 0);
+        const workspaceItem = monthWorkspace.items.find((candidate) => candidate.entityType === "investment" && candidate.entityId === item.id);
+        acc[item.id] = String(workspaceItem?.actualValue ?? item.current_value ?? 0);
         return acc;
       }, {}));
+      setInvestmentSummaryValues({
+        mutualFundsTotal: String(
+          monthWorkspace.items
+            .filter((item) => item.entityType === "investment" && item.key === "mutual_funds")
+            .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0),
+        ),
+        stocksTotal: String(
+          monthWorkspace.items
+            .filter((item) => item.entityType === "investment" && item.key === "stocks")
+            .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0),
+        ),
+      });
       setAssetValues(assetRows.reduce<Record<string, string>>((acc, item) => {
         acc[item.id] = String(item.current_value ?? 0);
         return acc;
@@ -330,10 +435,12 @@ export default function MonthlyReviewPage() {
         setLivingExpenseAmount(String(cashSnapshot?.livingExpense.monthlyAmount ?? 0));
         setLivingExpenseNotes(cashSnapshot?.livingExpense.notes ?? "");
 
-        setInvestmentValues(investmentRows.reduce<Record<string, string>>((acc, item) => {
-          acc[item.id] = String(item.current_value ?? 0);
-          return acc;
-        }, {}));
+        const investmentValueMap = buildInvestmentValueMap(monthWorkspace, investmentRows);
+        setInvestmentValues(investmentValueMap);
+        setInvestmentSummaryValues({
+          mutualFundsTotal: String(sumValueMapByCategory(investmentRows, investmentValueMap, "Mutual Funds")),
+          stocksTotal: String(sumValueMapByCategory(investmentRows, investmentValueMap, "Stocks")),
+        });
         setAssetValues(assetRows.reduce<Record<string, string>>((acc, item) => {
           acc[item.id] = String(item.current_value ?? 0);
           return acc;
@@ -415,6 +522,18 @@ export default function MonthlyReviewPage() {
 
   const completionPercent = Math.round((completedCount / WORKFLOW_STEPS.length) * 100);
 
+  const mutualFundInvestments = useMemo(() => {
+    return investments.filter((item) => item.category === "Mutual Funds");
+  }, [investments]);
+
+  const stockInvestments = useMemo(() => {
+    return investments.filter((item) => item.category === "Stocks");
+  }, [investments]);
+
+  const granularInvestments = useMemo(() => {
+    return investments.filter((item) => item.category !== "Mutual Funds" && item.category !== "Stocks");
+  }, [investments]);
+
   function markStepComplete(step: WorkflowStepKey) {
     setCompletedSteps((current) => ({ ...current, [step]: true }));
   }
@@ -424,21 +543,57 @@ export default function MonthlyReviewPage() {
       setSavingStep("investments");
       setError(null);
 
-      const updates = investments
-        .map((item) => {
-          const nextValue = toNumber(investmentValues[item.id] ?? String(item.current_value ?? 0));
-          return {
-            id: item.id,
-            nextValue,
-            changed: Math.abs(nextValue - Number(item.current_value ?? 0)) >= 0.01,
-          };
-        })
-        .filter((item) => item.changed);
+      if (!workspace) {
+        throw new Error("Monthly review workspace is unavailable.");
+      }
 
-      await Promise.all(updates.map((item) => updateInvestment({ id: item.id, current_value: item.nextValue })));
+      const overrides = buildMonthEndInvestmentActuals({
+        investments,
+        investmentValues,
+        investmentSummaryValues,
+      });
+
+      const updatedItems = workspace.items.map((item) => {
+        if (item.entityType !== "investment") {
+          return item;
+        }
+
+        if (!overrides.has(item.entityId)) {
+          return item;
+        }
+
+        const actualValue = overrides.get(item.entityId) ?? item.actualValue;
+        const absoluteVariance = actualValue - item.projectedValue;
+        const percentageVariance = item.projectedValue === 0 ? (actualValue === 0 ? 0 : null) : ((actualValue - item.projectedValue) / Math.abs(item.projectedValue)) * 100;
+
+        return {
+          ...item,
+          actualValue,
+          absoluteVariance,
+          percentageVariance,
+        };
+      });
+
+      await saveMonthEndCloseDraft({
+        closeId: workspace.close?.id ?? null,
+        closeMonth: workspace.month.month,
+        closeYear: workspace.month.year,
+        items: updatedItems.map((item) => ({
+          entityId: item.entityId,
+          entityType: item.entityType,
+          entityName: item.entityName,
+          key: item.key,
+          label: item.label,
+          itemType: item.itemType,
+          sortOrder: item.sortOrder,
+          openingValue: item.openingValue,
+          projectedValue: item.projectedValue,
+          actualValue: item.actualValue,
+        })),
+      });
 
       markStepComplete("investments");
-      setNotice(`Investment values ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
+      setNotice("Monthly Review investment balances captured for month-end reconciliation.");
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (saveError) {
@@ -709,7 +864,38 @@ export default function MonthlyReviewPage() {
               </div>
               <div className="mt-4 space-y-3">
                 {investments.length === 0 ? <p className="text-sm text-slate-500">No investments available.</p> : null}
-                {investments.map((item) => (
+
+                {mutualFundInvestments.length > 0 ? (
+                  <div className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">Total Mutual Fund Value</p>
+                      <p className="text-xs text-slate-500">Aggregated across {mutualFundInvestments.length} mutual fund entr{mutualFundInvestments.length === 1 ? "y" : "ies"}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={investmentSummaryValues.mutualFundsTotal}
+                      onChange={(event) => setInvestmentSummaryValues((current) => ({ ...current, mutualFundsTotal: event.target.value }))}
+                    />
+                  </div>
+                ) : null}
+
+                {stockInvestments.length > 0 ? (
+                  <div className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">Total Stock Portfolio Value</p>
+                      <p className="text-xs text-slate-500">Aggregated across {stockInvestments.length} stock entr{stockInvestments.length === 1 ? "y" : "ies"}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={investmentSummaryValues.stocksTotal}
+                      onChange={(event) => setInvestmentSummaryValues((current) => ({ ...current, stocksTotal: event.target.value }))}
+                    />
+                  </div>
+                ) : null}
+
+                {granularInvestments.map((item) => (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
                     <div>
                       <p className="text-sm font-medium text-slate-900">{item.investment_name}</p>
