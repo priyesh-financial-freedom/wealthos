@@ -30,6 +30,7 @@ import { getInvestments } from "@/services/investments";
 import { getLiabilities, updateLiability } from "@/services/liabilities";
 import { closeMonthEndClose, getMonthEndCloseWorkspace, saveMonthEndCloseDraft } from "@/services/monthEndClose";
 import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/MonthEndCloseService";
+import { buildInvestmentValueMap } from "./investmentValueMap";
 import { projectionInputService } from "@/services/projection";
 import { getRetirementAccounts } from "@/services/retirement";
 import { closeCurrentMonthSnapshot } from "@/services/monthlySnapshots";
@@ -113,20 +114,6 @@ function sumValueMapByCategory(rows: Investment[], valuesById: Record<string, st
   return rows
     .filter((item) => item.category === category)
     .reduce((sum, item) => sum + toNumber(valuesById[item.id] ?? String(item.current_value ?? 0)), 0);
-}
-
-function buildInvestmentValueMap(workspace: MonthEndCloseWorkspace, investments: Investment[]) {
-  const workspaceByEntityId = new Map(
-    workspace.items
-      .filter((item) => item.entityType === "investment")
-      .map((item) => [item.entityId, item.actualValue]),
-  );
-
-  return investments.reduce<Record<string, string>>((acc, item) => {
-    const value = workspaceByEntityId.get(item.id);
-    acc[item.id] = String(value ?? Number(item.current_value ?? 0));
-    return acc;
-  }, {});
 }
 
 function allocateCategoryTotal(items: Investment[], total: number) {
@@ -354,6 +341,38 @@ export default function MonthlyReviewPage() {
   const [savingStep, setSavingStep] = useState<WorkflowStepKey | null>(null);
   const [closingMonth, setClosingMonth] = useState(false);
 
+  function applyLoadedWorkspaceData(params: {
+    monthWorkspace: MonthEndCloseWorkspace;
+    summary: CompensationSummary | null;
+    investmentRows: Investment[];
+    assetRows: Asset[];
+    liabilityRows: Liability[];
+    cashSnapshot: Awaited<ReturnType<typeof cashFlowManagementService.getCashFlowSnapshot>> | null;
+  }) {
+    setWorkspace(params.monthWorkspace);
+    setCompensationSummary(params.summary);
+    setInvestments(params.investmentRows);
+    setAssets(params.assetRows);
+    setLiabilities(params.liabilityRows);
+    setLivingExpenseAmount(String(params.cashSnapshot?.livingExpense.monthlyAmount ?? 0));
+    setLivingExpenseNotes(params.cashSnapshot?.livingExpense.notes ?? "");
+
+    const investmentValueMap = buildInvestmentValueMap(params.monthWorkspace, params.investmentRows);
+    setInvestmentValues(investmentValueMap);
+    setInvestmentSummaryValues({
+      mutualFundsTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap, "Mutual Funds")),
+      stocksTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap, "Stocks")),
+    });
+    setAssetValues(params.assetRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.current_value ?? 0);
+      return acc;
+    }, {}));
+    setLoanValues(params.liabilityRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.outstanding_amount ?? 0);
+      return acc;
+    }, {}));
+  }
+
   async function loadWorkspaceData() {
     try {
       setLoading(true);
@@ -368,39 +387,14 @@ export default function MonthlyReviewPage() {
         cashFlowManagementService.getCashFlowSnapshot().catch(() => null),
       ]);
 
-      setWorkspace(monthWorkspace);
-      setCompensationSummary(summary);
-      setInvestments(investmentRows);
-      setAssets(assetRows);
-      setLiabilities(liabilityRows);
-      setLivingExpenseAmount(String(cashSnapshot?.livingExpense.monthlyAmount ?? 0));
-      setLivingExpenseNotes(cashSnapshot?.livingExpense.notes ?? "");
-
-      setInvestmentValues(investmentRows.reduce<Record<string, string>>((acc, item) => {
-        const workspaceItem = monthWorkspace.items.find((candidate) => candidate.entityType === "investment" && candidate.entityId === item.id);
-        acc[item.id] = String(workspaceItem?.actualValue ?? item.current_value ?? 0);
-        return acc;
-      }, {}));
-      setInvestmentSummaryValues({
-        mutualFundsTotal: String(
-          monthWorkspace.items
-            .filter((item) => item.entityType === "investment" && item.key === "mutual_funds")
-            .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0),
-        ),
-        stocksTotal: String(
-          monthWorkspace.items
-            .filter((item) => item.entityType === "investment" && item.key === "stocks")
-            .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0),
-        ),
+      applyLoadedWorkspaceData({
+        monthWorkspace,
+        summary,
+        investmentRows,
+        assetRows,
+        liabilityRows,
+        cashSnapshot,
       });
-      setAssetValues(assetRows.reduce<Record<string, string>>((acc, item) => {
-        acc[item.id] = String(item.current_value ?? 0);
-        return acc;
-      }, {}));
-      setLoanValues(liabilityRows.reduce<Record<string, string>>((acc, item) => {
-        acc[item.id] = String(item.outstanding_amount ?? 0);
-        return acc;
-      }, {}));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load monthly review workspace");
       setWorkspace(null);
@@ -414,6 +408,9 @@ export default function MonthlyReviewPage() {
 
     async function initialize() {
       try {
+        setLoading(true);
+        setError(null);
+
         const [monthWorkspace, summary, investmentRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
           getMonthEndCloseWorkspace(),
           compensationService.getSummary().catch(() => null),
@@ -427,29 +424,14 @@ export default function MonthlyReviewPage() {
           return;
         }
 
-        setWorkspace(monthWorkspace);
-        setCompensationSummary(summary);
-        setInvestments(investmentRows);
-        setAssets(assetRows);
-        setLiabilities(liabilityRows);
-        setLivingExpenseAmount(String(cashSnapshot?.livingExpense.monthlyAmount ?? 0));
-        setLivingExpenseNotes(cashSnapshot?.livingExpense.notes ?? "");
-
-        const investmentValueMap = buildInvestmentValueMap(monthWorkspace, investmentRows);
-        setInvestmentValues(investmentValueMap);
-        setInvestmentSummaryValues({
-          mutualFundsTotal: String(sumValueMapByCategory(investmentRows, investmentValueMap, "Mutual Funds")),
-          stocksTotal: String(sumValueMapByCategory(investmentRows, investmentValueMap, "Stocks")),
+        applyLoadedWorkspaceData({
+          monthWorkspace,
+          summary,
+          investmentRows,
+          assetRows,
+          liabilityRows,
+          cashSnapshot,
         });
-        setAssetValues(assetRows.reduce<Record<string, string>>((acc, item) => {
-          acc[item.id] = String(item.current_value ?? 0);
-          return acc;
-        }, {}));
-        setLoanValues(liabilityRows.reduce<Record<string, string>>((acc, item) => {
-          acc[item.id] = String(item.outstanding_amount ?? 0);
-          return acc;
-        }, {}));
-        setError(null);
       } catch (loadError) {
         if (!isMounted) {
           return;

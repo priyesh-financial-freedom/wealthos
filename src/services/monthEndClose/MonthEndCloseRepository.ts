@@ -114,6 +114,26 @@ export class MonthEndCloseRepository {
     return row ? normalizeMonthEndClose(row) : null;
   }
 
+  async getEarliestOpenMonthEndClose(userId: string): Promise<MonthEndClose | null> {
+    const client = await this.getClient();
+    const { data, error } = await client
+      .from("month_end_closes")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "draft")
+      .order("close_year", { ascending: true })
+      .order("close_month", { ascending: true })
+      .order("version_number", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      throw new Error(extractSupabaseMessage(error));
+    }
+
+    const row = (data?.[0] ?? null) as MonthEndClose | null;
+    return row ? normalizeMonthEndClose(row) : null;
+  }
+
   async getLatestVersionForMonth(userId: string, closeYear: number, closeMonth: number): Promise<MonthEndClose | null> {
     const client = await this.getClient();
     const { data, error } = await client

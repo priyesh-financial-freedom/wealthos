@@ -640,11 +640,34 @@ function buildWorkspaceItems(params: {
     });
   }
 
+  // Preserve historical draft rows even when current seed generation omits an entity.
+  for (const snapshot of draftSnapshots.exact.values()) {
+    if (!rowMap.has(snapshot.rowKey)) {
+      rowMap.set(snapshot.rowKey, {
+        rowKey: snapshot.rowKey,
+        entityId: snapshot.entityId,
+        entityType: snapshot.entityType,
+        entityTypeLabel: snapshot.entityTypeLabel,
+        entityName: snapshot.entityName,
+        key: snapshot.key,
+        itemType: snapshot.itemType,
+        openingValue: Number(snapshot.openingValue ?? 0),
+        projectedValue: Number(snapshot.projectedValue ?? 0),
+        actualValue: Number(snapshot.actualValue ?? 0),
+        sortOrder: Number(snapshot.sortOrder ?? 0),
+      });
+    }
+  }
+
   const rows = sortRowSeeds([...rowMap.values()]);
   rows.forEach((row) => {
     const openingSnapshot = latestClosedSnapshots.exact.get(row.rowKey);
     const draftSnapshot = draftSnapshots.exact.get(row.rowKey);
-    row.openingValue = openingSnapshot ? openingSnapshot.actualValue : 0;
+    row.openingValue = openingSnapshot
+      ? openingSnapshot.actualValue
+      : draftSnapshot
+        ? Number(draftSnapshot.openingValue ?? row.openingValue ?? 0)
+        : 0;
     row.actualValue = draftSnapshot ? draftSnapshot.actualValue : row.actualValue;
   });
 
@@ -794,12 +817,17 @@ export class MonthEndCloseService {
 
   async getWorkspace(): Promise<MonthEndCloseWorkspace> {
     const userId = await this.repository.getAuthenticatedUserId();
-    const latestClosed = await this.repository.getLatestClosedMonthEndClose(userId);
+    const [earliestOpen, latestClosed] = await Promise.all([
+      this.repository.getEarliestOpenMonthEndClose(userId),
+      this.repository.getLatestClosedMonthEndClose(userId),
+    ]);
     const previousMonthReference = latestClosed ? createMonthReference(latestClosed.close_year, latestClosed.close_month) : null;
-    const pendingMonthReference = latestClosed
-      ? nextMonth(latestClosed.close_month, latestClosed.close_year)
-      : createMonthReference(new Date().getFullYear(), new Date().getMonth() + 1);
-    const draft = await this.repository.getDraftForMonth(userId, pendingMonthReference.year, pendingMonthReference.month);
+    const pendingMonthReference = earliestOpen
+      ? createMonthReference(earliestOpen.close_year, earliestOpen.close_month)
+      : latestClosed
+        ? nextMonth(latestClosed.close_month, latestClosed.close_year)
+        : createMonthReference(new Date().getFullYear(), new Date().getMonth() + 1);
+    const draft = earliestOpen ?? await this.repository.getDraftForMonth(userId, pendingMonthReference.year, pendingMonthReference.month);
 
     const [draftItems, latestClosedItems, balanceSheetData, projectedBucketTotals] = await Promise.all([
       draft ? this.repository.getCloseItems(draft.id) : Promise.resolve([]),

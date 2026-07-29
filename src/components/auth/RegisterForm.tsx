@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -27,6 +27,11 @@ export function RegisterForm() {
   const router = useRouter();
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isHydrated = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -72,7 +77,7 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" data-auth-ready={isHydrated ? "true" : "false"} className="space-y-4">
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="email">
           Email
@@ -81,7 +86,7 @@ export function RegisterForm() {
           id="email"
           type="email"
           autoComplete="email"
-          disabled={isSubmitting}
+          disabled={!isHydrated || isSubmitting}
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
           {...form.register("email")}
         />
@@ -98,7 +103,7 @@ export function RegisterForm() {
           id="password"
           type="password"
           autoComplete="new-password"
-          disabled={isSubmitting}
+          disabled={!isHydrated || isSubmitting}
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
           {...form.register("password")}
         />
@@ -115,7 +120,7 @@ export function RegisterForm() {
           id="confirmPassword"
           type="password"
           autoComplete="new-password"
-          disabled={isSubmitting}
+          disabled={!isHydrated || isSubmitting}
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
           {...form.register("confirmPassword")}
         />
@@ -130,7 +135,7 @@ export function RegisterForm() {
         </p>
       ) : null}
 
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
+      <Button type="submit" className="w-full" disabled={!isHydrated || isSubmitting}>
         {isSubmitting ? "Creating account..." : "Create account"}
       </Button>
 
