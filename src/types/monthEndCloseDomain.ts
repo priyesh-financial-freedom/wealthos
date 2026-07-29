@@ -9,6 +9,7 @@ export enum FinancialPeriodDomainErrorCode {
   PERIOD_NOT_FOUND = "PERIOD_NOT_FOUND",
   INVALID_TRANSITION = "INVALID_TRANSITION",
   REOPEN_REASON_REQUIRED = "REOPEN_REASON_REQUIRED",
+  REOPEN_NOT_LATEST_CLOSED = "REOPEN_NOT_LATEST_CLOSED",
 }
 
 export enum MonthEndCloseBalanceDomainErrorCode {
@@ -73,6 +74,8 @@ export interface MonthEndCloseAggregate {
   status: MonthEndCloseStatus;
   supersedesCloseId: string | null;
   closedAt: string | null;
+  reopenReason: string | null;
+  reopenedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

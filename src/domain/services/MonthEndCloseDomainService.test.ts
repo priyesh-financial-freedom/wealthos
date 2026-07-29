@@ -62,6 +62,18 @@ class InMemoryMonthEndCloseRepository implements MonthEndCloseDomainRepository {
     return row ? cloneClose(row) : null;
   }
 
+  async getLatestClosed(userId: string): Promise<MonthEndCloseAggregate | null> {
+    const row =
+      this.closes
+        .filter((item) => item.userId === userId && item.status === "closed")
+        .sort((left, right) => {
+          if (right.closeYear !== left.closeYear) return right.closeYear - left.closeYear;
+          if (right.closeMonth !== left.closeMonth) return right.closeMonth - left.closeMonth;
+          return right.versionNumber - left.versionNumber;
+        })[0] ?? null;
+    return row ? cloneClose(row) : null;
+  }
+
   async createClose(input: {
     userId: string;
     closeMonth: number;
@@ -82,6 +94,8 @@ class InMemoryMonthEndCloseRepository implements MonthEndCloseDomainRepository {
       status: input.status,
       supersedesCloseId: input.supersedesCloseId,
       closedAt: input.closedAt,
+      reopenReason: null,
+      reopenedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -108,6 +122,17 @@ class InMemoryMonthEndCloseRepository implements MonthEndCloseDomainRepository {
     };
     this.closes[index] = updated;
     return cloneClose(updated);
+  }
+
+  async saveReopenFields(id: string, userId: string, reopenReason: string, reopenedAt: string): Promise<void> {
+    const index = this.closes.findIndex((item) => item.id === id && item.userId === userId);
+    if (index >= 0) {
+      this.closes[index] = {
+        ...this.closes[index],
+        reopenReason,
+        reopenedAt,
+      };
+    }
   }
 
   async replaceItems(closeId: string, userId: string, items: MonthEndCloseLineItemInput[]): Promise<void> {
@@ -453,5 +478,98 @@ describe("MonthEndCloseDomainService", () => {
     ).rejects.toMatchObject<Partial<MonthEndCloseBalanceDomainError>>({
       code: MonthEndCloseBalanceDomainErrorCode.NEGATIVE_ACTUAL_BALANCE,
     });
+  });
+
+  it("reopens the latest closed month via reopenMonth", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const closed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 3,
+      closeYear: 2027,
+      items: [],
+    });
+
+    expect(closed.close.status).toBe("closed");
+
+    const result = await service.reopenMonth("user-1", closed.close.id, "Balance sheet correction required.");
+
+    expect(result.close.status).toBe("draft");
+    expect(result.close.closedAt).toBeNull();
+    expect(result.audit.reason).toBe("Balance sheet correction required.");
+
+    const stored = await repository.getCloseById("user-1", closed.close.id);
+    expect(stored?.reopenReason).toBe("Balance sheet correction required.");
+    expect(typeof stored?.reopenedAt).toBe("string");
+  });
+
+  it("rejects reopening an older closed month when a newer one exists", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const older = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 4,
+      closeYear: 2027,
+      items: [],
+    });
+
+    const newer = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 5,
+      closeYear: 2027,
+      items: [],
+    });
+
+    expect(newer.close.status).toBe("closed");
+
+    await expect(
+      service.reopenMonth("user-1", older.close.id, "Trying to reopen old month."),
+    ).rejects.toMatchObject<Partial<FinancialPeriodDomainError>>({
+      code: FinancialPeriodDomainErrorCode.REOPEN_NOT_LATEST_CLOSED,
+    });
+  });
+
+  it("requires a non-empty reason when calling reopenMonth", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const closed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 6,
+      closeYear: 2027,
+      items: [],
+    });
+
+    await expect(
+      service.reopenMonth("user-1", closed.close.id, "  "),
+    ).rejects.toMatchObject<Partial<FinancialPeriodDomainError>>({
+      code: FinancialPeriodDomainErrorCode.REOPEN_REASON_REQUIRED,
+    });
+  });
+
+  it("allows closing a month again after it has been reopened", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const closed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 7,
+      closeYear: 2027,
+      items: [],
+    });
+
+    await service.reopenMonth("user-1", closed.close.id, "Corrections needed.");
+
+    const reclosed = await service.transitionPeriodStatus({
+      userId: "user-1",
+      closeId: closed.close.id,
+      toStatus: FinancialPeriodStatus.CLOSED,
+      reason: null,
+    });
+
+    expect(reclosed.close.status).toBe("closed");
+    expect(typeof reclosed.close.closedAt).toBe("string");
   });
 });

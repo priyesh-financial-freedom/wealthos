@@ -277,4 +277,28 @@ export class MonthEndCloseDomainService {
 
     return this.repository.listTransitionAudit(closeId);
   }
+
+  async reopenMonth(userId: string, closeId: string, reason: string): Promise<{
+    close: MonthEndCloseAggregate;
+    audit: FinancialPeriodTransitionAuditEntry;
+  }> {
+    const latestClosed = await this.repository.getLatestClosed(userId);
+    if (!latestClosed || latestClosed.id !== closeId) {
+      throw new FinancialPeriodDomainError({
+        code: FinancialPeriodDomainErrorCode.REOPEN_NOT_LATEST_CLOSED,
+        message: "Only the latest closed month can be reopened.",
+      });
+    }
+
+    const result = await this.transitionPeriodStatus({
+      userId,
+      closeId,
+      toStatus: FinancialPeriodStatus.OPEN,
+      reason,
+    });
+
+    await this.repository.saveReopenFields(closeId, userId, result.audit.reason ?? reason.trim(), result.audit.transitionedAt);
+
+    return result;
+  }
 }

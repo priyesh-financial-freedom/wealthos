@@ -11,6 +11,7 @@ export interface MonthEndCloseDomainRepository {
   getCloseById(userId: string, closeId: string): Promise<MonthEndCloseAggregate | null>;
   getDraftForMonth(userId: string, closeYear: number, closeMonth: number): Promise<MonthEndCloseAggregate | null>;
   getLatestVersionForMonth(userId: string, closeYear: number, closeMonth: number): Promise<MonthEndCloseAggregate | null>;
+  getLatestClosed(userId: string): Promise<MonthEndCloseAggregate | null>;
   createClose(input: {
     userId: string;
     closeMonth: number;
@@ -26,6 +27,7 @@ export interface MonthEndCloseDomainRepository {
     status: MonthEndCloseStatus;
     closedAt: string | null;
   }): Promise<MonthEndCloseAggregate>;
+  saveReopenFields(id: string, userId: string, reopenReason: string, reopenedAt: string): Promise<void>;
   replaceItems(closeId: string, userId: string, items: MonthEndCloseLineItemInput[]): Promise<void>;
   listItems(closeId: string): Promise<MonthEndCloseLineItem[]>;
   appendTransitionAudit(input: {
@@ -48,6 +50,8 @@ interface MonthEndCloseRow {
   status: MonthEndCloseStatus;
   supersedes_close_id: string | null;
   closed_at: string | null;
+  reopen_reason: string | null;
+  reopened_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -112,6 +116,8 @@ function mapClose(row: MonthEndCloseRow): MonthEndCloseAggregate {
     status: row.status,
     supersedesCloseId: row.supersedes_close_id,
     closedAt: row.closed_at,
+    reopenReason: row.reopen_reason,
+    reopenedAt: row.reopened_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -257,6 +263,26 @@ export class SupabaseMonthEndCloseDomainRepository implements MonthEndCloseDomai
     return row ? mapClose(row) : null;
   }
 
+  async getLatestClosed(userId: string): Promise<MonthEndCloseAggregate | null> {
+    const client = await this.getClient();
+    const { data, error } = await client
+      .from("month_end_closes")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "closed")
+      .order("close_year", { ascending: false })
+      .order("close_month", { ascending: false })
+      .order("version_number", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      throw new Error(extractSupabaseMessage(error));
+    }
+
+    const row = (data?.[0] ?? null) as MonthEndCloseRow | null;
+    return row ? mapClose(row) : null;
+  }
+
   async createClose(input: {
     userId: string;
     closeMonth: number;
@@ -311,6 +337,19 @@ export class SupabaseMonthEndCloseDomainRepository implements MonthEndCloseDomai
     }
 
     return mapClose(data as MonthEndCloseRow);
+  }
+
+  async saveReopenFields(id: string, userId: string, reopenReason: string, reopenedAt: string): Promise<void> {
+    const client = await this.getClient();
+    const { error } = await client
+      .from("month_end_closes")
+      .update({ reopen_reason: reopenReason, reopened_at: reopenedAt })
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    if (error) {
+      throw new Error(extractSupabaseMessage(error));
+    }
   }
 
   async replaceItems(closeId: string, userId: string, items: MonthEndCloseLineItemInput[]): Promise<void> {

@@ -132,6 +132,7 @@ export interface MonthEndCloseKpiSummary {
 
 export interface MonthEndCloseWorkspace {
   close: MonthEndClose | null;
+  latestClose: MonthEndClose | null;
   month: MonthReference;
   status: MonthEndCloseStatus;
   items: MonthEndCloseEditorItem[];

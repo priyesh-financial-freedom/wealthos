@@ -860,6 +860,7 @@ export class MonthEndCloseService {
 
     return {
       close: draft,
+      latestClose: latestClosed ?? null,
       month: pendingMonthReference,
       status: draft?.status ?? "draft",
       items,

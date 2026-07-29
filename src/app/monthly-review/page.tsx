@@ -20,6 +20,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
@@ -28,7 +29,7 @@ import { cashFlowManagementService } from "@/services/cashFlowManagement";
 import { compensationService, type CompensationSummary } from "@/services/compensation";
 import { getInvestments } from "@/services/investments";
 import { getLiabilities, updateLiability } from "@/services/liabilities";
-import { closeMonthEndClose, getMonthEndCloseWorkspace, saveMonthEndCloseDraft } from "@/services/monthEndClose";
+import { closeMonthEndClose, getMonthEndCloseWorkspace, reopenMonth, saveMonthEndCloseDraft } from "@/services/monthEndClose";
 import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/MonthEndCloseService";
 import { buildInvestmentValueMap } from "./investmentValueMap";
 import { projectionInputService } from "@/services/projection";
@@ -340,6 +341,10 @@ export default function MonthlyReviewPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [savingStep, setSavingStep] = useState<WorkflowStepKey | null>(null);
   const [closingMonth, setClosingMonth] = useState(false);
+
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopeningMonth, setReopeningMonth] = useState(false);
 
   function applyLoadedWorkspaceData(params: {
     monthWorkspace: MonthEndCloseWorkspace;
@@ -662,6 +667,33 @@ export default function MonthlyReviewPage() {
       setError(saveError instanceof Error ? saveError.message : "Unable to save living expenses");
     } finally {
       setSavingStep(null);
+    }
+  }
+
+  async function handleReopenMonth() {
+    if (!workspace?.latestClose?.id) {
+      return;
+    }
+
+    const trimmedReason = reopenReason.trim();
+    if (!trimmedReason) {
+      setError("A reason is required to reopen the month.");
+      return;
+    }
+
+    try {
+      setReopeningMonth(true);
+      setError(null);
+      await reopenMonth({ closeId: workspace.latestClose.id, reason: trimmedReason });
+      setReopenDialogOpen(false);
+      setReopenReason("");
+      setNotice("Month reopened. You can now edit and re-close it.");
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+      await loadWorkspaceData();
+    } catch (reopenError) {
+      setError(reopenError instanceof Error ? reopenError.message : "Unable to reopen month");
+    } finally {
+      setReopeningMonth(false);
     }
   }
 
@@ -1045,9 +1077,21 @@ export default function MonthlyReviewPage() {
                   <CheckCircle2 className="h-4 w-4" />
                   <h3 className="text-base font-semibold text-slate-900">7. Month Close Confirmation</h3>
                 </div>
-                <Button type="button" onClick={() => void handleCloseMonth()} disabled={closingMonth || workspace.status === "closed"}>
-                  {closingMonth ? "Closing Month..." : workspace.status === "closed" ? "Month Closed" : "Close Month"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {workspace.latestClose?.id ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => { setReopenReason(""); setReopenDialogOpen(true); }}
+                      disabled={reopeningMonth}
+                    >
+                      Reopen Month
+                    </Button>
+                  ) : null}
+                  <Button type="button" onClick={() => void handleCloseMonth()} disabled={closingMonth || workspace.status === "closed"}>
+                    {closingMonth ? "Closing Month..." : workspace.status === "closed" ? "Month Closed" : "Close Month"}
+                  </Button>
+                </div>
               </div>
 
               <div className="mt-4 space-y-2 text-sm">
@@ -1077,6 +1121,33 @@ export default function MonthlyReviewPage() {
           </div>
         ) : null}
       </PageContainer>
+
+      <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reopen Month</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Reason for reopening</label>
+              <Input
+                value={reopenReason}
+                onChange={(event) => setReopenReason(event.target.value)}
+                placeholder="Enter reason"
+                disabled={reopeningMonth}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setReopenDialogOpen(false)} disabled={reopeningMonth}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleReopenMonth()} disabled={reopeningMonth || !reopenReason.trim()}>
+                {reopeningMonth ? "Reopening..." : "Reopen"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
