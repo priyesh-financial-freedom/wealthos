@@ -237,6 +237,7 @@ function resolveBucket(liabilityType: string): LiabilityPortfolioBucket {
     case "Credit Card":
       return "credit_cards";
     case "Personal Loan":
+    case "Bank Overdraft":
     case "Overdraft / Line of Credit":
       return "personal_loans";
     case "Education Loan":

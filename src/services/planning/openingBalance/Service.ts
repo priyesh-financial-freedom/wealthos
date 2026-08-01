@@ -54,6 +54,7 @@ function liabilityBucket(type: string) {
       return "creditCards";
     case "personalLoan":
     case "Personal Loan":
+    case "Bank Overdraft":
     case "Overdraft / Line of Credit":
       return "personalLoan";
     case "otherLiabilities":

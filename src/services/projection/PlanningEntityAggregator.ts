@@ -179,6 +179,7 @@ function buildLiveEntities(data: LoadedProjectionData): ProjectionEntity[] {
         return "LoanAgainstProperty";
       case "Credit Card":
         return "CreditCard";
+      case "Bank Overdraft":
       case "Overdraft / Line of Credit":
         return "BankOverdraft";
       case "Other Liability":
@@ -210,7 +211,12 @@ function buildLiveEntities(data: LoadedProjectionData): ProjectionEntity[] {
     { id: "entity:gold-loan:aggregate", name: "Gold Loan", entityType: "GoldLoan", match: (liability) => String(liability.liability_type) === "Gold Loan" },
     { id: "entity:education-loan:aggregate", name: "Education Loan", entityType: "EducationLoan", match: (liability) => liability.liability_type === "Education Loan" },
     { id: "entity:credit-cards:aggregate", name: "Credit Cards", entityType: "CreditCard", match: (liability) => liability.liability_type === "Credit Card" },
-    { id: "entity:bank-overdraft:aggregate", name: "Bank Overdraft", entityType: "BankOverdraft", match: (liability) => liability.liability_type === "Overdraft / Line of Credit" },
+    {
+      id: "entity:bank-overdraft:aggregate",
+      name: "Bank Overdraft",
+      entityType: "BankOverdraft",
+      match: (liability) => liability.liability_type === "Overdraft / Line of Credit" || liability.liability_type === "Bank Overdraft",
+    },
     { id: "entity:other-liabilities:aggregate", name: "Other Liabilities", entityType: "OtherLiability", match: (liability) => liability.liability_type === "Other Liability" },
   ];
 

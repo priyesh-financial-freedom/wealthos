@@ -60,6 +60,18 @@ export function LiabilityDetailsDialog({ liability, open, onOpenChange }: Liabil
             <p className="mt-1 text-base font-semibold text-slate-900">{liability.lender}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Owner</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{liability.owner ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Primary borrower</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{liability.primary_borrower ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Co-borrower</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{liability.co_borrower ?? "—"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Outstanding amount</p>
             <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.outstanding_amount)}</p>
           </div>
@@ -92,8 +104,20 @@ export function LiabilityDetailsDialog({ liability, open, onOpenChange }: Liabil
             <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.credit_limit)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Utilization</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">
+              {liability.credit_limit && liability.credit_limit > 0
+                ? `${((Number(liability.outstanding_amount ?? 0) / Number(liability.credit_limit)) * 100).toFixed(1)}%`
+                : "—"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Sanction limit</p>
             <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.sanction_limit)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Review date</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(liability.review_date ?? null)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">Start date</p>
@@ -102,6 +126,26 @@ export function LiabilityDetailsDialog({ liability, open, onOpenChange }: Liabil
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-sm font-medium text-slate-500">End date</p>
             <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(liability.end_date)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Prepayment allowed</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{liability.prepayment_allowed === null || typeof liability.prepayment_allowed === "undefined" ? "—" : liability.prepayment_allowed ? "Yes" : "No"}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Prepayment done till date</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.prepayment_done_till_date ?? null)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Future prepayment plan</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.future_prepayment_plan ?? null)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Estimated interest saved</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(liability.estimated_interest_saved ?? null)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-500">Revised closure date</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{formatDate(liability.revised_closure_date ?? null)}</p>
           </div>
         </div>
 

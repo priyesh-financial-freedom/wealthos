@@ -21,7 +21,7 @@ import { inspectFinancialPositionRows, liabilityDomainService } from "@/domain/s
 import { logFinancialPositionValidation } from "@/domain/services/FinancialPositionValidationReporter";
 import { getBalanceSheetData } from "@/services/balanceSheet";
 import { createLiability, deleteLiability, getLiabilities, updateLiability } from "@/services/liabilities";
-import { LIABILITY_TYPES, type Liability, type LiabilityInsert, type LiabilityType } from "@/types/liability";
+import { LIABILITY_TYPES, type Liability, type LiabilityInsert } from "@/types/liability";
 
 interface SummaryBucket {
   label: string;
@@ -35,7 +35,7 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + Number(value ?? 0), 0);
 }
 
-function liabilityBucketLabel(type: LiabilityType) {
+function liabilityBucketLabel(type: Liability["liability_type"]) {
   if (type === "Home Loan" || type === "Loan Against Property") {
     return "Home Loans";
   }
@@ -48,8 +48,8 @@ function liabilityBucketLabel(type: LiabilityType) {
     return "Credit Cards";
   }
 
-  if (type === "Overdraft / Line of Credit") {
-    return "Overdraft";
+  if (type === "Bank Overdraft" || type === "Overdraft / Line of Credit") {
+    return "Bank Overdraft";
   }
 
   return "Other";
@@ -64,12 +64,12 @@ function buildSummaryBuckets(liabilities: Liability[]): SummaryBucket[] {
     "Home Loans": 0,
     "Vehicle Loans": 0,
     "Credit Cards": 0,
-    Overdraft: 0,
+    "Bank Overdraft": 0,
     Other: 0,
   });
 
   const totalLiabilities = sum(Object.values(grouped));
-  return ["Home Loans", "Vehicle Loans", "Credit Cards", "Overdraft", "Other"].map((label) => ({
+  return ["Home Loans", "Vehicle Loans", "Credit Cards", "Bank Overdraft", "Other"].map((label) => ({
     label,
     value: Number(grouped[label] ?? 0),
     share: totalLiabilities > 0 ? Number(grouped[label] ?? 0) / totalLiabilities : 0,

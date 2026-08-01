@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { Liability, LiabilityInsert, LiabilityType, LiabilityUpdate } from "@/types/liability";
+import type { Liability, LiabilityInsert, LiabilityUpdate } from "@/types/liability";
 
 export interface LiabilityBucketsSummary {
   homeLoan: number;
@@ -17,7 +17,7 @@ export interface LiabilitiesSummary {
   largestLiability: Liability | null;
 }
 
-function liabilityBucket(type: LiabilityType) {
+function liabilityBucket(type: Liability["liability_type"]) {
   switch (type) {
     case "Home Loan":
     case "Loan Against Property":
@@ -27,6 +27,7 @@ function liabilityBucket(type: LiabilityType) {
     case "Credit Card":
       return "creditCards" as const;
     case "Personal Loan":
+    case "Bank Overdraft":
     case "Overdraft / Line of Credit":
       return "personalLoan" as const;
     case "Education Loan":

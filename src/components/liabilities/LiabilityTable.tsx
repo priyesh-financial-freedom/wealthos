@@ -23,6 +23,8 @@ export function LiabilityTable({ liabilities, onView, onEdit, onDelete, onBulkDe
       columns={[
         { key: "account_name", header: "Account", widthClassName: "min-w-44", className: "font-medium text-slate-900", cell: (liability) => liability.account_name },
         { key: "type", header: "Type", widthClassName: "min-w-36", cell: (liability) => <LiabilityTypeBadge type={liability.liability_type} /> },
+        { key: "owner", header: "Owner", widthClassName: "min-w-28", cell: (liability) => liability.owner ?? "—" },
+        { key: "primary_borrower", header: "Primary Borrower", widthClassName: "min-w-36", cell: (liability) => liability.primary_borrower ?? "—" },
         { key: "lender", header: "Lender", widthClassName: "min-w-40", cell: (liability) => liability.lender },
         { key: "outstanding_amount", header: "Outstanding", widthClassName: "min-w-36 text-slate-900", cell: (liability) => `₹${Number(liability.outstanding_amount).toLocaleString("en-IN")}` },
         { key: "emi", header: "EMI", widthClassName: "min-w-32 text-slate-900", cell: (liability) => (liability.emi ? `₹${Number(liability.emi).toLocaleString("en-IN")}` : "—") },

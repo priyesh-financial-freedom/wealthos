@@ -9,9 +9,8 @@ const liabilityTypes: LiabilityType[] = [
   "Car Loan",
   "Personal Loan",
   "Education Loan",
-  "Loan Against Property",
   "Credit Card",
-  "Overdraft / Line of Credit",
+  "Bank Overdraft",
   "Other Liability",
 ];
 const statuses: LiabilityStatus[] = ["active", "paid_off", "pending", "closed"];
@@ -49,6 +48,14 @@ function parseLiabilityType(value: string | null) {
   }
 
   const normalized = value.toLowerCase();
+  if (normalized === "overdraft / line of credit") {
+    return "Bank Overdraft";
+  }
+
+  if (normalized === "loan against property") {
+    return "Home Loan";
+  }
+
   return liabilityTypes.find((item) => item.toLowerCase() === normalized) ?? null;
 }
 

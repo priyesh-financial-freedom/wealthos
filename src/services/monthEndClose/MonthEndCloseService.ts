@@ -7,7 +7,7 @@ import type { BankAccount } from "@/types/bankAccount";
 import type { FixedDeposit } from "@/types/fixedDeposit";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment, InvestmentCategory } from "@/types/investment";
-import type { Liability, LiabilityType } from "@/types/liability";
+import type { Liability } from "@/types/liability";
 import {
   MONTH_END_CLOSE_ITEM_DEFINITIONS,
   type MonthEndClose,
@@ -143,7 +143,7 @@ function itemTypeLabel(entityType: string, fallbackKey: MonthEndCloseItemKey) {
   }
 }
 
-function liabilityBucket(type: LiabilityType): MonthEndCloseItemKey {
+function liabilityBucket(type: Liability["liability_type"]): MonthEndCloseItemKey {
   switch (type) {
     case "Home Loan":
     case "Loan Against Property":
@@ -153,6 +153,7 @@ function liabilityBucket(type: LiabilityType): MonthEndCloseItemKey {
     case "Personal Loan":
     case "Education Loan":
     case "Credit Card":
+    case "Bank Overdraft":
     case "Overdraft / Line of Credit":
     case "Other Liability":
     default:
