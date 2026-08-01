@@ -10,10 +10,23 @@ import { inspectFinancialPositionRows, liabilityDomainService } from "@/domain/s
 import { logFinancialPositionValidation } from "@/domain/services/FinancialPositionValidationReporter";
 import { goalService } from "@/services/planning/goals";
 import { createPlanningScenarioProductionSimulationEngine } from "@/services/planning/scenarios";
-import { projectionEngine, projectionInputService } from "@/services/projection";
+import { monthlyReviewService, projectionEngine, projectionInputService } from "@/services/projection";
 import { projectionEventsService } from "@/services/projection/events";
 import { getRetirementSummary } from "@/services/retirement";
+import { decisionEngine } from "@/services/decision";
+import { healthScoreService } from "@/services/health";
+import { buildDashboardRecommendations } from "@/services/insights/recommendationEngine";
 import { snapshotReadModel } from "@/services/snapshots";
+import {
+  buildAllocationDriftRows,
+  buildFinancialHealthBreakdown,
+  buildGoalHeatmapRows,
+  classifyRetirementReadinessStatus,
+  type AllocationDriftRow,
+  type FinancialHealthComponentRow,
+  type GoalHeatmapRow,
+  type RetirementReadinessStatus,
+} from "./ExecutiveDashboardMetrics";
 import type { SimulationResult } from "@/services/simulation";
 import type { ProjectionScenario } from "@/types/projection";
 import type { Liability } from "@/types/liability";
@@ -65,6 +78,7 @@ export interface ExecutiveDashboardData {
     atRisk: number;
     completed: number;
     items: ExecutiveGoalProgressItem[];
+    heatmap: GoalHeatmapRow[];
   };
   monthlySummary: {
     income: number;
@@ -78,14 +92,53 @@ export interface ExecutiveDashboardData {
     label: string;
     detail: string;
     rating: "Excellent" | "Good" | "Needs Attention";
+    components: FinancialHealthComponentRow[];
+  };
+  recommendedActions: Array<{
+    id: string;
+    title: string;
+    priority: "High" | "Medium" | "Low";
+    reason: string;
+    nextStep: string;
+  }>;
+  netWorthTrend: {
+    available: boolean;
+    message: string | null;
+    points: Array<{
+      month: string;
+      actual: number | null;
+      planned: number | null;
+    }>;
+  };
+  assetAllocationDrift: {
+    available: boolean;
+    message: string | null;
+    rows: AllocationDriftRow[];
+  };
+  monthlyReviewSummary: {
+    available: boolean;
+    month: string | null;
+    netWorthChange: number | null;
+    savingsRate: number | null;
+    debtReduction: number | null;
+    goalProgress: number | null;
+    retirementReadinessChange: number | null;
+    ctaLabel: "Start Monthly Review" | "Update Monthly Review";
   };
   dailyInsight: string;
   retirement: {
     available: boolean;
-    totalRetirementAssets: number;
-    accountsCount: number;
+    totalRetirementAssets: number | null;
+    accountsCount: number | null;
     plannedTotalRetirementAssets: number | null;
     retirementVariance: number | null;
+    readinessPercent: number | null;
+    requiredCorpus: number | null;
+    gapOrSurplus: number | null;
+    retirementDate: string | null;
+    projectionEndDate: string | null;
+    corpusSurvivalStatus: string;
+    status: RetirementReadinessStatus;
   };
   upcoming: {
     available: boolean;
@@ -337,9 +390,90 @@ async function loadLastMonthlyReviewLabel(): Promise<string | null> {
   return legacyHistory[0]?.monthLabel ?? null;
 }
 
+function formatMonthLabel(year: number, month: number): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(new Date(year, month - 1, 1));
+}
+
+function normalizeMonthMonth(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.min(12, Math.round(value)));
+}
+
+function toRetirementDateLabel(month: number | undefined, year: number | undefined): string | null {
+  if (!Number.isFinite(Number(month)) || !Number.isFinite(Number(year))) {
+    return null;
+  }
+
+  return formatMonthLabel(Number(year), normalizeMonthMonth(Number(month)));
+}
+
+async function loadNetWorthTrendPoints(): Promise<Array<{ month: string; actual: number | null; planned: number | null }>> {
+  const workspace = await monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null);
+  if (!workspace || workspace.periods.length === 0) {
+    return [];
+  }
+
+  const periods = workspace.periods.slice(0, 12);
+  const rows = await Promise.all(
+    periods.map(async (period) => {
+      const review = await monthlyReviewService.getMonthlyReviewWorkspace(period.closeId).catch(() => null);
+      const netWorthKpi = review?.kpis.find((item) => item.key === "net_worth") ?? null;
+
+      return {
+        month: period.label,
+        actual: netWorthKpi ? Number(netWorthKpi.actual ?? 0) : null,
+        planned: netWorthKpi ? Number(netWorthKpi.projected ?? 0) : null,
+      };
+    }),
+  );
+
+  return rows.reverse();
+}
+
+function computeRetirementReadinessChangePercent(entities: Awaited<ReturnType<typeof monthlyReviewService.getMonthlyReviewWorkspace>>["entities"]): number | null {
+  const retirementRows = entities.filter((item) => item.itemKey === "epf" || item.itemKey === "ppf" || item.itemKey === "nps");
+  if (retirementRows.length === 0) {
+    return null;
+  }
+
+  const opening = retirementRows.reduce((sum, row) => sum + Number(row.openingValue ?? 0), 0);
+  const actual = retirementRows.reduce((sum, row) => sum + Number(row.actualValue ?? 0), 0);
+
+  if (opening <= 0) {
+    return null;
+  }
+
+  return ((actual - opening) / opening) * 100;
+}
+
+function computeDebtReduction(entities: Awaited<ReturnType<typeof monthlyReviewService.getMonthlyReviewWorkspace>>["entities"]): number | null {
+  const liabilityRows = entities.filter((item) => item.itemType === "liability");
+  if (liabilityRows.length === 0) {
+    return null;
+  }
+
+  return liabilityRows.reduce((sum, row) => sum + (Number(row.openingValue ?? 0) - Number(row.actualValue ?? 0)), 0);
+}
+
+function computeCurrentAllocationClasses(summary: Awaited<ReturnType<typeof getBalanceSheetData>>["summary"]): Record<AllocationDriftRow["assetClass"], number> {
+  const totals = summary.categoryTotals;
+
+  return {
+    Equity: Number(totals.investments ?? 0),
+    Debt: Number(totals.fixedDeposits ?? 0),
+    Cash: Number(totals.cashAndBank ?? 0),
+    "Real Estate": Number(totals.realEstate ?? 0),
+    "Retirement Accounts": Number(totals.retirement ?? 0),
+    Other: Number(totals.otherAssets ?? 0) + Number(totals.vehicles ?? 0) + Number(totals.goldAndSilver ?? 0),
+  };
+}
+
 export class ExecutiveDashboardService {
   async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview] = await Promise.all([
+    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview, healthScore, decisionRecommendations, monthlyReviewWorkspace, netWorthTrendPoints] = await Promise.all([
       getBalanceSheetData(),
       goalService.listGoals({ includeProgress: true }).catch(() => []),
       assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
@@ -349,6 +483,10 @@ export class ExecutiveDashboardService {
       getRetirementSummary().catch(() => null),
       projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => null),
       loadLastMonthlyReviewLabel().catch(() => null),
+      healthScoreService.calculateHealthScore().catch(() => null),
+      decisionEngine.generateRecommendations().catch(() => []),
+      monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null),
+      loadNetWorthTrendPoints().catch(() => []),
     ]);
 
     const projectionMonthly = assumptions
@@ -398,6 +536,7 @@ export class ExecutiveDashboardService {
     const plannedInvestments = projectionMonthly?.plannedInvestments ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.investments);
     const plannedLiabilities = projectionMonthly?.plannedLiabilities ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.liabilities);
     const plannedRetirement = projectionMonthly?.plannedRetirement ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.retirement);
+    const currentRetirementAssets = retirementSummary ? toNumber(retirementSummary.totalRetirementAssets) : null;
     const plannedNonRetirementInvestments = plannedInvestments !== null
       ? Math.max(0, plannedInvestments - (plannedRetirement ?? 0))
       : null;
@@ -408,6 +547,10 @@ export class ExecutiveDashboardService {
     const hasPlannedInvestments = plannedNonRetirementInvestments !== null;
     const hasPlannedLiabilities = plannedLiabilities !== null;
     const hasPlannedRetirement = plannedRetirement !== null;
+    const retirementReadinessPercent = hasPlannedRetirement && plannedRetirement > 0 && currentRetirementAssets !== null
+      ? (currentRetirementAssets / plannedRetirement) * 100
+      : null;
+    const retirementStatus = classifyRetirementReadinessStatus(retirementReadinessPercent);
     const topContributors = buildTopContributors(balanceSheetData);
     const largestAssetShare = computeLargestShare(balanceSheetData.summary.assetAllocation ?? []);
     const largestInvestmentShare = computeLargestShare(investmentSummary.assetAllocation ?? []);
@@ -423,6 +566,34 @@ export class ExecutiveDashboardService {
       assetAllocation: balanceSheetData.summary.assetAllocation ?? [],
       liabilityAllocation: balanceSheetData.summary.liabilityAllocation ?? [],
     };
+    const goalReadinessPercent = goals.length > 0
+      ? ((goalsOnTrack + completedGoals) / goals.length) * 100
+      : null;
+    const healthBreakdown = buildFinancialHealthBreakdown({
+      savingsRate: Number.isFinite(monthlyCashFlow.savingsRate) ? monthlyCashFlow.savingsRate : null,
+      retirementReadinessPercent,
+      debtRatio: Number(balanceSheetData.summary.debtRatio ?? 0),
+      goalReadinessPercent,
+      emergencyFundScore: healthScore?.components.find((component) => component.key === "emergencyFund")?.score ?? null,
+      insuranceCoverageScore: null,
+    });
+    const goalHeatmap = buildGoalHeatmapRows(goals);
+    const dashboardRecommendations = buildDashboardRecommendations({
+      decisionRecommendations,
+      balanceSheetSummary: balanceSheetData.summary,
+      goals,
+      monthlySavings: monthlyCashFlow.monthlySavings,
+      hasMonthlyReview: Boolean(monthlyReviewWorkspace?.selectedPeriod),
+    });
+    const allocationDriftRows = buildAllocationDriftRows({
+      currentByClass: computeCurrentAllocationClasses(balanceSheetData.summary),
+      targetByClass: null,
+      driftThresholdPercent: 5,
+    });
+    const debtReduction = monthlyReviewWorkspace?.entities ? computeDebtReduction(monthlyReviewWorkspace.entities) : null;
+    const retirementReadinessChange = monthlyReviewWorkspace?.entities
+      ? computeRetirementReadinessChangePercent(monthlyReviewWorkspace.entities)
+      : null;
 
     const canonicalInspection = inspectFinancialPositionRows(balanceSheetData.liabilities);
     const canonicalSnapshot = canonicalInspection.snapshot;
@@ -579,6 +750,7 @@ export class ExecutiveDashboardService {
         atRisk: atRiskGoals,
         completed: completedGoals,
         items: goalItems,
+        heatmap: goalHeatmap,
       },
       monthlySummary: {
         income: monthlyCashFlow.monthlyIncome,
@@ -592,14 +764,49 @@ export class ExecutiveDashboardService {
         label: financialHealth.label,
         detail: financialHealth.detail,
         rating: mapScoreToRating(financialHealth.score),
+        components: healthBreakdown,
+      },
+      recommendedActions: dashboardRecommendations,
+      netWorthTrend: {
+        available: netWorthTrendPoints.length > 0,
+        message: netWorthTrendPoints.length > 0 ? null : "Add monthly snapshots to view net worth trend.",
+        points: netWorthTrendPoints,
+      },
+      assetAllocationDrift: {
+        available: true,
+        message: "Set target allocation in Assumptions.",
+        rows: allocationDriftRows,
+      },
+      monthlyReviewSummary: {
+        available: Boolean(monthlyReviewWorkspace?.selectedPeriod && monthlyReviewWorkspace.summary),
+        month: monthlyReviewWorkspace?.selectedPeriod?.label ?? null,
+        netWorthChange: monthlyReviewWorkspace?.summary?.monthOverMonthChange ?? null,
+        savingsRate: monthlyCashFlow.monthlyIncome > 0 ? (monthlyCashFlow.monthlySavings / monthlyCashFlow.monthlyIncome) * 100 : null,
+        debtReduction,
+        goalProgress: goalReadinessPercent,
+        retirementReadinessChange,
+        ctaLabel: monthlyReviewWorkspace?.selectedPeriod ? "Update Monthly Review" : "Start Monthly Review",
       },
       dailyInsight,
       retirement: {
         available: retirementSummary !== null,
-        totalRetirementAssets: toNumber(retirementSummary?.totalRetirementAssets),
-        accountsCount: toNumber(retirementSummary?.count),
+        totalRetirementAssets: currentRetirementAssets,
+        accountsCount: retirementSummary ? toNumber(retirementSummary.count) : null,
         plannedTotalRetirementAssets: hasPlannedRetirement ? plannedRetirement : null,
-        retirementVariance: hasPlannedRetirement ? toNumber(retirementSummary?.totalRetirementAssets) - plannedRetirement : null,
+        retirementVariance: hasPlannedRetirement && currentRetirementAssets !== null ? currentRetirementAssets - plannedRetirement : null,
+        readinessPercent: retirementReadinessPercent,
+        requiredCorpus: hasPlannedRetirement ? plannedRetirement : null,
+        gapOrSurplus: hasPlannedRetirement && currentRetirementAssets !== null ? currentRetirementAssets - plannedRetirement : null,
+        retirementDate: toRetirementDateLabel(assumptions?.retirement.salaryStopMonth, assumptions?.retirement.salaryStopYear),
+        projectionEndDate: toRetirementDateLabel(assumptions?.planning.endMonth, assumptions?.planning.endYear),
+        corpusSurvivalStatus: retirementReadinessPercent === null
+          ? "Data required"
+          : retirementReadinessPercent >= 100
+            ? "Corpus projected to meet or exceed planned requirement."
+            : retirementReadinessPercent >= 80
+              ? "Corpus is close to requirement and needs monitoring."
+              : "Corpus is below planned requirement.",
+        status: retirementStatus,
       },
       upcoming: {
         available: events !== null,

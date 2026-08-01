@@ -40,6 +40,16 @@ const populatedData = {
         gap: 350000,
       },
     ],
+    heatmap: [
+      {
+        id: "goal-1",
+        name: "Retirement",
+        targetDate: "2035-12-31",
+        fundingPercent: 65,
+        gapOrSurplus: -350000,
+        status: "Watch" as const,
+      },
+    ],
   },
   monthlySummary: {
     income: 130000,
@@ -53,6 +63,56 @@ const populatedData = {
     label: "Strong",
     detail: "Balance sheet quality is strong.",
     rating: "Excellent" as const,
+    components: [
+      {
+        key: "savingsRate" as const,
+        label: "Savings Rate",
+        score: 18,
+        maxScore: 20,
+        status: "green" as const,
+        reason: "Savings rate is supporting long-term planning.",
+      },
+    ],
+  },
+  recommendedActions: [
+    {
+      id: "action-1",
+      title: "Increase retirement contributions",
+      priority: "High" as const,
+      reason: "Retirement score is below threshold.",
+      nextStep: "Raise monthly retirement contributions.",
+    },
+  ],
+  netWorthTrend: {
+    available: true,
+    message: null,
+    points: [
+      { month: "Apr 2026", actual: 1000000, planned: 980000 },
+      { month: "May 2026", actual: 1080000, planned: 1020000 },
+    ],
+  },
+  assetAllocationDrift: {
+    available: true,
+    message: "Set target allocation in Assumptions.",
+    rows: [
+      {
+        assetClass: "Equity" as const,
+        currentPercent: 45,
+        targetPercent: null,
+        driftPercent: null,
+        needsAction: false,
+      },
+    ],
+  },
+  monthlyReviewSummary: {
+    available: true,
+    month: "Jul 2026",
+    netWorthChange: 25000,
+    savingsRate: 22,
+    debtReduction: 14000,
+    goalProgress: 65,
+    retirementReadinessChange: 2.4,
+    ctaLabel: "Update Monthly Review" as const,
   },
   dailyInsight: "Liquidity is healthy.",
   retirement: {
@@ -61,6 +121,13 @@ const populatedData = {
     accountsCount: 3,
     plannedTotalRetirementAssets: null,
     retirementVariance: null,
+    readinessPercent: null,
+    requiredCorpus: null,
+    gapOrSurplus: null,
+    retirementDate: null,
+    projectionEndDate: null,
+    corpusSurvivalStatus: "Data required",
+    status: "Watch" as const,
   },
   upcoming: {
     available: true,
@@ -99,10 +166,66 @@ describe("ExecutiveDashboard", () => {
     expect(html).toContain("Project North Star");
     expect(html).toContain("Financial Health Score");
     expect(html).toContain("Where am I today");
-    expect(html).toContain("Where should I focus");
+    expect(html).toContain("Recommended actions");
     expect(html).toContain("Investments");
     expect(html).toContain("Liabilities");
-    expect(html).toContain("Retirement");
+    expect(html).toContain("Retirement readiness");
     expect(html).toContain("What&#x27;s coming up");
+  });
+
+  it("renders no-data state messages for retirement and net worth trend", () => {
+    const html = renderToStaticMarkup(
+      <ExecutiveDashboard
+        loading={false}
+        data={{
+          ...populatedData,
+          retirement: {
+            ...populatedData.retirement,
+            available: false,
+          },
+          netWorthTrend: {
+            available: false,
+            message: "Add monthly snapshots to view net worth trend.",
+            points: [],
+          },
+        }}
+        error={null}
+      />,
+    );
+
+    expect(html).toContain("Data required");
+    expect(html).toContain("Add monthly snapshots to view net worth trend.");
+  });
+
+  it("renders negative monthly review variance and goal gap text", () => {
+    const html = renderToStaticMarkup(
+      <ExecutiveDashboard
+        loading={false}
+        data={{
+          ...populatedData,
+          monthlyReviewSummary: {
+            ...populatedData.monthlyReviewSummary,
+            netWorthChange: -5000,
+          },
+          goals: {
+            ...populatedData.goals,
+            heatmap: [
+              {
+                id: "goal-gap",
+                name: "Education",
+                targetDate: "2030-12-31",
+                fundingPercent: 40,
+                gapOrSurplus: -10000,
+                status: "At Risk",
+              },
+            ],
+          },
+        }}
+        error={null}
+      />,
+    );
+
+    expect(html).toContain("-₹5,000");
+    expect(html).toContain("Gap");
   });
 });

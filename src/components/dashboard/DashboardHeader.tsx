@@ -1,6 +1,7 @@
 import { CalendarDays, Sparkles } from "lucide-react";
 
 import { FinancialHealth } from "@/components/dashboard/FinancialHealth";
+import type { ExecutiveDashboardData } from "@/services/dashboard";
 
 interface DashboardHeaderProps {
   dateLabel: string;
@@ -9,6 +10,7 @@ interface DashboardHeaderProps {
     score: number;
     rating: "Excellent" | "Good" | "Needs Attention";
     detail: string;
+    components: ExecutiveDashboardData["financialHealth"]["components"];
   };
 }
 
@@ -25,7 +27,7 @@ export function DashboardHeader({ dateLabel, insight, health }: DashboardHeaderP
           </div>
         </div>
 
-        <FinancialHealth score={health.score} rating={health.rating} detail={health.detail} />
+        <FinancialHealth score={health.score} rating={health.rating} detail={health.detail} components={health.components} />
       </div>
 
       <div className="mt-4 rounded-2xl bg-white/80 px-4 py-3 ring-1 ring-slate-900/5">

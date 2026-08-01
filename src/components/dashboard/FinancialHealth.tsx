@@ -1,11 +1,13 @@
 import { Activity, ShieldCheck, ShieldAlert } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import type { ExecutiveDashboardData } from "@/services/dashboard";
 
 interface FinancialHealthProps {
   score: number | null;
   rating: "Excellent" | "Good" | "Needs Attention";
   detail?: string;
+  components?: ExecutiveDashboardData["financialHealth"]["components"];
 }
 
 function ratingStyles(rating: FinancialHealthProps["rating"]) {
@@ -32,7 +34,19 @@ function ratingStyles(rating: FinancialHealthProps["rating"]) {
   };
 }
 
-export function FinancialHealth({ score, rating, detail }: FinancialHealthProps) {
+function componentToneClass(status: "green" | "amber" | "red") {
+  if (status === "green") {
+    return "bg-emerald-500";
+  }
+
+  if (status === "amber") {
+    return "bg-amber-500";
+  }
+
+  return "bg-rose-500";
+}
+
+export function FinancialHealth({ score, rating, detail, components = [] }: FinancialHealthProps) {
   const style = ratingStyles(rating);
   const Icon = style.icon;
 
@@ -49,6 +63,25 @@ export function FinancialHealth({ score, rating, detail }: FinancialHealthProps)
         </div>
         {detail ? <p className="mt-1 text-xs leading-5 text-slate-600 line-clamp-2">{detail}</p> : null}
       </div>
+
+      {components.length > 0 ? (
+        <div className="mt-3 w-full shrink-0 space-y-1.5 rounded-xl bg-slate-50 p-2.5 lg:ml-auto lg:mt-0 lg:min-w-[330px] lg:max-w-[360px]">
+          {components.map((component) => (
+            <div key={component.key} className="rounded-lg bg-white px-2.5 py-2 ring-1 ring-slate-900/5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={cn("inline-block h-2.5 w-2.5 rounded-full", componentToneClass(component.status))} />
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.11em] text-slate-500">{component.label}</p>
+                </div>
+                <p className="text-xs font-semibold text-slate-900 tabular-nums">
+                  {component.score === null ? "Data required" : `${component.score} / ${component.maxScore}`}
+                </p>
+              </div>
+              <p className="mt-1 text-[11px] leading-4 text-slate-600">{component.reason}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

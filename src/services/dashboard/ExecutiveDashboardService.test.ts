@@ -11,6 +11,9 @@ const runtime = vi.hoisted(() => ({
   simulationRun: vi.fn(),
   buildContext: vi.fn(),
   projectionRun: vi.fn(),
+  getMonthlyReviewWorkspace: vi.fn(),
+  calculateHealthScore: vi.fn(),
+  generateRecommendations: vi.fn(),
 }));
 
 vi.mock("@/services/balanceSheet", () => ({
@@ -61,6 +64,21 @@ vi.mock("@/services/projection", () => ({
   },
   projectionEngine: {
     run: runtime.projectionRun,
+  },
+  monthlyReviewService: {
+    getMonthlyReviewWorkspace: runtime.getMonthlyReviewWorkspace,
+  },
+}));
+
+vi.mock("@/services/health", () => ({
+  healthScoreService: {
+    calculateHealthScore: runtime.calculateHealthScore,
+  },
+}));
+
+vi.mock("@/services/decision", () => ({
+  decisionEngine: {
+    generateRecommendations: runtime.generateRecommendations,
   },
 }));
 
@@ -169,6 +187,11 @@ describe("ExecutiveDashboardService", () => {
       planning: {
         startMonth: "2026-07",
         endYear: 2036,
+        endMonth: 12,
+      },
+      retirement: {
+        salaryStopMonth: 6,
+        salaryStopYear: 2042,
       },
     });
 
@@ -210,6 +233,87 @@ describe("ExecutiveDashboardService", () => {
         },
       ],
     });
+
+    runtime.getMonthlyReviewWorkspace.mockResolvedValue({
+      periods: [
+        {
+          closeId: "close-1",
+          month: 7,
+          year: 2026,
+          monthKey: "2026-07",
+          label: "Jul 2026",
+          versionNumber: 1,
+        },
+      ],
+      selectedPeriod: {
+        closeId: "close-1",
+        month: 7,
+        year: 2026,
+        monthKey: "2026-07",
+        label: "Jul 2026",
+        versionNumber: 1,
+      },
+      entities: [
+        {
+          rowKey: "liability:loan-1",
+          entityId: "loan-1",
+          entityType: "liability",
+          entityTypeLabel: "Liability",
+          entityName: "Mortgage",
+          itemKey: "home_loans",
+          itemLabel: "Home Loan",
+          itemType: "liability",
+          openingValue: 420000,
+          projectedValue: 410000,
+          actualValue: 400000,
+          absoluteVariance: -10000,
+          percentageVariance: -2.4,
+          netWorthChangeContribution: 20000,
+        },
+      ],
+      kpis: [
+        {
+          key: "net_worth",
+          label: "Net Worth",
+          projected: 1080000,
+          actual: 1100000,
+          absoluteVariance: 20000,
+          percentageVariance: 1.8,
+        },
+      ],
+      summary: {
+        totalAssets: 1500000,
+        totalLiabilities: 400000,
+        netWorth: 1100000,
+        projectionVariance: 20000,
+        monthOverMonthChange: 45000,
+        yearToDateChange: 120000,
+        largestPositiveVariance: null,
+        largestNegativeVariance: null,
+        topContributors: [],
+      },
+    });
+
+    runtime.calculateHealthScore.mockResolvedValue({
+      overallScore: 81,
+      grade: "B",
+      strengths: [],
+      watchItems: [],
+      recommendations: [],
+      trend: [],
+      components: [
+        {
+          key: "emergencyFund",
+          label: "Emergency Fund",
+          weight: 10,
+          score: 68,
+          weightedScore: 6.8,
+          detail: "Coverage is healthy.",
+        },
+      ],
+    });
+
+    runtime.generateRecommendations.mockResolvedValue([]);
   });
 
   it("builds the executive dashboard payload from existing services", async () => {
@@ -235,6 +339,37 @@ describe("ExecutiveDashboardService", () => {
     expect(result.monthlySummary.expenses).toBe(107000);
     expect(result.monthlySummary.savings).toBe(23000);
     expect(result.monthlySummary.netWorthChange).toBe(20000);
+    expect(result.retirement.available).toBe(false);
+    expect(result.retirement.totalRetirementAssets).toBeNull();
+    expect(result.retirement.readinessPercent).toBeNull();
+    expect(result.retirement.corpusSurvivalStatus).toBe("Data required");
+  });
+
+  it("handles missing goals and missing monthly snapshots with explicit empty states", async () => {
+    runtime.listGoals.mockResolvedValueOnce([]);
+    runtime.getMonthlyReviewWorkspace.mockResolvedValueOnce({
+      periods: [],
+      selectedPeriod: null,
+      entities: [],
+      kpis: [],
+      summary: null,
+    });
+    runtime.getMonthlyReviewWorkspace.mockResolvedValueOnce({
+      periods: [],
+      selectedPeriod: null,
+      entities: [],
+      kpis: [],
+      summary: null,
+    });
+
+    const service = new ExecutiveDashboardService();
+    const result = await service.getDashboard();
+
+    expect(result.goals.total).toBe(0);
+    expect(result.goals.heatmap).toEqual([]);
+    expect(result.monthlyReviewSummary.available).toBe(false);
+    expect(result.netWorthTrend.available).toBe(false);
+    expect(result.netWorthTrend.message).toBe("Add monthly snapshots to view net worth trend.");
   });
 
   it("marks empty state when assets and liabilities are zero", async () => {

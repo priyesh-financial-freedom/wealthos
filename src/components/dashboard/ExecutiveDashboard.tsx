@@ -4,11 +4,15 @@ import Link from "next/link";
 import { memo } from "react";
 
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
-import { FocusWidget } from "@/components/dashboard/FocusWidget";
+import { AssetAllocationDriftWidget } from "@/components/dashboard/AssetAllocationDriftWidget";
+import { GoalFundingHeatmapWidget } from "@/components/dashboard/GoalFundingHeatmapWidget";
 import { InvestmentsWidget } from "@/components/dashboard/InvestmentsWidget";
 import { LiabilitiesWidget } from "@/components/dashboard/LiabilitiesWidget";
+import { MonthlyReviewSummaryWidget } from "@/components/dashboard/MonthlyReviewSummaryWidget";
 import { NetWorthWidget } from "@/components/dashboard/NetWorthWidget";
-import { RetirementWidget } from "@/components/dashboard/RetirementWidget";
+import { NetWorthTrendWidget } from "@/components/dashboard/NetWorthTrendWidget";
+import { RecommendedActionsWidget } from "@/components/dashboard/RecommendedActionsWidget";
+import { RetirementHeroWidget } from "@/components/dashboard/RetirementHeroWidget";
 import { UpcomingWidget } from "@/components/dashboard/UpcomingWidget";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { Button } from "@/components/ui/button";
@@ -79,10 +83,13 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
           score: data.financialHealth.score,
           rating: data.financialHealth.rating,
           detail: data.financialHealth.detail,
+          components: data.financialHealth.components,
         }}
       />
 
-      <section className="grid gap-7 lg:grid-cols-2">
+      <RetirementHeroWidget retirement={data.retirement} />
+
+      <section className="grid gap-5 lg:grid-cols-2">
         <NetWorthWidget
           netWorth={data.executiveSummary.netWorth}
           plannedNetWorth={data.executiveSummary.plannedNetWorth}
@@ -90,12 +97,11 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
           topContributors={data.executiveSummary.topContributors}
           lastMonthlyReview={data.executiveSummary.lastMonthlyReview}
         />
-        <FocusWidget
-          goalsAtRisk={data.goals.atRisk}
-          goalsOnTrack={data.goals.onTrack}
-          monthlySavings={data.executiveSummary.monthlySavings}
-          hasLiabilities={data.loans.outstanding > 0}
-        />
+        <RecommendedActionsWidget actions={data.recommendedActions} />
+        <MonthlyReviewSummaryWidget summary={data.monthlyReviewSummary} />
+        <GoalFundingHeatmapWidget goals={data.goals} />
+        <NetWorthTrendWidget trend={data.netWorthTrend} />
+        <AssetAllocationDriftWidget drift={data.assetAllocationDrift} />
         <InvestmentsWidget
           available
           currentPortfolio={data.investments.currentPortfolio}
@@ -110,13 +116,6 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
           outstandingVariance={data.loans.outstandingVariance}
           emi={data.loans.emi}
         />
-        <RetirementWidget
-          available={data.retirement.available}
-          totalRetirementAssets={data.retirement.totalRetirementAssets}
-          plannedTotalRetirementAssets={data.retirement.plannedTotalRetirementAssets}
-          retirementVariance={data.retirement.retirementVariance}
-          accountsCount={data.retirement.accountsCount}
-        />
         <UpcomingWidget available={data.upcoming.available} items={data.upcoming.items} />
       </section>
     </div>
@@ -128,7 +127,7 @@ function DashboardLoadingSkeleton() {
     <div className="space-y-10 animate-pulse">
       <div className="h-56 rounded-3xl bg-slate-100" />
       <section className="grid gap-7 lg:grid-cols-2">
-        {Array.from({ length: 6 }).map((_, index) => (
+        {Array.from({ length: 8 }).map((_, index) => (
           <div key={index} className="h-80 rounded-3xl bg-slate-100" />
         ))}
       </section>
