@@ -14,7 +14,7 @@ import { PlanningStatCard } from "@/components/planning/PlanningStatCard";
 import { PlanningDashboardService, type PlanningDashboardSummary } from "@/services/planning";
 
 const statMeta: Record<keyof PlanningDashboardSummary["stats"], { label: string; detail: string }> = {
-  scenarios: { label: "Scenarios", detail: "Planning scenarios currently available." },
+  scenarios: { label: "What If?", detail: "Planning scenarios currently available." },
   goals: { label: "Goals", detail: "Active goals ready for planning." },
   retirementStatus: { label: "Retirement Status", detail: "Current retirement planning readiness." },
   cashFlowStatus: { label: "Cash Flow Status", detail: "Forecasting setup for planning cash flow." },
@@ -51,11 +51,11 @@ export default function PlanningPage() {
                 <p className="max-w-2xl text-lg text-slate-600 sm:text-xl">{summary.hero.subtitle}</p>
               </div>
               <p className="max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                Create scenarios, define goals, plan retirement, forecast cash flow and evaluate major life decisions.
+                Keep your plan centered on the essentials: My Financial Plan, What If?, Retirement and Goals.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button asChild>
-                  <Link href="/planning/scenarios">Create Scenario</Link>
+                  <Link href="/planning/scenarios">Open What If?</Link>
                 </Button>
                 <Button asChild variant="outline">
                   <Link href="/planning/goals">Create Goal</Link>

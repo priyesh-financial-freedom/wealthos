@@ -26,7 +26,7 @@ export default async function PlanningScenariosPage() {
   return (
     <AppLayout>
       <PageContainer>
-        <PageHeader title="Scenarios" description="Review saved planning scenarios and keep the active plan easy to find." />
+        <PageHeader title="What If?" description="Review saved planning scenarios and keep the active plan easy to find." />
 
         <div className="flex flex-wrap gap-3">
           <Button asChild>
