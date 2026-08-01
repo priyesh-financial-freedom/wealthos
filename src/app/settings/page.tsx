@@ -8,10 +8,10 @@ import Link from "next/link";
 export default function SettingsPage() {
   const sections = [
     {
-      title: "My Profile",
-      description: "Personal details, login profile, and account-level information.",
+      title: "Profile",
+      description: "Personal details, date of birth, retirement date, and life expectancy.",
       href: "/settings/my-profile",
-      cta: "Open My Profile",
+      cta: "Open Profile",
     },
     {
       title: "Family",
@@ -20,29 +20,23 @@ export default function SettingsPage() {
       cta: "Open Family",
     },
     {
-      title: "Financial Preferences",
-      description: "Base currency, financial-year preferences, and default choices.",
-      href: "/settings/financial-preferences",
-      cta: "Open Financial Preferences",
-    },
-    {
-      title: "Planning Assumptions",
-      description: "Assumption presets and defaults used in long-term planning.",
+      title: "Assumptions",
+      description: "Inflation, salary growth, and return assumptions used across projections.",
       href: "/settings/planning-assumptions",
-      cta: "Open Planning Assumptions",
+      cta: "Open Assumptions",
     },
     {
-      title: "System",
-      description: "System-level controls, integrations, and platform settings.",
-      href: "/settings/system",
-      cta: "Open System",
+      title: "Targets",
+      description: "Retirement corpus, savings rate, emergency fund, and asset allocation targets.",
+      href: "/settings/financial-preferences",
+      cta: "Open Targets",
     },
   ];
 
   return (
     <AppLayout>
       <PageContainer>
-        <PageHeader title="Settings" description="Control preferences, integrations, and account configuration from a central place." />
+        <PageHeader title="Settings" description="Manage profile, family, assumptions, and targets from one place." />
         <div className="grid gap-4 md:grid-cols-2">
           {sections.map((section) => (
             <ContentCard key={section.href}>
@@ -61,7 +55,7 @@ export default function SettingsPage() {
           ))}
           <div className="md:col-span-2">
             <ContentCard>
-              <p className="text-sm text-slate-600">Some areas are placeholders and currently marked as Coming Soon.</p>
+              <p className="text-sm text-slate-600">These pages preserve current routes while simplifying personal-family configuration.</p>
             </ContentCard>
           </div>
         </div>

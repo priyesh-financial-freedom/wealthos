@@ -129,15 +129,15 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const settingsHomeActive = activeHref === "/settings";
   const settingsFamilyActive = activeHref === "/settings/family" || activeHref === "/settings/household";
   const settingsProfileActive = activeHref === "/settings/my-profile";
-  const settingsFinancialPreferencesActive = activeHref === "/settings/financial-preferences";
-  const settingsPlanningAssumptionsActive = activeHref === "/settings/planning-assumptions";
+  const settingsTargetsActive = activeHref === "/settings/financial-preferences";
+  const settingsAssumptionsActive = activeHref === "/settings/planning-assumptions";
   const settingsSystemActive = activeHref === "/settings/system";
   const settingsActive =
     settingsHomeActive ||
     settingsFamilyActive ||
     settingsProfileActive ||
-    settingsFinancialPreferencesActive ||
-    settingsPlanningAssumptionsActive ||
+    settingsTargetsActive ||
+    settingsAssumptionsActive ||
     settingsSystemActive;
 
   return (
@@ -285,13 +285,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
           </div>
 
           <div className={rowWrapClass(1)}>
-            <Link href="/goals" className={rowLinkClass({ active: goalsActive, level: 1, collapsed })}>
-              <Target className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Goals</span> : null}
-            </Link>
-          </div>
-
-          <div className={rowWrapClass(1)}>
             <Link href="/compensation" className={rowLinkClass({ active: compensationActive, level: 1, collapsed })}>
               <Banknote className="h-4 w-4 shrink-0" />
               {!collapsed ? <span className="truncate">Compensation</span> : null}
@@ -351,7 +344,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 <div className={rowWrapClass(2)}>
                   <Link href="/settings/my-profile" className={rowLinkClass({ active: settingsProfileActive, level: 2, collapsed })}>
                     <Users className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">My Profile</span> : null}
+                    {!collapsed ? <span className="truncate">Profile</span> : null}
                   </Link>
                 </div>
 
@@ -363,23 +356,16 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 </div>
 
                 <div className={rowWrapClass(2)}>
-                  <Link href="/settings/financial-preferences" className={rowLinkClass({ active: settingsFinancialPreferencesActive, level: 2, collapsed })}>
-                    <CircleDollarSign className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Financial Preferences</span> : null}
-                  </Link>
-                </div>
-
-                <div className={rowWrapClass(2)}>
-                  <Link href="/settings/planning-assumptions" className={rowLinkClass({ active: settingsPlanningAssumptionsActive, level: 2, collapsed })}>
+                  <Link href="/settings/planning-assumptions" className={rowLinkClass({ active: settingsAssumptionsActive, level: 2, collapsed })}>
                     <TrendingUp className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Planning Assumptions</span> : null}
+                    {!collapsed ? <span className="truncate">Assumptions</span> : null}
                   </Link>
                 </div>
 
                 <div className={rowWrapClass(2)}>
-                  <Link href="/settings/system" className={rowLinkClass({ active: settingsSystemActive, level: 2, collapsed })}>
-                    <Settings className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">System</span> : null}
+                  <Link href="/settings/financial-preferences" className={rowLinkClass({ active: settingsTargetsActive, level: 2, collapsed })}>
+                    <CircleDollarSign className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Targets</span> : null}
                   </Link>
                 </div>
               </div>
