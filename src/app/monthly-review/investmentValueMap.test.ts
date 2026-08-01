@@ -80,6 +80,7 @@ function buildInvestment(partial?: Partial<Investment>): Investment {
 function buildWorkspace(actualValue: number, investmentId = "investment-1"): MonthEndCloseWorkspace {
   return {
     close: null,
+    latestClose: null,
     month: {
       month: 8,
       year: 2026,
