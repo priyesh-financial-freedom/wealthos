@@ -22,8 +22,9 @@ async function waitForHealthyDashboard(page) {
   const requiredHeadings = [
     "Financial Health Score",
     "Current Position",
-    "Priority Areas",
+    "Recommended Actions",
     "Portfolio Snapshot",
+    "Asset Allocation Drift",
     "Debt Snapshot",
     "Retirement Readiness",
     "Upcoming Financial Events",
