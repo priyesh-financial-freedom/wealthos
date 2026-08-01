@@ -2,13 +2,12 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
+import { OWNERSHIP_OPTIONS } from "@/lib/family";
 import { Button } from "@/components/ui/button";
 import { FormActions, FormField, FormGrid } from "@/components/ui/form-layout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { BankAccount, BankAccountInsert, BankAccountStatus, BankAccountType } from "@/types/bankAccount";
-
-const OWNER_OPTIONS = ["Priyesh", "Shobhana", "Joint"] as const;
 
 interface BankAccountFormProps {
   initialData?: BankAccount | null;
@@ -37,7 +36,7 @@ const defaultState = (initialData?: BankAccount | null): BankAccountFormState =>
   current_balance: initialData?.current_balance ?? 0,
   opening_balance: initialData?.opening_balance ?? 0,
   interest_rate: initialData?.interest_rate ?? 0,
-  owner: initialData?.owner ?? "",
+  owner: initialData?.owner ?? "Priyesh",
   include_in_net_worth: initialData?.include_in_net_worth ?? true,
   include_in_cash_position: initialData?.include_in_cash_position ?? true,
   status: initialData?.status === "closed" ? "closed" : "active",
@@ -125,7 +124,7 @@ export function BankAccountForm({ initialData, onSubmit, onCancel, submitting }:
         <FormField>
           <Label htmlFor="owner">Owner</Label>
           <select id="owner" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={formValues.owner} onChange={(event) => updateField("owner", event.target.value)}>
-            {OWNER_OPTIONS.map((owner) => (
+            {OWNERSHIP_OPTIONS.map((owner) => (
               <option key={owner} value={owner}>{owner}</option>
             ))}
           </select>

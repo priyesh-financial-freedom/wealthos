@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
+import { OWNERSHIP_OPTIONS } from "@/lib/family";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +51,7 @@ type RetirementAccountFormState = {
 
 const defaultState = (initialData?: RetirementAccount | null): RetirementAccountFormState => ({
   account_type: initialData?.account_type ?? "PPF",
-  owner: initialData?.owner ?? "",
+  owner: initialData?.owner ?? "Priyesh",
   institution: initialData?.institution ?? "",
   account_number: initialData?.account_number ?? "",
   opening_date: initialData?.opening_date ?? "",
@@ -193,7 +194,16 @@ export function RetirementAccountForm({ initialData, onSubmit, onCancel, submitt
 
         <div className="space-y-2">
           <Label htmlFor="owner">Owner</Label>
-          <Input id="owner" value={formValues.owner} onChange={(event) => updateField("owner", event.target.value)} />
+          <select
+            id="owner"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={formValues.owner}
+            onChange={(event) => updateField("owner", event.target.value)}
+          >
+            {OWNERSHIP_OPTIONS.map((owner) => (
+              <option key={owner} value={owner}>{owner}</option>
+            ))}
+          </select>
           {errors.owner ? <p className="text-sm text-rose-600">{errors.owner}</p> : null}
         </div>
 

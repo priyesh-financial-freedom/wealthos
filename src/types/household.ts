@@ -26,7 +26,7 @@ export interface HouseholdMember {
 
 export interface OwnershipType {
   id: string;
-  name: "Individual" | "Joint" | "Household";
+  name: "Priyesh" | "Shobhana" | "Joint";
   created_at: string;
   updated_at: string;
 }

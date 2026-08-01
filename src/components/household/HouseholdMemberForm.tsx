@@ -97,7 +97,20 @@ export function HouseholdMemberForm({ initialData, onSubmit, onCancel, submittin
 
         <FormField>
           <Label htmlFor="relationship">Relationship</Label>
-          <Input id="relationship" value={formValues.relationship} onChange={(event) => updateField("relationship", event.target.value)} placeholder="Self, Spouse, Child..." />
+          <select
+            id="relationship"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={formValues.relationship}
+            onChange={(event) => updateField("relationship", event.target.value)}
+          >
+            <option value="">Select relationship</option>
+            <option value="Self">Self</option>
+            <option value="Spouse">Spouse</option>
+            <option value="Daughter">Daughter</option>
+            <option value="Son">Son</option>
+            <option value="Parent">Parent</option>
+            <option value="Other">Other</option>
+          </select>
           {errors.relationship ? <p className="text-sm text-rose-600">{errors.relationship}</p> : null}
         </FormField>
 

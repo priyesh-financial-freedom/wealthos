@@ -13,6 +13,7 @@ import { ToastViewport } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { OWNERSHIP_OPTIONS } from "@/lib/family";
 import { formatCurrency } from "@/lib/formatters";
 import { getLiabilities } from "@/services/liabilities";
 import {
@@ -33,7 +34,7 @@ import {
 const defaultValues: RealEstatePropertyInsert = {
   property_name: "",
   property_type: "Apartment",
-  owner: "",
+  owner: "Priyesh",
   purchase_date: null,
   purchase_price: 0,
   current_market_value: 0,
@@ -162,13 +163,17 @@ export default function RealEstatePage() {
   const ownerOptions = useMemo(() => {
     const owners = new Set<string>();
 
+    for (const owner of OWNERSHIP_OPTIONS) {
+      owners.add(owner);
+    }
+
     for (const property of properties) {
       if (property.owner.trim()) {
         owners.add(property.owner.trim());
       }
     }
 
-    return owners.size > 0 ? Array.from(owners).sort((left, right) => left.localeCompare(right)) : ["Self"];
+    return Array.from(owners).sort((left, right) => left.localeCompare(right));
   }, [properties]);
 
   function openCreateDialog() {
@@ -414,7 +419,12 @@ export default function RealEstatePage() {
                     onChange={(value) => setFormValues((current) => ({ ...current, property_type: value as RealEstatePropertyType }))}
                     options={REAL_ESTATE_PROPERTY_TYPES}
                   />
-                  <FieldText label="Owner" value={formValues.owner} onChange={(value) => setFormValues((current) => ({ ...current, owner: value }))} />
+                  <FieldSelect
+                    label="Owner"
+                    value={formValues.owner}
+                    onChange={(value) => setFormValues((current) => ({ ...current, owner: value }))}
+                    options={ownerOptions}
+                  />
                   <FieldText
                     label="Purchase Date"
                     type="date"

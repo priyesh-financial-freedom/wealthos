@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
+import { OWNERSHIP_OPTIONS } from "@/lib/family";
 import { Button } from "@/components/ui/button";
 import { FormActions, FormField, FormGrid } from "@/components/ui/form-layout";
 import { Input } from "@/components/ui/input";
@@ -119,7 +120,7 @@ function defaultValues(initialData?: Investment | null): MutualFundFormValues {
     amc: initialData?.amc ?? initialData?.institution ?? "",
     amfiSchemeCode: initialData?.amfi_scheme_code ?? "",
     folioNumber: initialData?.folio_number ?? "",
-    owner: initialData?.owner ?? "",
+    owner: initialData?.owner ?? "Priyesh",
     nominee: initialData?.nominee ?? "",
     investmentMode: inferredMode,
     optionType: inferredOption,
@@ -364,7 +365,16 @@ export function MutualFundForm({ initialData, schemeCatalog = [], onSubmit, onCa
 
         <FormField>
           <Label htmlFor="owner">Owner</Label>
-          <Input id="owner" value={values.owner} onChange={(event) => updateField("owner", event.target.value)} />
+          <select
+            id="owner"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={values.owner}
+            onChange={(event) => updateField("owner", event.target.value)}
+          >
+            {OWNERSHIP_OPTIONS.map((owner) => (
+              <option key={owner} value={owner}>{owner}</option>
+            ))}
+          </select>
           {errors.owner ? <p className="text-sm text-rose-600">{errors.owner}</p> : null}
         </FormField>
 

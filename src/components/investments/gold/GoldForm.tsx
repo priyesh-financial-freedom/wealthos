@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
+import { OWNERSHIP_OPTIONS } from "@/lib/family";
 import { defaultInvestmentDocumentOptions, parseInvestmentDocuments } from "@/components/investments/documents";
 import { Button } from "@/components/ui/button";
 import { FormActions, FormField, FormGrid } from "@/components/ui/form-layout";
@@ -73,7 +74,7 @@ function defaultValues(initialData?: Investment | null): GoldFormValues {
     purchase_price: initialData?.average_purchase_price ?? initialData?.purchase_price ?? "",
     current_value: initialData?.current_value ?? "",
     purchase_date: initialData?.purchase_date ?? initialData?.acquisition_date ?? "",
-    owner: initialData?.owner ?? "",
+    owner: initialData?.owner ?? "Priyesh",
     storage_location: initialData?.storage_location ?? "",
     status: initialData?.status ?? "active",
     notes: initialData?.notes ?? "",
@@ -224,7 +225,16 @@ export function GoldForm({ initialData, onSubmit, onCancel, submitting, submitLa
 
         <FormField>
           <Label htmlFor="owner">Owner</Label>
-          <Input id="owner" value={values.owner} onChange={(event) => updateField("owner", event.target.value)} />
+          <select
+            id="owner"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            value={values.owner}
+            onChange={(event) => updateField("owner", event.target.value)}
+          >
+            {OWNERSHIP_OPTIONS.map((owner) => (
+              <option key={owner} value={owner}>{owner}</option>
+            ))}
+          </select>
           {errors.owner ? <p className="text-sm text-rose-600">{errors.owner}</p> : null}
         </FormField>
 

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { CORE_FAMILY_MEMBERS } from "@/lib/family";
 import type {
   Household,
   HouseholdDashboardSummary,
@@ -227,12 +228,118 @@ async function getHouseholdRecord(userId: string): Promise<Household | null> {
   return (data ?? null) as Household | null;
 }
 
+async function ensureCoreFamilyMembers(householdId: string) {
+  const client = assertSupabaseClient();
+
+  const { data: rows, error } = await client
+    .from("household_members")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const members = (rows ?? []) as HouseholdMember[];
+  const normalizedNameToMember = new Map(
+    members.map((member) => [member.full_name.trim().toLowerCase(), member]),
+  );
+
+  const legacySelf = normalizedNameToMember.get("priyesh");
+  const canonicalSelf = normalizedNameToMember.get("kumar priyesh");
+  if (!canonicalSelf && legacySelf) {
+    const { error: updateError } = await client
+      .from("household_members")
+      .update({
+        full_name: "Kumar Priyesh",
+        relationship: "Self",
+        employment_status: "Employed",
+        is_primary_user: true,
+      })
+      .eq("id", legacySelf.id)
+      .eq("household_id", householdId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+  }
+
+  for (const seed of CORE_FAMILY_MEMBERS) {
+    const existingMember = normalizedNameToMember.get(seed.full_name.trim().toLowerCase());
+    if (existingMember) {
+      continue;
+    }
+
+    const { error: insertError } = await client.from("household_members").insert({
+      household_id: householdId,
+      full_name: seed.full_name,
+      relationship: seed.relationship,
+      employment_status: seed.employment_status,
+      is_primary_user: seed.is_primary_user,
+      is_active: true,
+    });
+
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+  }
+
+  const { data: activePrimaryRows, error: activePrimaryError } = await client
+    .from("household_members")
+    .select("id")
+    .eq("household_id", householdId)
+    .eq("is_active", true)
+    .eq("is_primary_user", true);
+
+  if (activePrimaryError) {
+    throw new Error(activePrimaryError.message);
+  }
+
+  if (!activePrimaryRows || activePrimaryRows.length !== 1) {
+    const { data: primaryMemberRows, error: primaryMemberError } = await client
+      .from("household_members")
+      .select("id")
+      .eq("household_id", householdId)
+      .eq("full_name", "Kumar Priyesh")
+      .limit(1);
+
+    if (primaryMemberError) {
+      throw new Error(primaryMemberError.message);
+    }
+
+    const primaryMember = primaryMemberRows?.[0];
+    if (primaryMember) {
+      const { error: demoteError } = await client
+        .from("household_members")
+        .update({ is_primary_user: false })
+        .eq("household_id", householdId)
+        .eq("is_primary_user", true);
+
+      if (demoteError) {
+        throw new Error(demoteError.message);
+      }
+
+      const { error: promoteError } = await client
+        .from("household_members")
+        .update({ is_primary_user: true, is_active: true })
+        .eq("id", primaryMember.id)
+        .eq("household_id", householdId);
+
+      if (promoteError) {
+        throw new Error(promoteError.message);
+      }
+    }
+  }
+}
+
 export async function ensureHouseholdInitialized(): Promise<HouseholdWithMembers> {
   const { user } = await requireAuthenticatedUser();
   const client = assertSupabaseClient();
 
   const existing = await getHouseholdRecord(user.id);
   if (existing) {
+    await ensureCoreFamilyMembers(existing.id);
     const members = await listHouseholdMembers();
     return {
       household: existing,
@@ -253,7 +360,7 @@ export async function ensureHouseholdInitialized(): Promise<HouseholdWithMembers
   });
 
   const priyesh = await addHouseholdMember({
-    full_name: "Priyesh",
+    full_name: "Kumar Priyesh",
     relationship: "Self",
     employment_status: "Employed",
     is_primary_user: true,
@@ -264,6 +371,22 @@ export async function ensureHouseholdInitialized(): Promise<HouseholdWithMembers
     full_name: "Shobhana",
     relationship: "Spouse",
     employment_status: "Homemaker",
+    is_primary_user: false,
+    is_active: true,
+  });
+
+  await addHouseholdMember({
+    full_name: "Priyena Lal",
+    relationship: "Daughter",
+    employment_status: "Student",
+    is_primary_user: false,
+    is_active: true,
+  });
+
+  await addHouseholdMember({
+    full_name: "Shobhit Lal",
+    relationship: "Son",
+    employment_status: "Student",
     is_primary_user: false,
     is_active: true,
   });
