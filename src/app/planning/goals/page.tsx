@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { GOAL_BENEFICIARY_OPTIONS } from "@/lib/family";
 import { goalService, type FinancialGoalWithProgress, type GoalPriority, type GoalType } from "@/services/planning/goals";
 import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios";
 
@@ -28,6 +29,7 @@ interface GoalFormValues {
   custom_goal_type: string;
   target_amount: string;
   target_date: string;
+  beneficiary: (typeof GOAL_BENEFICIARY_OPTIONS)[number];
   priority: GoalPriority;
   funding_source: string;
   linked_scenario_id: string;
@@ -40,6 +42,7 @@ const EMPTY_FORM: GoalFormValues = {
   custom_goal_type: "",
   target_amount: "",
   target_date: "",
+  beneficiary: GOAL_BENEFICIARY_OPTIONS[0],
   priority: "MEDIUM",
   funding_source: "",
   linked_scenario_id: "",
@@ -57,6 +60,7 @@ function toFormValues(goal: FinancialGoalWithProgress | null): GoalFormValues {
     custom_goal_type: goal.custom_goal_type ?? "",
     target_amount: String(goal.target_amount),
     target_date: goal.target_date,
+    beneficiary: goal.beneficiary ?? GOAL_BENEFICIARY_OPTIONS[0],
     priority: goal.priority,
     funding_source: goal.funding_source ?? "",
     linked_scenario_id: goal.linked_scenario_id ?? "",
@@ -225,6 +229,11 @@ export default function PlanningGoalsPage() {
       ),
     },
     {
+      key: "beneficiary",
+      header: "Beneficiary",
+      cell: (goal) => <span className="text-sm text-slate-700">{goal.beneficiary ?? "Priyesh + Shobhana"}</span>,
+    },
+    {
       key: "status",
       header: "Status",
       sortable: true,
@@ -359,6 +368,7 @@ export default function PlanningGoalsPage() {
         custom_goal_type: formValues.goal_type === "CUSTOM" ? formValues.custom_goal_type.trim() : null,
         target_amount: targetAmount,
         target_date: formValues.target_date,
+        beneficiary: formValues.beneficiary,
         priority: formValues.priority,
         funding_source: formValues.funding_source.trim() || null,
         linked_scenario_id: formValues.linked_scenario_id || null,
@@ -543,6 +553,24 @@ export default function PlanningGoalsPage() {
                   onChange={(event) => setFormValues((current) => ({ ...current, target_date: event.target.value }))}
                   required
                 />
+              </FormField>
+              <FormField>
+                <Label htmlFor="goal-beneficiary">Beneficiary</Label>
+                <select
+                  id="goal-beneficiary"
+                  className="h-10 rounded-md border border-slate-300 px-3 text-sm"
+                  value={formValues.beneficiary}
+                  onChange={(event) =>
+                    setFormValues((current) => ({
+                      ...current,
+                      beneficiary: event.target.value as (typeof GOAL_BENEFICIARY_OPTIONS)[number],
+                    }))
+                  }
+                >
+                  {GOAL_BENEFICIARY_OPTIONS.map((beneficiary) => (
+                    <option key={beneficiary} value={beneficiary}>{beneficiary}</option>
+                  ))}
+                </select>
               </FormField>
               <FormField>
                 <Label htmlFor="goal-priority">Priority</Label>

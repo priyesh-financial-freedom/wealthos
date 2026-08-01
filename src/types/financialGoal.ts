@@ -4,14 +4,17 @@ export type GoalPriority = "LOW" | "MEDIUM" | "HIGH";
 
 export type GoalType = "RETIREMENT" | "EDUCATION" | "HOME_PURCHASE" | "WEALTH_TARGET" | "CUSTOM";
 
+export type GoalBeneficiary = "Priyesh + Shobhana" | "Priyena Lal" | "Shobhit Lal";
+
 export interface FinancialGoal {
   id: string;
   user_id: string;
   name: string;
   goal_type: GoalType;
-  custom_goal_type: string | null;
+  custom_goal_type?: string | null;
   target_amount: number;
   target_date: string;
+  beneficiary?: GoalBeneficiary | null;
   priority: GoalPriority;
   status: GoalStatus;
   funding_source: string | null;
@@ -28,6 +31,7 @@ export interface FinancialGoalInsert {
   custom_goal_type?: string | null;
   target_amount: number;
   target_date: string;
+  beneficiary?: GoalBeneficiary | null;
   priority: GoalPriority;
   funding_source?: string | null;
   linked_scenario_id?: string | null;
@@ -41,6 +45,7 @@ export interface FinancialGoalUpdate {
   custom_goal_type?: string | null;
   target_amount?: number;
   target_date?: string;
+  beneficiary?: GoalBeneficiary | null;
   priority?: GoalPriority;
   status?: GoalStatus;
   funding_source?: string | null;

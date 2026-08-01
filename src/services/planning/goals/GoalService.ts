@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { GOAL_BENEFICIARY_OPTIONS } from "@/lib/family";
 import { assumptionsService, DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
 import { compensationService } from "@/services/compensation";
 import { createPlanningScenarioBrowserService } from "@/services/planning/scenarios/browser";
@@ -86,6 +87,16 @@ function normalizeCustomGoalType(goalType: FinancialGoal["goal_type"], customGoa
 
   const normalized = customGoalType?.trim() ?? "";
   return normalized || null;
+}
+
+function normalizeBeneficiary(input: string | null | undefined): FinancialGoal["beneficiary"] {
+  const fallback = GOAL_BENEFICIARY_OPTIONS[0];
+  if (!input) {
+    return fallback;
+  }
+
+  const normalized = input.trim();
+  return GOAL_BENEFICIARY_OPTIONS.find((option) => option === normalized) ?? fallback;
 }
 
 function extractSupabaseErrorFields(error: unknown): {
@@ -329,6 +340,7 @@ class SupabaseGoalStore implements GoalStore {
       custom_goal_type: customGoalType,
       target_amount: Number(input.target_amount ?? 0),
       target_date: normalizeDate(input.target_date),
+      beneficiary: normalizeBeneficiary(input.beneficiary ?? null),
       priority: input.priority,
       status: "NOT_STARTED",
       funding_source: input.funding_source ?? null,
@@ -373,6 +385,9 @@ class SupabaseGoalStore implements GoalStore {
     const payload: Record<string, unknown> = {
       ...updates,
       custom_goal_type: normalizedCustomGoalType,
+      beneficiary: normalizeBeneficiary(
+        typeof updates.beneficiary !== "undefined" ? updates.beneficiary : existingGoal.beneficiary,
+      ),
     };
 
     if (typeof updates.target_amount !== "undefined") {
