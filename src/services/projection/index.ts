@@ -22,6 +22,7 @@ export { SalaryProjectionService, salaryProjectionService } from "./SalaryProjec
 export type { SalaryProjectionInput, SalaryProjectionPoint, SalaryProjectionSource } from "./SalaryProjectionService";
 export { FixedProjectionService, fixedProjectionService } from "./FixedProjectionService";
 export { RollingProjectionService, rollingProjectionService } from "./RollingProjectionService";
+export { MonthlyReviewComparisonService, monthlyReviewComparisonService } from "./MonthlyReviewComparisonService";
 export type {
   CreateFixedProjectionV1Input,
   CreateFixedProjectionV1Result,
@@ -36,6 +37,12 @@ export type {
   RollingProjectionCloseItem,
   RollingProjectionSource,
 } from "./RollingProjectionService";
+export type {
+  GetMonthlyReviewComparisonInput,
+  MonthlyReviewComparisonResult,
+  ProjectionComparisonLineKey,
+  ProjectionComparisonRow,
+} from "./MonthlyReviewComparisonService";
 export * from "./versioning";
 export type {
   MonthlyLedgerEntry,

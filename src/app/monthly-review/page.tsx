@@ -32,7 +32,7 @@ import { getLiabilities, updateLiability } from "@/services/liabilities";
 import { closeMonthEndClose, getMonthEndCloseWorkspace, reopenMonth, saveMonthEndCloseDraft } from "@/services/monthEndClose";
 import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/MonthEndCloseService";
 import { buildInvestmentValueMap } from "./investmentValueMap";
-import { projectionInputService } from "@/services/projection";
+import { monthlyReviewComparisonService, projectionInputService, type ProjectionComparisonRow } from "@/services/projection";
 import { getRetirementAccounts } from "@/services/retirement";
 import { closeCurrentMonthSnapshot } from "@/services/monthlySnapshots";
 import type { Asset } from "@/types/asset";
@@ -62,6 +62,14 @@ interface HealthScoreModel {
   savingsRate: number;
   debtToAssetRatio: number;
   projectionVarianceRatio: number;
+}
+
+interface ProjectionComparisonViewModel {
+  reviewMonth: string;
+  rows: ProjectionComparisonRow[];
+  fixedPlanAvailable: boolean;
+  rollingPlanAvailable: boolean;
+  actualAvailable: boolean;
 }
 
 const WORKFLOW_STEPS: WorkflowStep[] = [
@@ -200,6 +208,18 @@ function scoreTone(score: number) {
   }
 
   return "text-rose-700";
+}
+
+function formatMonthKeyFromClose(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function formatValueOrDataRequired(value: number | null) {
+  if (value == null) {
+    return "Data required";
+  }
+
+  return formatCurrency(value, { maximumFractionDigits: 0 });
 }
 
 function buildHealthScoreModel(params: {
@@ -342,6 +362,7 @@ export default function MonthlyReviewPage() {
   const [savingStep, setSavingStep] = useState<WorkflowStepKey | null>(null);
   const [closingMonth, setClosingMonth] = useState(false);
   const [mappingWarning, setMappingWarning] = useState<string | null>(null);
+  const [projectionComparison, setProjectionComparison] = useState<ProjectionComparisonViewModel | null>(null);
 
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
@@ -380,6 +401,29 @@ export default function MonthlyReviewPage() {
     }, {}));
   }
 
+  async function loadProjectionComparisonForWorkspace(monthWorkspace: MonthEndCloseWorkspace) {
+    const close = monthWorkspace.latestClose ?? monthWorkspace.close;
+    if (!close || close.status !== "closed") {
+      setProjectionComparison(null);
+      return;
+    }
+
+    const reviewMonth = formatMonthKeyFromClose(close.close_year, close.close_month);
+    const result = await monthlyReviewComparisonService.getMonthlyReviewComparison({
+      user_id: close.user_id,
+      review_month: reviewMonth,
+      close_id: close.id,
+    });
+
+    setProjectionComparison({
+      reviewMonth,
+      rows: result.rows,
+      fixedPlanAvailable: result.fixed_plan_version_id != null,
+      rollingPlanAvailable: result.rolling_plan_version_id != null,
+      actualAvailable: result.actual_close_id != null,
+    });
+  }
+
   async function loadWorkspaceData() {
     try {
       setLoading(true);
@@ -402,9 +446,14 @@ export default function MonthlyReviewPage() {
         liabilityRows,
         cashSnapshot,
       });
+
+      await loadProjectionComparisonForWorkspace(monthWorkspace).catch(() => {
+        setProjectionComparison(null);
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load monthly review workspace");
       setWorkspace(null);
+      setProjectionComparison(null);
     } finally {
       setLoading(false);
     }
@@ -439,6 +488,10 @@ export default function MonthlyReviewPage() {
           liabilityRows,
           cashSnapshot,
         });
+
+        await loadProjectionComparisonForWorkspace(monthWorkspace).catch(() => {
+          setProjectionComparison(null);
+        });
       } catch (loadError) {
         if (!isMounted) {
           return;
@@ -446,6 +499,7 @@ export default function MonthlyReviewPage() {
 
         setError(loadError instanceof Error ? loadError.message : "Unable to load monthly review workspace");
         setWorkspace(null);
+        setProjectionComparison(null);
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -867,6 +921,82 @@ export default function MonthlyReviewPage() {
               <Link href="/compensation" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900">
                 Open full compensation workspace <ArrowRight className="h-4 w-4" />
               </Link>
+            </DashboardCard>
+
+            <DashboardCard>
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-slate-900">Projection Comparison</h3>
+                {projectionComparison ? <p className="text-xs text-slate-500">Review Month: {projectionComparison.reviewMonth}</p> : null}
+              </div>
+
+              {!projectionComparison || !projectionComparison.actualAvailable ? (
+                <p className="mt-3 text-sm text-slate-500">Data required. Close a month to compare Fixed Plan, Rolling Forecast, and Actual values.</p>
+              ) : (
+                <>
+                  {(!projectionComparison.fixedPlanAvailable || !projectionComparison.rollingPlanAvailable) ? (
+                    <p className="mt-3 text-sm text-amber-700">
+                      Data required: {!projectionComparison.fixedPlanAvailable ? "Fixed Plan" : ""}
+                      {!projectionComparison.fixedPlanAvailable && !projectionComparison.rollingPlanAvailable ? " and " : ""}
+                      {!projectionComparison.rollingPlanAvailable ? "Rolling Forecast" : ""}.
+                    </p>
+                  ) : null}
+
+                  <div className="mt-4 hidden overflow-x-auto md:block">
+                    <table className="min-w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                          <th className="px-3 py-2">Category</th>
+                          <th className="px-3 py-2">Fixed Plan</th>
+                          <th className="px-3 py-2">Rolling Forecast</th>
+                          <th className="px-3 py-2">Actual</th>
+                          <th className="px-3 py-2">Var vs Fixed</th>
+                          <th className="px-3 py-2">Var vs Rolling</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projectionComparison.rows.map((row) => (
+                          <tr key={row.line_key} className="border-b border-slate-100">
+                            <td className="px-3 py-2 font-medium text-slate-900">{row.label}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatValueOrDataRequired(row.fixed_value)}</td>
+                            <td className="px-3 py-2 text-slate-700">{formatValueOrDataRequired(row.rolling_value)}</td>
+                            <td className="px-3 py-2 text-slate-900">{formatValueOrDataRequired(row.actual_value)}</td>
+                            <td className={`px-3 py-2 ${row.variance_vs_fixed == null ? "text-slate-500" : tone(row.variance_vs_fixed)}`}>
+                              {formatValueOrDataRequired(row.variance_vs_fixed)}
+                            </td>
+                            <td className={`px-3 py-2 ${row.variance_vs_rolling == null ? "text-slate-500" : tone(row.variance_vs_rolling)}`}>
+                              {formatValueOrDataRequired(row.variance_vs_rolling)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-4 space-y-3 md:hidden">
+                    {projectionComparison.rows.map((row) => (
+                      <div key={row.line_key} className="rounded-xl border border-slate-200 p-3">
+                        <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                          <span className="text-slate-500">Fixed Plan</span>
+                          <span className="text-right text-slate-700">{formatValueOrDataRequired(row.fixed_value)}</span>
+                          <span className="text-slate-500">Rolling Forecast</span>
+                          <span className="text-right text-slate-700">{formatValueOrDataRequired(row.rolling_value)}</span>
+                          <span className="text-slate-500">Actual</span>
+                          <span className="text-right text-slate-900">{formatValueOrDataRequired(row.actual_value)}</span>
+                          <span className="text-slate-500">Var vs Fixed</span>
+                          <span className={`text-right ${row.variance_vs_fixed == null ? "text-slate-500" : tone(row.variance_vs_fixed)}`}>
+                            {formatValueOrDataRequired(row.variance_vs_fixed)}
+                          </span>
+                          <span className="text-slate-500">Var vs Rolling</span>
+                          <span className={`text-right ${row.variance_vs_rolling == null ? "text-slate-500" : tone(row.variance_vs_rolling)}`}>
+                            {formatValueOrDataRequired(row.variance_vs_rolling)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </DashboardCard>
 
             <DashboardCard>
