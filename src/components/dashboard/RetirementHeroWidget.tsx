@@ -38,7 +38,7 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
   if (!retirement.available) {
     return (
       <DashboardCard>
-        <WidgetHeader eyebrow="Retirement" title="Retirement readiness" icon={PiggyBank} iconTone="emerald" />
+        <WidgetHeader eyebrow="Retirement" title="Corpus Progress vs Plan" icon={PiggyBank} iconTone="emerald" />
         <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-600">Data required</div>
       </DashboardCard>
     );
@@ -46,7 +46,7 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
 
   return (
     <DashboardCard>
-      <WidgetHeader eyebrow="Retirement" title="Retirement readiness" icon={PiggyBank} iconTone="emerald" />
+      <WidgetHeader eyebrow="Retirement" title="Corpus Progress vs Plan" icon={PiggyBank} iconTone="emerald" />
 
       <WidgetMetricGrid className="mt-5 lg:grid-cols-3">
         <WidgetMetric
@@ -59,7 +59,7 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
           value={retirement.totalRetirementAssets === null ? "Data required" : formatCurrency(retirement.totalRetirementAssets, { maximumFractionDigits: 0 })}
         />
         <WidgetMetric
-          label="Required corpus"
+          label="Projected Retirement Corpus"
           value={retirement.requiredCorpus === null ? "Set assumptions" : formatCurrency(retirement.requiredCorpus, { maximumFractionDigits: 0 })}
         />
         <WidgetMetric label="Gap / surplus" value={formatVariance(retirement.gapOrSurplus)} tone={toneForStatus(retirement.status)} />
@@ -69,7 +69,7 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
 
       <div className="mt-5 rounded-2xl bg-slate-50 px-4 py-3.5">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-slate-900">Corpus survival status</p>
+          <p className="text-sm font-semibold text-slate-900">Plan Alignment Status</p>
           <span className={[
             "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
             retirement.status === "On Track"

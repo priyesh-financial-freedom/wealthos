@@ -802,10 +802,10 @@ export class ExecutiveDashboardService {
         corpusSurvivalStatus: retirementReadinessPercent === null
           ? "Data required"
           : retirementReadinessPercent >= 100
-            ? "Corpus projected to meet or exceed planned requirement."
+            ? "Current retirement corpus meets or exceeds projected plan corpus."
             : retirementReadinessPercent >= 80
-              ? "Corpus is close to requirement and needs monitoring."
-              : "Corpus is below planned requirement.",
+              ? "Current retirement corpus is close to projected plan corpus."
+              : "Current retirement corpus is below projected plan corpus.",
         status: retirementStatus,
       },
       upcoming: {

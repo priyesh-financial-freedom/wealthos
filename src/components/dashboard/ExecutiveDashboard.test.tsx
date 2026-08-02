@@ -169,8 +169,17 @@ describe("ExecutiveDashboard", () => {
     expect(html).toContain("Recommended actions");
     expect(html).toContain("Investments");
     expect(html).toContain("Liabilities");
-    expect(html).toContain("Retirement readiness");
+    expect(html).toContain("Corpus Progress vs Plan");
     expect(html).toContain("What&#x27;s coming up");
+  });
+
+  it("uses semantically accurate retirement labels", () => {
+    const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} data={populatedData} error={null} />);
+
+    expect(html).toContain("Projected Retirement Corpus");
+    expect(html).toContain("Plan Alignment Status");
+    expect(html).not.toContain("Required corpus");
+    expect(html).not.toContain("Corpus survival status");
   });
 
   it("renders no-data state messages for retirement and net worth trend", () => {
