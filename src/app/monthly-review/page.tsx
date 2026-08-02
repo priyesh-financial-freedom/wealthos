@@ -341,6 +341,7 @@ export default function MonthlyReviewPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [savingStep, setSavingStep] = useState<WorkflowStepKey | null>(null);
   const [closingMonth, setClosingMonth] = useState(false);
+  const [mappingWarning, setMappingWarning] = useState<string | null>(null);
 
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
@@ -363,10 +364,11 @@ export default function MonthlyReviewPage() {
     setLivingExpenseNotes(params.cashSnapshot?.livingExpense.notes ?? "");
 
     const investmentValueMap = buildInvestmentValueMap(params.monthWorkspace, params.investmentRows);
-    setInvestmentValues(investmentValueMap);
+    setInvestmentValues(investmentValueMap.valuesById);
+    setMappingWarning(investmentValueMap.warningMessage);
     setInvestmentSummaryValues({
-      mutualFundsTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap, "Mutual Funds")),
-      stocksTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap, "Stocks")),
+      mutualFundsTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap.valuesById, "Mutual Funds")),
+      stocksTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap.valuesById, "Stocks")),
     });
     setAssetValues(params.assetRows.reduce<Record<string, string>>((acc, item) => {
       acc[item.id] = String(item.current_value ?? 0);
@@ -796,6 +798,7 @@ export default function MonthlyReviewPage() {
         </div>
 
         {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+        {mappingWarning ? <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{mappingWarning}</div> : null}
         <ToastViewport type="error" message={error ?? ""} onDismiss={() => setError(null)} />
         <ToastViewport type="success" message={notice ?? ""} onDismiss={() => setNotice(null)} />
 

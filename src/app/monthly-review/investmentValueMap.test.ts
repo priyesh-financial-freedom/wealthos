@@ -132,15 +132,37 @@ describe("buildInvestmentValueMap", () => {
 
     const map = buildInvestmentValueMap(workspace, [investment]);
 
-    expect(map["inv-a"]).toBe("123456");
+    expect(map.valuesById["inv-a"]).toBe("123456");
+    expect(map.warningMessage).toBeNull();
   });
 
-  it("throws when any investment is missing from workspace rows", () => {
+  it("returns warning and falls back to investment current value when workspace row is missing", () => {
     const investment = buildInvestment({ id: "inv-missing", investment_name: "Missing Row Fund", current_value: 777777 });
     const workspace = buildWorkspace(111111, "different-id");
 
-    expect(() => buildInvestmentValueMap(workspace, [investment])).toThrow(
-      "Month-end workspace is missing investment snapshot rows: inv-missing:Missing Row Fund",
-    );
+    const result = buildInvestmentValueMap(workspace, [investment]);
+
+    expect(result.valuesById["inv-missing"]).toBe("777777");
+    expect(result.warningMessage).toBe("Some investments are not included in month-end review. Please check category mapping.");
+    expect(result.missingRows).toEqual([
+      {
+        id: "inv-missing",
+        name: "Missing Row Fund",
+        category: "Mutual Funds",
+      },
+    ]);
+  });
+
+  it("does not warn for inactive investments missing in workspace", () => {
+    const investment = buildInvestment({
+      id: "inv-inactive",
+      investment_name: "Inactive Fund",
+      current_value: 1234,
+      status: "inactive",
+    });
+    const workspace = buildWorkspace(111111, "different-id");
+
+    const result = buildInvestmentValueMap(workspace, [investment]);
+    expect(result.warningMessage).toBeNull();
   });
 });

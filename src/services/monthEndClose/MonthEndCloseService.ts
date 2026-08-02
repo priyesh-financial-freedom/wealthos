@@ -1,5 +1,10 @@
 import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
 import { getBalanceSheetData, type BalanceSheetData } from "@/services/balanceSheet";
+import {
+  assertValidFinancialNumber,
+  assertValidNullableFinancialNumber,
+  MAX_PERCENTAGE_ABS_VALUE_24_4,
+} from "@/lib/financialNumberValidation";
 import { projectionEngine } from "@/services/projection/ProjectionEngine";
 import { projectionInputService } from "@/services/projection/ProjectionInputService";
 import type { Asset } from "@/types/asset";
@@ -70,6 +75,7 @@ const FIXED_DEPOSIT_CATEGORIES = new Set<InvestmentCategory>(["Fixed Deposits"])
 const EPF_CATEGORIES = new Set<InvestmentCategory>(["EPF"]);
 const PPF_CATEGORIES = new Set<InvestmentCategory>(["PPF"]);
 const NPS_CATEGORIES = new Set<InvestmentCategory>(["NPS"]);
+const OTHER_INVESTMENT_CATEGORIES = new Set<InvestmentCategory>(["ESOPs", "Startup Investments", "Other Investments"]);
 
 function emptyValueMap(): ValueMap {
   return MONTH_END_CLOSE_ITEM_DEFINITIONS.reduce((acc, item) => {
@@ -186,6 +192,9 @@ function investmentBucket(category: InvestmentCategory): MonthEndCloseItemKey | 
   if (NPS_CATEGORIES.has(category)) {
     return "nps";
   }
+  if (OTHER_INVESTMENT_CATEGORIES.has(category)) {
+    return "other_assets";
+  }
 
   return null;
 }
@@ -262,10 +271,11 @@ function buildBankAccountSeeds(bankAccounts: BankAccount[]): EntitySeed[] {
 
 function buildInvestmentSeeds(investments: Investment[]): EntitySeed[] {
   return investments.flatMap((investment) => {
-    const key = investmentBucket(investment.category);
-    if (!key) {
+    if (investment.status !== "active") {
       return [];
     }
+
+    const key = investmentBucket(investment.category) ?? "other_assets";
 
     return [
       createSeed({
@@ -756,22 +766,41 @@ function applyActualValueOverrides(items: MonthEndCloseEditorItem[], overrides: 
 }
 
 function toMonthEndCloseItemRows(params: { closeId: string; userId: string; items: MonthEndCloseEditorItem[] }) {
-  return params.items.map((item) => ({
-    close_id: params.closeId,
-    user_id: params.userId,
-    entity_id: item.entityId,
-    entity_type: item.entityType,
-    entity_name: item.entityName,
-    item_key: item.key,
-    item_label: item.label,
-    item_type: item.itemType,
-    sort_order: item.sortOrder,
-    opening_value: Number(item.openingValue ?? 0),
-    projected_value: Number(item.projectedValue ?? 0),
-    actual_value: Number(item.actualValue ?? 0),
-    absolute_variance: calculateAbsoluteVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
-    percentage_variance: calculatePercentageVariance(Number(item.actualValue ?? 0), Number(item.projectedValue ?? 0)),
-  }));
+  return params.items.map((item) => {
+    const openingValue = assertValidFinancialNumber(item.openingValue, `${item.entityName} openingValue`, { roundToScale: 2 });
+    const projectedValue = assertValidFinancialNumber(item.projectedValue, `${item.entityName} projectedValue`, { roundToScale: 2 });
+    const actualValue = assertValidFinancialNumber(item.actualValue, `${item.entityName} actualValue`, { roundToScale: 2 });
+    const absoluteVariance = assertValidFinancialNumber(
+      calculateAbsoluteVariance(actualValue, projectedValue),
+      `${item.entityName} absoluteVariance`,
+      { roundToScale: 2 },
+    );
+    const percentageVariance = assertValidNullableFinancialNumber(
+      calculatePercentageVariance(actualValue, projectedValue),
+      `${item.entityName} percentageVariance`,
+      {
+        roundToScale: 4,
+        maxAbs: MAX_PERCENTAGE_ABS_VALUE_24_4,
+      },
+    );
+
+    return {
+      close_id: params.closeId,
+      user_id: params.userId,
+      entity_id: item.entityId,
+      entity_type: item.entityType,
+      entity_name: item.entityName,
+      item_key: item.key,
+      item_label: item.label,
+      item_type: item.itemType,
+      sort_order: item.sortOrder,
+      opening_value: openingValue,
+      projected_value: projectedValue,
+      actual_value: actualValue,
+      absolute_variance: absoluteVariance,
+      percentage_variance: percentageVariance,
+    };
+  });
 }
 
 export class MonthEndCloseService {
