@@ -20,6 +20,14 @@ export type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource, 
 export { projectionEventsService, ProjectionEventsService, DEFAULT_PROJECTION_SCENARIO_KEY } from "./events";
 export { SalaryProjectionService, salaryProjectionService } from "./SalaryProjectionService";
 export type { SalaryProjectionInput, SalaryProjectionPoint, SalaryProjectionSource } from "./SalaryProjectionService";
+export { FixedProjectionService, fixedProjectionService } from "./FixedProjectionService";
+export type {
+  CreateFixedProjectionV1Input,
+  CreateFixedProjectionV1Result,
+  FixedProjectionAssumptions,
+  FixedProjectionBucketKey,
+  FixedProjectionOpeningBalances,
+} from "./FixedProjectionService";
 export * from "./versioning";
 export type {
   MonthlyLedgerEntry,
