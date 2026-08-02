@@ -112,6 +112,8 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const retirementActive = activeHref === "/planning/retirement" || activeHref === "/retirement";
   const goalsActive = activeHref === "/planning/goals" || activeHref === "/goals";
   const whatIfActive = activeHref === "/planning/scenarios";
+  const fixedProjectionActive = activeHref === "/planning/fixed-projection";
+  const rollingProjectionActive = activeHref === "/planning/rolling-projection";
   const monthlyReviewActive = activeHref === "/monthly-review";
   const assetsActive = activeHref === "/assets";
   const bankAccountsActive = activeHref === "/bank-accounts";
@@ -175,6 +177,20 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                   <Link href="/planning/my-financial-plan" className={rowLinkClass({ active: myFinancialPlanActive, level: 2, collapsed })}>
                     <SlidersHorizontal className="h-4 w-4 shrink-0" />
                     {!collapsed ? <span className="truncate">My Financial Plan</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/fixed-projection" className={rowLinkClass({ active: fixedProjectionActive, level: 2, collapsed })}>
+                    <CircleDollarSign className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Fixed Projection</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/rolling-projection" className={rowLinkClass({ active: rollingProjectionActive, level: 2, collapsed })}>
+                    <TrendingUp className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Rolling Projection</span> : null}
                   </Link>
                 </div>
 
