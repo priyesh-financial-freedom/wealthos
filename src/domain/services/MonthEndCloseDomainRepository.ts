@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  assertValidFinancialNumber,
+  assertValidNullableFinancialNumber,
+  MAX_PERCENTAGE_ABS_VALUE_24_4,
+} from "@/lib/financialNumberValidation";
 import type { MonthEndCloseItemType, MonthEndCloseStatus } from "@/types/monthEndClose";
 import { FinancialPeriodStatus } from "@/types/monthEndCloseDomain";
 import type { FinancialPeriodTransitionAuditEntry, MonthEndCloseAggregate, MonthEndCloseLineItem, MonthEndCloseLineItemInput } from "@/types/monthEndCloseDomain";
@@ -148,10 +153,24 @@ function mapItem(row: MonthEndCloseItemRow): MonthEndCloseLineItem {
 }
 
 function toPersistedItem(input: { closeId: string; userId: string; item: MonthEndCloseLineItemInput }) {
-  const actualBalance = input.item.actualBalance === undefined ? input.item.actualValue : input.item.actualBalance;
-  const actualValue = Number(actualBalance ?? input.item.actualValue ?? 0);
-  const projectedValue = Number(input.item.projectedValue ?? 0);
-  const absoluteVariance = actualValue - projectedValue;
+  const actualBalanceRaw = input.item.actualBalance === undefined ? input.item.actualValue : input.item.actualBalance;
+  const openingValue = assertValidFinancialNumber(input.item.openingValue ?? 0, `${input.item.entityName} opening_value`, { roundToScale: 2 });
+  const projectedValue = assertValidFinancialNumber(input.item.projectedValue ?? 0, `${input.item.entityName} projected_value`, { roundToScale: 2 });
+  const actualValue = assertValidFinancialNumber(actualBalanceRaw ?? input.item.actualValue ?? 0, `${input.item.entityName} actual_value`, {
+    roundToScale: 2,
+  });
+  const absoluteVariance = assertValidFinancialNumber(actualValue - projectedValue, `${input.item.entityName} absolute_variance`, {
+    roundToScale: 2,
+  });
+  const percentageVariance = projectedValue === 0
+    ? null
+    : assertValidNullableFinancialNumber((absoluteVariance / projectedValue) * 100, `${input.item.entityName} percentage_variance`, {
+      roundToScale: 4,
+      maxAbs: MAX_PERCENTAGE_ABS_VALUE_24_4,
+    });
+  const actualBalance = actualBalanceRaw === null || actualBalanceRaw === undefined
+    ? null
+    : assertValidFinancialNumber(actualBalanceRaw, `${input.item.entityName} actual_balance`, { roundToScale: 2 });
 
   return {
     close_id: input.closeId,
@@ -163,13 +182,13 @@ function toPersistedItem(input: { closeId: string; userId: string; item: MonthEn
     item_label: input.item.itemLabel,
     item_type: input.item.itemType,
     sort_order: input.item.sortOrder,
-    opening_value: Number(input.item.openingValue ?? 0),
+    opening_value: openingValue,
     projected_value: projectedValue,
     actual_value: actualValue,
-    actual_balance: actualBalance === null || actualBalance === undefined ? null : Number(actualBalance),
+    actual_balance: actualBalance,
     is_required: input.item.isRequired !== false,
     absolute_variance: absoluteVariance,
-    percentage_variance: projectedValue === 0 ? null : (absoluteVariance / projectedValue) * 100,
+    percentage_variance: percentageVariance,
   };
 }
 

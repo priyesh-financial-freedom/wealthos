@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { MonthEndClose, MonthEndCloseItem } from "@/types/monthEndClose";
+import {
+  assertValidFinancialNumber,
+  assertValidNullableFinancialNumber,
+  MAX_PERCENTAGE_ABS_VALUE_24_4,
+} from "@/lib/financialNumberValidation";
 
 export type MonthEndCloseSupabaseClientFactory = () => Promise<SupabaseClient>;
 
@@ -266,8 +271,20 @@ export class MonthEndCloseRepository {
       return;
     }
 
+    const validatedRows = rows.map((row) => ({
+      ...row,
+      opening_value: assertValidFinancialNumber(row.opening_value, `${row.entity_name} opening_value`, { roundToScale: 2 }),
+      projected_value: assertValidFinancialNumber(row.projected_value, `${row.entity_name} projected_value`, { roundToScale: 2 }),
+      actual_value: assertValidFinancialNumber(row.actual_value, `${row.entity_name} actual_value`, { roundToScale: 2 }),
+      absolute_variance: assertValidFinancialNumber(row.absolute_variance, `${row.entity_name} absolute_variance`, { roundToScale: 2 }),
+      percentage_variance: assertValidNullableFinancialNumber(row.percentage_variance, `${row.entity_name} percentage_variance`, {
+        roundToScale: 4,
+        maxAbs: MAX_PERCENTAGE_ABS_VALUE_24_4,
+      }),
+    }));
+
     const client = await this.getClient();
-    const { error } = await client.from("month_end_close_items").upsert(rows, {
+    const { error } = await client.from("month_end_close_items").upsert(validatedRows, {
       onConflict: "close_id,entity_type,entity_id",
     });
 
