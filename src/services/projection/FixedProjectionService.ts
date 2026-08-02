@@ -242,6 +242,7 @@ export class FixedProjectionService {
         salary: input.assumptions.salary,
         contributions: input.assumptions.contributions,
         returns: input.assumptions.returns,
+        liabilitiesMonthlyRepayment: input.assumptions.liabilitiesMonthlyRepayment ?? 0,
         expenses: {
           ...input.assumptions.expenses,
           postRetirementExpenseReductionPercent,
@@ -292,7 +293,7 @@ export class FixedProjectionService {
       })),
     );
 
-    const monthlyPositions = this.buildMonthlyPositions({
+    const monthlyPositions = this.buildMonthlyPositionsV1({
       projectionPlanVersionId: planVersion.id,
       startMonth,
       horizonEndMonth,
@@ -359,7 +360,7 @@ export class FixedProjectionService {
     }
   }
 
-  private buildMonthlyPositions(input: {
+  buildMonthlyPositionsV1(input: {
     projectionPlanVersionId: string;
     startMonth: string;
     horizonEndMonth: string;
