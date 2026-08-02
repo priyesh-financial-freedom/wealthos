@@ -18,6 +18,9 @@ export { projectionEngine, ProjectionEngine } from "./ProjectionEngine";
 export type { ProjectionResult, ProjectionTimelinePoint, OpeningBalances } from "./ProjectionEngine";
 export type { ProjectionContext, ProjectionMonthState, ProjectionOpeningSource, ProjectionStartSource } from "./ProjectionContext";
 export { projectionEventsService, ProjectionEventsService, DEFAULT_PROJECTION_SCENARIO_KEY } from "./events";
+export { SalaryProjectionService, salaryProjectionService } from "./SalaryProjectionService";
+export type { SalaryProjectionInput, SalaryProjectionPoint, SalaryProjectionSource } from "./SalaryProjectionService";
+export * from "./versioning";
 export type {
   MonthlyLedgerEntry,
   FinancialAssumption,
