@@ -151,44 +151,56 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
             </Link>
           </div>
 
-          <div className={rowWrapClass(1)}>
-            <Link href="/planning" className={rowLinkClass({ active: planningActive, level: 1, collapsed })}>
-              <SlidersHorizontal className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Planning</span> : null}
-            </Link>
-          </div>
-
-          {planningOpen ? (
-            <div className="space-y-1">
-              <div className={rowWrapClass(2)}>
-                <Link href="/planning/my-financial-plan" className={rowLinkClass({ active: myFinancialPlanActive, level: 2, collapsed })}>
+          <div className="space-y-1">
+            <div className={rowWrapClass(1)}>
+              <div className="flex items-center gap-2">
+                <Link href="/planning" className={cn("min-w-0 flex-1", rowLinkClass({ active: planningActive, level: 1, collapsed }))}>
                   <SlidersHorizontal className="h-4 w-4 shrink-0" />
-                  {!collapsed ? <span className="truncate">My Financial Plan</span> : null}
+                  {!collapsed ? <span className="truncate">Planning</span> : null}
                 </Link>
-              </div>
-
-              <div className={rowWrapClass(2)}>
-                <Link href="/planning/retirement" className={rowLinkClass({ active: retirementActive, level: 2, collapsed })}>
-                  <PiggyBank className="h-4 w-4 shrink-0" />
-                  {!collapsed ? <span className="truncate">Retirement</span> : null}
-                </Link>
-              </div>
-
-              <div className={rowWrapClass(2)}>
-                <Link href="/planning/goals" className={rowLinkClass({ active: goalsActive, level: 2, collapsed })}>
-                  <Target className="h-4 w-4 shrink-0" />
-                  {!collapsed ? <span className="truncate">Goals</span> : null}
-                </Link>
-              </div>
-
-              <div className={rowWrapClass(2)}>
-                <Link href="/planning/scenarios" className={rowLinkClass({ active: whatIfActive, level: 2, collapsed })}>
-                  <BookOpen className="h-4 w-4 shrink-0" />
-                  {!collapsed ? <span className="truncate">What If?</span> : null}
-                </Link>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900"
+                  onClick={() => toggleGroup("planning")}
+                  aria-label={planningOpen ? "Collapse Planning" : "Expand Planning"}
+                >
+                  {planningOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
               </div>
             </div>
-          ) : null}
+
+            {planningOpen ? (
+              <div className="space-y-1">
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/my-financial-plan" className={rowLinkClass({ active: myFinancialPlanActive, level: 2, collapsed })}>
+                    <SlidersHorizontal className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">My Financial Plan</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/retirement" className={rowLinkClass({ active: retirementActive, level: 2, collapsed })}>
+                    <PiggyBank className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Retirement</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/goals" className={rowLinkClass({ active: goalsActive, level: 2, collapsed })}>
+                    <Target className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">Goals</span> : null}
+                  </Link>
+                </div>
+
+                <div className={rowWrapClass(2)}>
+                  <Link href="/planning/scenarios" className={rowLinkClass({ active: whatIfActive, level: 2, collapsed })}>
+                    <BookOpen className="h-4 w-4 shrink-0" />
+                    {!collapsed ? <span className="truncate">What If?</span> : null}
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <div className={rowWrapClass(1)}>
             <Link href="/monthly-review" className={rowLinkClass({ active: monthlyReviewActive, level: 1, collapsed })}>
