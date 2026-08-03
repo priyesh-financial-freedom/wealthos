@@ -6,6 +6,7 @@ import {
   type FixedProjectionBucketKey,
   type FixedProjectionNpsSplitPolicy,
   type FixedProjectionOpeningBalances,
+  resolvePostRetirementExpenseReductionPercent,
 } from "./FixedProjectionService";
 import { SalaryProjectionService } from "./SalaryProjectionService";
 import { ProjectionVersioningService } from "./versioning/ProjectionVersioningService";
@@ -141,6 +142,10 @@ function readAssumptionsFromSnapshot(snapshot: ProjectionAssumptionSnapshotRecor
     returns?: FixedProjectionAssumptions["returns"];
     expenses?: FixedProjectionAssumptions["expenses"];
   };
+  const retirementPolicy = snapshot.retirement_policy_payload as {
+    npsSplitPolicy?: FixedProjectionNpsSplitPolicy;
+    postRetirementExpenseReductionPercent?: number;
+  };
 
   if (!payload.salary || !payload.contributions || !payload.returns || !payload.expenses) {
     throw new Error("Parent FIXED projection assumptions snapshot is incomplete.");
@@ -150,8 +155,13 @@ function readAssumptionsFromSnapshot(snapshot: ProjectionAssumptionSnapshotRecor
     salary: payload.salary,
     contributions: payload.contributions,
     returns: payload.returns,
-    expenses: payload.expenses,
-    npsSplitPolicy: (snapshot.retirement_policy_payload as { npsSplitPolicy?: FixedProjectionNpsSplitPolicy }).npsSplitPolicy,
+    expenses: {
+      ...payload.expenses,
+      postRetirementExpenseReductionPercent: resolvePostRetirementExpenseReductionPercent(
+        retirementPolicy.postRetirementExpenseReductionPercent ?? payload.expenses.postRetirementExpenseReductionPercent,
+      ),
+    },
+    npsSplitPolicy: retirementPolicy.npsSplitPolicy,
     eventDrawdownOrder: (snapshot.drawdown_policy_payload as { financialEventDrawdownOrder?: FixedProjectionBucketKey[] }).financialEventDrawdownOrder,
     liabilitiesMonthlyRepayment: Number((payload as { liabilitiesMonthlyRepayment?: number }).liabilitiesMonthlyRepayment ?? 0),
   };
@@ -303,10 +313,9 @@ export class RollingProjectionService {
     };
     ensureNpsSplitIsValid(npsSplitPolicy);
 
-    const postRetirementExpenseReductionPercent = assumptions.expenses.postRetirementExpenseReductionPercent ?? 20;
-    if (postRetirementExpenseReductionPercent < 0 || postRetirementExpenseReductionPercent > 100) {
-      throw new Error("postRetirementExpenseReductionPercent must be between 0 and 100.");
-    }
+    const postRetirementExpenseReductionPercent = resolvePostRetirementExpenseReductionPercent(
+      assumptions.expenses.postRetirementExpenseReductionPercent,
+    );
 
     const eventDrawdownOrder = assumptions.eventDrawdownOrder ?? DEFAULT_EVENT_DRAWDOWN_ORDER;
 
@@ -346,6 +355,7 @@ export class RollingProjectionService {
       },
       retirement_policy_payload: {
         npsSplitPolicy,
+        postRetirementExpenseReductionPercent,
         epfAnnualCreditMonth: "03",
         ppfAnnualCreditMonth: "03",
         epfTransferToCashAfterRetirementYears: 3,

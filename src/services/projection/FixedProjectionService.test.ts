@@ -320,6 +320,99 @@ describe("FixedProjectionService", () => {
 
     expect(julyCash.metadata.expenseApplied).toBe(40000);
     expect(augustCash.metadata.expenseApplied).toBe(32000);
+    expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(20);
+  });
+
+  it("applies custom post-retirement expense reduction and snapshots it in retirement policy", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2026-08",
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          postRetirementExpenseReductionPercent: 25,
+        },
+      },
+    }));
+
+    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
+    expect(augustCash.metadata.expenseApplied).toBe(30000);
+    expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(25);
+  });
+
+  it("treats 0 percent reduction as no post-retirement expense reduction", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2026-08",
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          postRetirementExpenseReductionPercent: 0,
+        },
+      },
+    }));
+
+    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
+    expect(augustCash.metadata.expenseApplied).toBe(40000);
+  });
+
+  it("treats 100 percent reduction as zero post-retirement expense", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2026-08",
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          postRetirementExpenseReductionPercent: 100,
+        },
+      },
+    }));
+
+    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
+    expect(augustCash.metadata.expenseApplied).toBe(0);
+  });
+
+  it("rejects invalid post-retirement expense reduction below 0 or above 100", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    await expect(service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          postRetirementExpenseReductionPercent: -1,
+        },
+      },
+    }))).rejects.toThrow("postRetirementExpenseReductionPercent must be between 0 and 100.");
+
+    await expect(service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          postRetirementExpenseReductionPercent: 101,
+        },
+      },
+    }))).rejects.toThrow("postRetirementExpenseReductionPercent must be between 0 and 100.");
   });
 
   it("validates NPS split to exactly 100 percent", async () => {

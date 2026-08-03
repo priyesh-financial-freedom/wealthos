@@ -12,6 +12,7 @@ const DEFAULT_FIXED_START_MONTH = "2026-07";
 const DEFAULT_FIXED_HORIZON_END_MONTH = "2062-07";
 
 const DEFAULT_EVENT_DRAWDOWN_ORDER: FixedProjectionBucketKey[] = ["cash", "mutual_funds", "ppf", "epf"];
+const DEFAULT_POST_RETIREMENT_EXPENSE_REDUCTION_PERCENT = 20;
 
 const DEFAULT_PPF_ANNUAL_CONTRIBUTION_MONTH = 4;
 
@@ -79,6 +80,7 @@ export interface FixedProjectionExpenseAssumptions {
 export interface FixedProjectionNpsSplitPolicy {
   lumpsumPercent: number;
   annuityPercent: number;
+  postRetirementExpenseReductionPercent?: number;
 }
 
 export interface FixedProjectionAssumptions {
@@ -188,6 +190,15 @@ function ensureNpsSplitIsValid(policy: FixedProjectionNpsSplitPolicy): void {
   }
 }
 
+export function resolvePostRetirementExpenseReductionPercent(value: number | null | undefined): number {
+  const resolved = value ?? DEFAULT_POST_RETIREMENT_EXPENSE_REDUCTION_PERCENT;
+  if (resolved < 0 || resolved > 100) {
+    throw new Error("postRetirementExpenseReductionPercent must be between 0 and 100.");
+  }
+
+  return resolved;
+}
+
 function salaryCurveByMonth(curve: SalaryProjectionPoint[]): Map<string, SalaryProjectionPoint> {
   return new Map(curve.map((row) => [row.month_key, row]));
 }
@@ -217,10 +228,9 @@ export class FixedProjectionService {
     };
     ensureNpsSplitIsValid(npsSplitPolicy);
 
-    const postRetirementExpenseReductionPercent = input.assumptions.expenses.postRetirementExpenseReductionPercent ?? 20;
-    if (postRetirementExpenseReductionPercent < 0 || postRetirementExpenseReductionPercent > 100) {
-      throw new Error("postRetirementExpenseReductionPercent must be between 0 and 100.");
-    }
+    const postRetirementExpenseReductionPercent = resolvePostRetirementExpenseReductionPercent(
+      input.assumptions.expenses.postRetirementExpenseReductionPercent,
+    );
 
     const eventDrawdownOrder = input.assumptions.eventDrawdownOrder ?? DEFAULT_EVENT_DRAWDOWN_ORDER;
 
@@ -255,6 +265,7 @@ export class FixedProjectionService {
       },
       retirement_policy_payload: {
         npsSplitPolicy,
+        postRetirementExpenseReductionPercent,
         epfAnnualCreditMonth: "03",
         ppfAnnualCreditMonth: "03",
         epfTransferToCashAfterRetirementYears: 3,
@@ -410,7 +421,7 @@ export class FixedProjectionService {
       }
 
       const retired = !salaryPoint.is_salary_active;
-      const expenseMultiplier = retired ? (100 - postRetirementExpenseReductionPercent) / 100 : 1;
+      const expenseMultiplier = retired ? 1 - postRetirementExpenseReductionPercent / 100 : 1;
       const monthlyExpense = roundCurrency(assumptions.expenses.preRetirementMonthlyExpense * expenseMultiplier);
       const monthlyEmi = roundCurrency(assumptions.expenses.monthlyEmi);
       const monthlyInsurancePremium = roundCurrency(assumptions.expenses.monthlyInsurancePremium);
