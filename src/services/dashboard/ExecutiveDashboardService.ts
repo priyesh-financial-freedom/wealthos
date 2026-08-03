@@ -133,11 +133,11 @@ export interface ExecutiveDashboardData {
     plannedTotalRetirementAssets: number | null;
     retirementVariance: number | null;
     readinessPercent: number | null;
-    requiredCorpus: number | null;
-    gapOrSurplus: number | null;
+    plannedCorpusAtHorizonEnd: number | null;
+    gapOrSurplusVsPlannedCorpus: number | null;
     retirementDate: string | null;
     projectionEndDate: string | null;
-    corpusSurvivalStatus: string;
+    planAlignmentStatus: string;
     status: RetirementReadinessStatus;
   };
   upcoming: {
@@ -279,7 +279,7 @@ async function loadCurrentMonthProjectionSummary(startMonth: string, endYear: nu
     plannedNetWorth: lastSnapshot ? toNumber(lastSnapshot.closingBalance) : null,
     plannedInvestments: lastSnapshot ? toNumber(lastSnapshot.closingBalances?.investments) : null,
     plannedLiabilities: lastSnapshot ? toNumber(lastSnapshot.closingBalances?.liabilities) : null,
-    plannedRetirement: lastSnapshot ? toNumber(lastSnapshot.closingBalances?.retirement) : null,
+    plannedRetirement: lastSnapshot ? toOptionalNumber(lastSnapshot.closingBalances?.retirement) : null,
   };
 }
 
@@ -536,7 +536,9 @@ export class ExecutiveDashboardService {
     const plannedInvestments = projectionMonthly?.plannedInvestments ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.investments);
     const plannedLiabilities = projectionMonthly?.plannedLiabilities ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.liabilities);
     const plannedRetirement = projectionMonthly?.plannedRetirement ?? toOptionalNumber(simulation?.monthlySnapshots[0]?.closingBalances?.retirement);
-    const currentRetirementAssets = retirementSummary ? toNumber(retirementSummary.totalRetirementAssets) : null;
+    // Keep dashboard corpus scope aligned with projection opening retirement corpus:
+    // dedicated retirement accounts + investment holdings explicitly classified as EPF/PPF/NPS.
+    const currentRetirementAssets = toOptionalNumber(balanceSheetData.summary.categoryTotals.retirement);
     const plannedNonRetirementInvestments = plannedInvestments !== null
       ? Math.max(0, plannedInvestments - (plannedRetirement ?? 0))
       : null;
@@ -789,17 +791,17 @@ export class ExecutiveDashboardService {
       },
       dailyInsight,
       retirement: {
-        available: retirementSummary !== null,
+        available: currentRetirementAssets !== null || hasPlannedRetirement,
         totalRetirementAssets: currentRetirementAssets,
         accountsCount: retirementSummary ? toNumber(retirementSummary.count) : null,
         plannedTotalRetirementAssets: hasPlannedRetirement ? plannedRetirement : null,
         retirementVariance: hasPlannedRetirement && currentRetirementAssets !== null ? currentRetirementAssets - plannedRetirement : null,
         readinessPercent: retirementReadinessPercent,
-        requiredCorpus: hasPlannedRetirement ? plannedRetirement : null,
-        gapOrSurplus: hasPlannedRetirement && currentRetirementAssets !== null ? currentRetirementAssets - plannedRetirement : null,
+        plannedCorpusAtHorizonEnd: hasPlannedRetirement ? plannedRetirement : null,
+        gapOrSurplusVsPlannedCorpus: hasPlannedRetirement && currentRetirementAssets !== null ? currentRetirementAssets - plannedRetirement : null,
         retirementDate: toRetirementDateLabel(assumptions?.retirement.salaryStopMonth, assumptions?.retirement.salaryStopYear),
         projectionEndDate: toRetirementDateLabel(assumptions?.planning.endMonth, assumptions?.planning.endYear),
-        corpusSurvivalStatus: retirementReadinessPercent === null
+        planAlignmentStatus: retirementReadinessPercent === null
           ? "Data required"
           : retirementReadinessPercent >= 100
             ? "Current retirement corpus meets or exceeds projected plan corpus."

@@ -119,6 +119,7 @@ describe("ExecutiveDashboardService", () => {
         largestLiability: null,
         categoryTotals: {
           investments: 600000,
+          retirement: 450000,
           fixedDeposits: 0,
           goldAndSilver: 0,
         },
@@ -339,10 +340,75 @@ describe("ExecutiveDashboardService", () => {
     expect(result.monthlySummary.expenses).toBe(107000);
     expect(result.monthlySummary.savings).toBe(23000);
     expect(result.monthlySummary.netWorthChange).toBe(20000);
-    expect(result.retirement.available).toBe(false);
-    expect(result.retirement.totalRetirementAssets).toBeNull();
+    expect(result.retirement.available).toBe(true);
+    expect(result.retirement.totalRetirementAssets).toBe(450000);
     expect(result.retirement.readinessPercent).toBeNull();
-    expect(result.retirement.corpusSurvivalStatus).toBe("Data required");
+    expect(result.retirement.planAlignmentStatus).toBe("Data required");
+  });
+
+  it("keeps current and planned corpus scope aligned with retirement-classified assets", async () => {
+    runtime.getBalanceSheetData.mockResolvedValueOnce({
+      assets: [{ id: "asset-1" }],
+      investments: [{ id: "inv-1" }],
+      liabilities: [],
+      summary: {
+        totalBalanceSheetAssets: 1500000,
+        totalAssets: 900000,
+        totalInvestments: 600000,
+        totalLiabilities: 0,
+        netWorth: 1500000,
+        debtRatio: 0,
+        monthlyEmi: 0,
+        cashHoldings: 150000,
+        cashRatio: 0.1,
+        assetAllocation: [],
+        liabilityAllocation: [],
+        largestAsset: null,
+        largestLiability: null,
+        categoryTotals: {
+          investments: 600000,
+          retirement: 500000,
+          fixedDeposits: 0,
+          goldAndSilver: 0,
+        },
+      },
+    });
+
+    runtime.projectionRun.mockResolvedValueOnce({
+      monthlyLedger: [
+        {
+          salary: 100000,
+          bonus: 0,
+          rentalIncome: 10000,
+          businessIncome: 15000,
+          otherIncome: 5000,
+          livingExpenses: 60000,
+          insurancePremium: 5000,
+          taxes: 10000,
+          emis: 0,
+          investmentContributions: 20000,
+        },
+      ],
+      snapshots: [
+        {
+          openingBalance: 1500000,
+          closingBalance: 1550000,
+          closingBalances: {
+            retirement: 625000,
+            investments: 700000,
+            liabilities: 0,
+          },
+        },
+      ],
+    });
+
+    const service = new ExecutiveDashboardService();
+    const result = await service.getDashboard();
+
+    expect(result.retirement.totalRetirementAssets).toBe(500000);
+    expect(result.retirement.plannedCorpusAtHorizonEnd).toBe(625000);
+    expect(result.retirement.gapOrSurplusVsPlannedCorpus).toBe(-125000);
+    expect(result.retirement.retirementVariance).toBe(-125000);
   });
 
   it("handles missing goals and missing monthly snapshots with explicit empty states", async () => {
@@ -384,6 +450,7 @@ describe("ExecutiveDashboardService", () => {
         monthlyEmi: 0,
         categoryTotals: {
           investments: 0,
+          retirement: 0,
           fixedDeposits: 0,
           goldAndSilver: 0,
         },

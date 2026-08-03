@@ -50,7 +50,7 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
 
       <WidgetMetricGrid className="mt-5 lg:grid-cols-3">
         <WidgetMetric
-          label="Readiness"
+          label="Current vs Planned Corpus Ratio"
           value={retirement.readinessPercent === null ? "Data required" : `${Math.round(retirement.readinessPercent)}%`}
           tone={toneForStatus(retirement.status)}
         />
@@ -59,13 +59,17 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
           value={retirement.totalRetirementAssets === null ? "Data required" : formatCurrency(retirement.totalRetirementAssets, { maximumFractionDigits: 0 })}
         />
         <WidgetMetric
-          label="Projected Retirement Corpus"
-          value={retirement.requiredCorpus === null ? "Set assumptions" : formatCurrency(retirement.requiredCorpus, { maximumFractionDigits: 0 })}
+          label="Planned Corpus at Projection End"
+          value={retirement.plannedCorpusAtHorizonEnd === null ? "Set assumptions" : formatCurrency(retirement.plannedCorpusAtHorizonEnd, { maximumFractionDigits: 0 })}
         />
-        <WidgetMetric label="Gap / surplus" value={formatVariance(retirement.gapOrSurplus)} tone={toneForStatus(retirement.status)} />
+        <WidgetMetric label="Gap / surplus" value={formatVariance(retirement.gapOrSurplusVsPlannedCorpus)} tone={toneForStatus(retirement.status)} />
         <WidgetMetric label="Retirement date" value={retirement.retirementDate ?? "Data required"} />
         <WidgetMetric label="Projection end" value={retirement.projectionEndDate ?? "Data required"} />
       </WidgetMetricGrid>
+
+      <p className="mt-4 text-xs leading-5 text-slate-500">
+        This compares current retirement corpus with planned corpus at projection end. It is not yet a full retirement sufficiency calculation.
+      </p>
 
       <div className="mt-5 rounded-2xl bg-slate-50 px-4 py-3.5">
         <div className="flex items-center justify-between gap-3">
@@ -82,7 +86,7 @@ export function RetirementHeroWidget({ retirement }: RetirementHeroWidgetProps) 
             {retirement.status}
           </span>
         </div>
-        <p className="mt-1.5 text-sm text-slate-600">{retirement.corpusSurvivalStatus}</p>
+        <p className="mt-1.5 text-sm text-slate-600">{retirement.planAlignmentStatus}</p>
       </div>
     </DashboardCard>
   );

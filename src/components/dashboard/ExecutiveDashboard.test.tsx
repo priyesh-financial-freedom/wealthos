@@ -122,11 +122,11 @@ const populatedData = {
     plannedTotalRetirementAssets: null,
     retirementVariance: null,
     readinessPercent: null,
-    requiredCorpus: null,
-    gapOrSurplus: null,
+    plannedCorpusAtHorizonEnd: null,
+    gapOrSurplusVsPlannedCorpus: null,
     retirementDate: null,
     projectionEndDate: null,
-    corpusSurvivalStatus: "Data required",
+    planAlignmentStatus: "Data required",
     status: "Watch" as const,
   },
   upcoming: {
@@ -176,10 +176,12 @@ describe("ExecutiveDashboard", () => {
   it("uses semantically accurate retirement labels", () => {
     const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} data={populatedData} error={null} />);
 
-    expect(html).toContain("Projected Retirement Corpus");
+    expect(html).toContain("Planned Corpus at Projection End");
+    expect(html).toContain("Current vs Planned Corpus Ratio");
     expect(html).toContain("Plan Alignment Status");
     expect(html).not.toContain("Required corpus");
     expect(html).not.toContain("Corpus survival status");
+    expect(html).toContain("not yet a full retirement sufficiency calculation");
   });
 
   it("renders no-data state messages for retirement and net worth trend", () => {
