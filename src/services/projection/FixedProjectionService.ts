@@ -1,5 +1,6 @@
 import { SalaryProjectionService, type SalaryProjectionPoint } from "./SalaryProjectionService";
 import { ProjectionVersioningService } from "./versioning/ProjectionVersioningService";
+import { SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS } from "@/services/planning/assumptions/AssumptionRegistry";
 import type {
   ProjectionAssumptionSnapshotRecord,
   ProjectionMonthlyPositionRecord,
@@ -13,6 +14,7 @@ const DEFAULT_FIXED_HORIZON_END_MONTH = "2062-07";
 
 const DEFAULT_EVENT_DRAWDOWN_ORDER: FixedProjectionBucketKey[] = ["cash", "mutual_funds", "ppf", "epf"];
 const DEFAULT_POST_RETIREMENT_EXPENSE_REDUCTION_PERCENT = 20;
+const DEFAULT_ANNUAL_EXPENSE_INFLATION_PERCENT = SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.generalInflation;
 
 const DEFAULT_PPF_ANNUAL_CONTRIBUTION_MONTH = 4;
 
@@ -72,6 +74,7 @@ export interface FixedProjectionReturnAssumptions {
 
 export interface FixedProjectionExpenseAssumptions {
   preRetirementMonthlyExpense: number;
+  annualExpenseInflationPercent?: number;
   postRetirementExpenseReductionPercent?: number;
   monthlyEmi: number;
   monthlyInsurancePremium: number;
@@ -199,6 +202,15 @@ export function resolvePostRetirementExpenseReductionPercent(value: number | nul
   return resolved;
 }
 
+export function resolveAnnualExpenseInflationPercent(value: number | null | undefined): number {
+  const resolved = value ?? DEFAULT_ANNUAL_EXPENSE_INFLATION_PERCENT;
+  if (!Number.isFinite(resolved) || resolved < 0) {
+    throw new Error("annualExpenseInflationPercent must be a non-negative finite number.");
+  }
+
+  return resolved;
+}
+
 function salaryCurveByMonth(curve: SalaryProjectionPoint[]): Map<string, SalaryProjectionPoint> {
   return new Map(curve.map((row) => [row.month_key, row]));
 }
@@ -231,6 +243,9 @@ export class FixedProjectionService {
     const postRetirementExpenseReductionPercent = resolvePostRetirementExpenseReductionPercent(
       input.assumptions.expenses.postRetirementExpenseReductionPercent,
     );
+    const annualExpenseInflationPercent = resolveAnnualExpenseInflationPercent(
+      input.assumptions.expenses.annualExpenseInflationPercent,
+    );
 
     const eventDrawdownOrder = input.assumptions.eventDrawdownOrder ?? DEFAULT_EVENT_DRAWDOWN_ORDER;
 
@@ -255,6 +270,7 @@ export class FixedProjectionService {
         liabilitiesMonthlyRepayment: input.assumptions.liabilitiesMonthlyRepayment ?? 0,
         expenses: {
           ...input.assumptions.expenses,
+          annualExpenseInflationPercent,
           postRetirementExpenseReductionPercent,
         },
       },
@@ -270,8 +286,8 @@ export class FixedProjectionService {
         ppfAnnualCreditMonth: "03",
         epfTransferToCashAfterRetirementYears: 3,
         todos: [
-          "EPF annual interest crediting on 31 March is not implemented in Phase 2 and remains an explicit TODO.",
-          "PPF annual interest crediting on 31 March is not implemented in Phase 2 and remains an explicit TODO.",
+          "EPF growth is applied monthly in V1 as a deterministic approximation to annual declared rates.",
+          "PPF growth is applied monthly in V1 as a deterministic approximation to annual declared rates.",
           "NPS annuity income stream execution is deferred, policy structure is persisted.",
         ],
       },
@@ -312,6 +328,7 @@ export class FixedProjectionService {
       openingBalances: input.openingBalances,
       assumptions: input.assumptions,
       postRetirementExpenseReductionPercent,
+      annualExpenseInflationPercent,
       eventDrawdownOrder,
       npsSplitPolicy,
     });
@@ -381,6 +398,7 @@ export class FixedProjectionService {
     postRetirementExpenseReductionPercent: number;
     eventDrawdownOrder: FixedProjectionBucketKey[];
     npsSplitPolicy: FixedProjectionNpsSplitPolicy;
+    annualExpenseInflationPercent: number;
   }): UpsertProjectionMonthlyPositionInput[] {
     const {
       projectionPlanVersionId,
@@ -392,6 +410,7 @@ export class FixedProjectionService {
       postRetirementExpenseReductionPercent,
       eventDrawdownOrder,
       npsSplitPolicy,
+      annualExpenseInflationPercent,
     } = input;
 
     const months = listMonthKeys(startMonth, horizonEndMonth);
@@ -409,12 +428,15 @@ export class FixedProjectionService {
     const cashRate = annualPercentToMonthlyRate(assumptions.returns.cashAnnualReturnPercent);
     const mutualFundsRate = annualPercentToMonthlyRate(assumptions.returns.mutualFundsAnnualReturnPercent);
     const stocksRate = annualPercentToMonthlyRate(assumptions.returns.stocksAnnualReturnPercent);
+    const epfRate = annualPercentToMonthlyRate(assumptions.returns.epfAnnualReturnPercent);
+    const ppfRate = annualPercentToMonthlyRate(assumptions.returns.ppfAnnualReturnPercent);
     const npsRate = annualPercentToMonthlyRate(assumptions.returns.npsAnnualReturnPercent);
     const nonFinancialRate = annualPercentToMonthlyRate(assumptions.returns.nonFinancialAnnualReturnPercent);
+    const expenseInflationRate = annualPercentToMonthlyRate(annualExpenseInflationPercent);
 
     const monthlyRows: UpsertProjectionMonthlyPositionInput[] = [];
 
-    for (const monthKey of months) {
+    for (const [monthIndex, monthKey] of months.entries()) {
       const salaryPoint = salaryByMonth.get(monthKey);
       if (!salaryPoint) {
         throw new Error(`Salary curve row missing for month ${monthKey}.`);
@@ -422,7 +444,10 @@ export class FixedProjectionService {
 
       const retired = !salaryPoint.is_salary_active;
       const expenseMultiplier = retired ? 1 - postRetirementExpenseReductionPercent / 100 : 1;
-      const monthlyExpense = roundCurrency(assumptions.expenses.preRetirementMonthlyExpense * expenseMultiplier);
+      const inflatedPreRetirementExpense = roundCurrency(
+        assumptions.expenses.preRetirementMonthlyExpense * (1 + expenseInflationRate) ** monthIndex,
+      );
+      const monthlyExpense = roundCurrency(inflatedPreRetirementExpense * expenseMultiplier);
       const monthlyEmi = roundCurrency(assumptions.expenses.monthlyEmi);
       const monthlyInsurancePremium = roundCurrency(assumptions.expenses.monthlyInsurancePremium);
 
@@ -461,11 +486,11 @@ export class FixedProjectionService {
       const stocksWithdrawal = 0;
       const stocksClose = roundCurrency(nonNegative(stocksOpen + stocksContribution + stocksGrowth - stocksWithdrawal));
 
-      const epfGrowth = 0;
+      const epfGrowth = roundCurrency(epfOpen * epfRate);
       const epfWithdrawal = roundCurrency(eventDrawdownEpf);
       const epfClose = roundCurrency(nonNegative(epfOpen + epfContribution + epfGrowth - epfWithdrawal));
 
-      const ppfGrowth = 0;
+      const ppfGrowth = roundCurrency(ppfOpen * ppfRate);
       const ppfWithdrawal = roundCurrency(eventDrawdownPpf);
       const ppfClose = roundCurrency(nonNegative(ppfOpen + ppfContribution + ppfGrowth - ppfWithdrawal));
 
@@ -508,6 +533,7 @@ export class FixedProjectionService {
           metadata: {
             salaryIncomeFromCommonCurve: salaryPoint.gross_salary,
             expenseApplied: monthlyExpense,
+            expenseInflationAppliedPercent: annualExpenseInflationPercent,
             expenseReductionPercentAfterRetirement: postRetirementExpenseReductionPercent,
             retired,
           },
@@ -549,7 +575,7 @@ export class FixedProjectionService {
             basicSalaryFromCommonCurve: salaryPoint.basic_salary,
             employeeRatePercent: assumptions.contributions.epfEmployeeContributionRate,
             employerRatePercent: assumptions.contributions.epfEmployerContributionRate,
-            annualInterestCreditTodo: "Apply annual EPF crediting on 31 March.",
+            annualizedReturnPercent: assumptions.returns.epfAnnualReturnPercent,
             eventDrawdownPlaceholder: true,
           },
         },
@@ -565,7 +591,7 @@ export class FixedProjectionService {
           metadata: {
             priyeshMonthlyContribution: ppfMonthlyContribution,
             shobhanaAnnualContribution: ppfAnnualContribution,
-            annualInterestCreditTodo: "Apply annual PPF crediting on 31 March.",
+            annualizedReturnPercent: assumptions.returns.ppfAnnualReturnPercent,
             eventDrawdownPlaceholder: true,
           },
         },

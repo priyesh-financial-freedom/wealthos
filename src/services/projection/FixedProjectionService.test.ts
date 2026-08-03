@@ -198,6 +198,7 @@ function buildInput(overrides?: Partial<CreateFixedProjectionV1Input>): CreateFi
       },
       expenses: {
         preRetirementMonthlyExpense: 40000,
+        annualExpenseInflationPercent: 0,
         postRetirementExpenseReductionPercent: 20,
         monthlyEmi: 15000,
         monthlyInsurancePremium: 5000,
@@ -254,7 +255,11 @@ describe("FixedProjectionService", () => {
     expect(julyEpf.metadata.basicSalaryFromCommonCurve).toBe(40000);
     expect(julyNps.metadata.basicSalaryFromCommonCurve).toBe(40000);
     expect(julyEpf.contribution).toBe(9600);
+    expect(julyEpf.growth).toBe(2000);
     expect(julyNps.contribution).toBe(4000);
+
+    const julyPpf = findPosition(result.monthlyPositions, "2026-07", "ppf");
+    expect(julyPpf.growth).toBe(591.67);
   });
 
   it("creates all required bucket rows for each projected month", async () => {
@@ -295,6 +300,15 @@ describe("FixedProjectionService", () => {
     expect(firstNonFinancial.metadata.propertyLiquidationAllowed).toBe(false);
 
     expect(result.assumptionSnapshot.drawdown_policy_payload.financialEventDrawdownOrder).toEqual(["cash", "mutual_funds", "ppf", "epf"]);
+  });
+
+  it("keeps EPF-to-cash policy payload unchanged at three years after enabling EPF growth", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput());
+
+    expect(result.assumptionSnapshot.retirement_policy_payload.epfTransferToCashAfterRetirementYears).toBe(3);
   });
 
   it("applies 20 percent default expense reduction after retirement", async () => {
@@ -344,6 +358,57 @@ describe("FixedProjectionService", () => {
     const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
     expect(augustCash.metadata.expenseApplied).toBe(30000);
     expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(25);
+  });
+
+  it("applies month-by-month inflation on expenses and then applies post-retirement reduction", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2026-08",
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          annualExpenseInflationPercent: 12,
+          postRetirementExpenseReductionPercent: 20,
+        },
+      },
+    }));
+
+    const julyCash = findPosition(result.monthlyPositions, "2026-07", "cash");
+    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
+    const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
+
+    expect(julyCash.metadata.expenseApplied).toBe(40000);
+    expect(augustCash.metadata.expenseApplied).toBe(32320);
+    expect(septemberCash.metadata.expenseApplied).toBe(32643.2);
+  });
+
+  it("uses planning baseline inflation default when annual expense inflation is omitted", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      assumptions: {
+        ...buildInput().assumptions,
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          annualExpenseInflationPercent: undefined,
+        },
+      },
+    }));
+
+    const payload = result.assumptionSnapshot.assumption_payload as {
+      expenses?: {
+        annualExpenseInflationPercent?: number;
+      };
+    };
+
+    expect(payload.expenses?.annualExpenseInflationPercent).toBe(6);
   });
 
   it("treats 0 percent reduction as no post-retirement expense reduction", async () => {

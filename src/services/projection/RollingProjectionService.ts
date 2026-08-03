@@ -6,6 +6,7 @@ import {
   type FixedProjectionBucketKey,
   type FixedProjectionNpsSplitPolicy,
   type FixedProjectionOpeningBalances,
+  resolveAnnualExpenseInflationPercent,
   resolvePostRetirementExpenseReductionPercent,
 } from "./FixedProjectionService";
 import { SalaryProjectionService } from "./SalaryProjectionService";
@@ -316,6 +317,9 @@ export class RollingProjectionService {
     const postRetirementExpenseReductionPercent = resolvePostRetirementExpenseReductionPercent(
       assumptions.expenses.postRetirementExpenseReductionPercent,
     );
+    const annualExpenseInflationPercent = resolveAnnualExpenseInflationPercent(
+      assumptions.expenses.annualExpenseInflationPercent,
+    );
 
     const eventDrawdownOrder = assumptions.eventDrawdownOrder ?? DEFAULT_EVENT_DRAWDOWN_ORDER;
 
@@ -346,6 +350,7 @@ export class RollingProjectionService {
         expenses: {
           ...assumptions.expenses,
           postRetirementExpenseReductionPercent,
+            annualExpenseInflationPercent,
         },
       },
       salary_policy_payload: {
@@ -402,6 +407,7 @@ export class RollingProjectionService {
       openingBalances,
       assumptions,
       postRetirementExpenseReductionPercent,
+        annualExpenseInflationPercent,
       eventDrawdownOrder,
       npsSplitPolicy,
     });
