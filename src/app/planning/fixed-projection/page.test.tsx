@@ -48,6 +48,13 @@ vi.mock("@/services/projection/ProjectionReadService", () => ({
   }),
 }));
 
+vi.mock("@/services/planning/assumptions/server", () => ({
+  createPlanningAssumptionServerService: () => ({
+    getFamilyProfile: async () => ({ primaryCurrentAge: 60 }),
+    getEffectiveAssumptions: async () => ({ retirementAge: 68 }),
+  }),
+}));
+
 describe("Planning Fixed Projection Page", () => {
   it("renders header and empty state", async () => {
     const html = renderToStaticMarkup(await FixedProjectionPage());

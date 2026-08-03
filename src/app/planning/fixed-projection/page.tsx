@@ -8,6 +8,8 @@ import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { ProjectionSnapshotSelector } from "@/components/planning/ProjectionSnapshotSelector";
+import { createPlanningAssumptionServerService } from "@/services/planning/assumptions/server";
 import { createProjectionReadServerService } from "@/services/projection/ProjectionReadService";
 
 function formatProjectionValue(value: number | null) {
@@ -20,7 +22,16 @@ function formatProjectionValue(value: number | null) {
 
 export default async function FixedProjectionPage() {
   const service = createProjectionReadServerService();
-  const projection = await service.getLatestLockedFixedProjection().catch(() => null);
+  const assumptionsService = createPlanningAssumptionServerService();
+  const [projectionResult, familyProfileResult, assumptionsResult] = await Promise.allSettled([
+    service.getLatestLockedFixedProjection(),
+    assumptionsService.getFamilyProfile(),
+    assumptionsService.getEffectiveAssumptions(),
+  ]);
+
+  const projection = projectionResult.status === "fulfilled" ? projectionResult.value : null;
+  const familyProfile = familyProfileResult.status === "fulfilled" ? familyProfileResult.value : null;
+  const effectiveAssumptions = assumptionsResult.status === "fulfilled" ? assumptionsResult.value : null;
 
   return (
     <AppLayout>
@@ -42,6 +53,14 @@ export default async function FixedProjectionPage() {
           </ContentCard>
         ) : (
           <div className="space-y-6">
+            <ProjectionSnapshotSelector
+              monthSnapshots={projection.monthSnapshots}
+              projectionStartMonth={projection.plan.start_month}
+              projectionEndMonth={projection.plan.horizon_end_month}
+              primaryCurrentAge={familyProfile?.primaryCurrentAge ?? null}
+              retirementAge={effectiveAssumptions?.retirementAge ?? null}
+            />
+
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <DashboardCard>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Plan Version</p>

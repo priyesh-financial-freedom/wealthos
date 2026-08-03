@@ -1,5 +1,12 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { groupMonthlyPositionRows, VIEWER_BUCKET_KEYS, type ProjectionViewerBucketKey, type ProjectionViewerMonthRow } from "./ProjectionReadModel";
+import {
+  groupMonthlyPositionRows,
+  groupMonthlyPositionSnapshots,
+  VIEWER_BUCKET_KEYS,
+  type ProjectionViewerBucketKey,
+  type ProjectionViewerMonthRow,
+  type ProjectionViewerMonthSnapshot,
+} from "./ProjectionReadModel";
 
 export interface ProjectionViewerPlanSummary {
   id: string;
@@ -16,11 +23,13 @@ export interface ProjectionViewerPlanSummary {
 export interface ProjectionViewerFixedPlanResult {
   plan: ProjectionViewerPlanSummary;
   monthRows: ProjectionViewerMonthRow[];
+  monthSnapshots: ProjectionViewerMonthSnapshot[];
 }
 
 export interface ProjectionViewerRollingPlanResult {
   plan: ProjectionViewerPlanSummary;
   monthRows: ProjectionViewerMonthRow[];
+  monthSnapshots: ProjectionViewerMonthSnapshot[];
   linkedFixedVersionNo: number | null;
   rebasedFromMonth: string | null;
 }
@@ -65,6 +74,7 @@ export class ProjectionReadService {
     return {
       plan,
       monthRows: groupMonthlyPositionRows(positionRows),
+      monthSnapshots: groupMonthlyPositionSnapshots(positionRows),
     };
   }
 
@@ -84,6 +94,7 @@ export class ProjectionReadService {
     return {
       plan,
       monthRows: groupMonthlyPositionRows(positionRows),
+      monthSnapshots: groupMonthlyPositionSnapshots(positionRows),
       linkedFixedVersionNo,
       rebasedFromMonth,
     };
@@ -124,7 +135,7 @@ export class ProjectionReadService {
   private async getMonthlyPositionRows(client: any, planVersionId: string): Promise<ProjectionPositionRow[]> {
     const { data, error } = await client
       .from("projection_monthly_positions")
-      .select("month_key, bucket_key, closing_value")
+      .select("month_key, bucket_key, closing_value, metadata")
       .eq("projection_plan_version_id", planVersionId)
       .in("bucket_key", VIEWER_BUCKET_KEYS)
       .order("month_key", { ascending: true });
