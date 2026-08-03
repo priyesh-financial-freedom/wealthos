@@ -93,6 +93,37 @@ function firstNumber(record: Record<string, unknown>, keys: string[]): number | 
   return null;
 }
 
+function toTitleCase(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function formatHumanReadableDate(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  const parts = value.split("-").map((part) => Number(part));
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+    return value;
+  }
+
+  const [year, month, day] = parts;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
 function computeOwnerSplit(balanceSheetData: Record<string, unknown>): Record<OwnerLabel, number> | null {
   const split: Record<OwnerLabel, number> = {
     Priyesh: 0,
@@ -373,7 +404,7 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
-      <PageContainer className="mx-auto w-full max-w-[1440px]">
+      <PageContainer className="mx-auto w-full max-w-[1200px]">
         <PageBreadcrumb items={[{ label: "WealthOS", href: "/dashboard" }, { label: "Dashboard" }]} />
 
         <ContentContainer className="border-none bg-transparent p-0 shadow-none">
@@ -418,7 +449,10 @@ export default function DashboardPage() {
                           <MetricRow label="Joint" value={formatCurrency(familyNetWorth.data.ownerSplit.Joint, { maximumFractionDigits: 0 })} />
                         </div>
                       ) : (
-                        <p>Owner-wise split coming soon</p>
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-3 text-slate-500">
+                          <p className="text-sm font-medium text-slate-700">Owner-wise split</p>
+                          <p className="mt-1 text-sm text-slate-500">Coming soon</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -434,10 +468,10 @@ export default function DashboardPage() {
                 {retirement.status === "ready" ? (
                   <div className="mt-4 space-y-3">
                     <MetricRow
-                      label="Current Retirement Corpus"
+                      label="Current Corpus"
                       value={retirement.data.currentRetirementCorpus === null ? "Data required" : formatCurrency(retirement.data.currentRetirementCorpus, { maximumFractionDigits: 0 })}
                     />
-                    <MetricRow label="Expected Corpus at Retirement" value={retirement.data.expectedCorpusAtRetirement === null ? "Data required" : formatCurrency(retirement.data.expectedCorpusAtRetirement, { maximumFractionDigits: 0 })} />
+                    <MetricRow label="Expected Corpus" value={retirement.data.expectedCorpusAtRetirement === null ? "Data required" : formatCurrency(retirement.data.expectedCorpusAtRetirement, { maximumFractionDigits: 0 })} />
                     <MetricRow label="Retirement Date" value={retirement.data.retirementDate ?? "Set in Assumptions"} />
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="text-slate-500">Status</span>
@@ -445,7 +479,7 @@ export default function DashboardPage() {
                         ? <Badge label={retirement.data.statusLabel} tone={retirement.data.statusLabel === "On Track" ? "emerald" : "amber"} />
                         : <span className="text-right font-medium text-slate-900">Data required</span>}
                     </div>
-                    <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Expected corpus uses the latest locked rolling projection at retirement date. Fixed projection is used as fallback.</p>
+                    <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Expected corpus uses the latest locked rolling projection at retirement date, with fixed as fallback.</p>
                   </div>
                 ) : retirement.status === "loading" ? (
                   <p className="mt-4 text-sm text-slate-500">Loading...</p>
@@ -481,8 +515,8 @@ export default function DashboardPage() {
                 {goals.status === "ready" ? (
                   <div className="mt-4 space-y-3">
                     <MetricRow label="Total Goals" value={String(goals.data.totalGoals)} />
-                    <MetricRow label="Next Goal" value={goals.data.nextGoalName ?? "No active goals"} />
-                    <MetricRow label="Next Goal Date" value={goals.data.nextGoalDate ?? "—"} />
+                    <MetricRow label="Next Goal" value={goals.data.nextGoalName ? toTitleCase(goals.data.nextGoalName) : "No active goals"} />
+                    <MetricRow label="Next Goal Date" value={goals.data.nextGoalDate ? formatHumanReadableDate(goals.data.nextGoalDate) : "—"} />
                     <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Detailed funding status available on Goals page.</p>
                   </div>
                 ) : goals.status === "loading" ? (

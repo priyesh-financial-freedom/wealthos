@@ -130,8 +130,8 @@ beforeEach(() => {
   });
   getCashFlowSummary.mockResolvedValue({ savingsRate: 0.24 });
   listGoals.mockResolvedValue([
-    { id: "goal-1", name: "Retirement", target_date: "2048-06-01", status: "ON_TRACK", is_completed: false },
-    { id: "goal-2", name: "Education", target_date: "2032-04-01", status: "AT_RISK", is_completed: false },
+    { id: "goal-1", name: "emergency fund", target_date: "2027-01-25", status: "ON_TRACK", is_completed: false },
+    { id: "goal-2", name: "education", target_date: "2032-04-01", status: "AT_RISK", is_completed: false },
   ]);
 });
 
@@ -194,11 +194,11 @@ describe("DashboardPage", () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Current Retirement Corpus")).toBeTruthy();
+      expect(screen.getByText("Current Corpus")).toBeTruthy();
     });
 
     expect(screen.getByText("₹32,00,000")).toBeTruthy();
-    expect(screen.getByText("Expected Corpus at Retirement")).toBeTruthy();
+    expect(screen.getByText("Expected Corpus")).toBeTruthy();
     expect(screen.getByText("Set in Assumptions")).toBeTruthy();
     expect(screen.queryByText("Data unavailable")).toBeNull();
   });
@@ -207,9 +207,10 @@ describe("DashboardPage", () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Owner-wise split coming soon")).toBeTruthy();
+      expect(screen.getByText("Owner-wise split")).toBeTruthy();
     });
 
+    expect(screen.getByText("Coming soon")).toBeTruthy();
     expect(screen.queryByText("Funded Goals")).toBeNull();
     expect(screen.queryByText("At Risk Goals")).toBeNull();
     expect(screen.getByText("Detailed funding status available on Goals page.")).toBeTruthy();
@@ -224,7 +225,7 @@ describe("DashboardPage", () => {
       expect(screen.getByText("Completed")).toBeTruthy();
     });
 
-    expect(screen.getByText("Expected Corpus at Retirement")).toBeTruthy();
+    expect(screen.getByText("Expected Corpus")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open Monthly Review" }).getAttribute("href")).toBe("/monthly-review");
   });
 
@@ -247,9 +248,9 @@ describe("DashboardPage", () => {
       expect(screen.getByRole("heading", { name: "Retirement" })).toBeTruthy();
     });
 
-    expect(screen.getByText("Current Retirement Corpus")).toBeTruthy();
+    expect(screen.getByText("Current Corpus")).toBeTruthy();
     expect(screen.getByText("₹42,00,000")).toBeTruthy();
-    expect(screen.getByText("Expected Corpus at Retirement")).toBeTruthy();
+    expect(screen.getByText("Expected Corpus")).toBeTruthy();
     expect(screen.getAllByText("Data required").length).toBeGreaterThan(0);
     expect(screen.getByText("Jun 2048")).toBeTruthy();
     expect(screen.queryByText("Data unavailable")).toBeNull();
@@ -273,5 +274,15 @@ describe("DashboardPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Set in Assumptions")).toBeTruthy();
     });
+  });
+
+  it("formats the next goal name and date for display", async () => {
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Emergency Fund")).toBeTruthy();
+    });
+
+    expect(screen.getByText("25 Jan 2027")).toBeTruthy();
   });
 });
