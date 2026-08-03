@@ -8,6 +8,9 @@ const runtime = vi.hoisted(() => ({
   buildInvestmentSummary: vi.fn(),
   listGoals: vi.fn(),
   getAssumptionsBundle: vi.fn(),
+  getRetirementSummary: vi.fn(),
+  listEvents: vi.fn(),
+  loadHistory: vi.fn(),
   simulationRun: vi.fn(),
   buildContext: vi.fn(),
   projectionRun: vi.fn(),
@@ -17,9 +20,14 @@ const runtime = vi.hoisted(() => ({
   generateRecommendations: vi.fn(),
 }));
 
-vi.mock("@/services/balanceSheet", () => ({
-  getBalanceSheetData: runtime.getBalanceSheetData,
-}));
+vi.mock("@/services/balanceSheet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/balanceSheet")>();
+
+  return {
+    ...actual,
+    getBalanceSheetData: runtime.getBalanceSheetData,
+  };
+});
 
 vi.mock("@/services/assetManagement", () => ({
   buildAssetSummaryFromAssets: runtime.buildAssetSummaryFromAssets,
@@ -32,9 +40,14 @@ vi.mock("@/services/cashFlowManagement", () => ({
   },
 }));
 
-vi.mock("@/services/investments", () => ({
-  buildInvestmentSummary: runtime.buildInvestmentSummary,
-}));
+vi.mock("@/services/investments", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/investments")>();
+
+  return {
+    ...actual,
+    buildInvestmentSummary: runtime.buildInvestmentSummary,
+  };
+});
 
 vi.mock("@/services/loanManagement", () => ({
   isManagedLoanType: vi.fn((type: string) => type === "Home Loan" || type === "Car Loan" || type === "Personal Loan" || type === "Education Loan" || type === "Loan Against Property"),
@@ -50,6 +63,22 @@ vi.mock("@/services/assumptions", () => ({
   DEFAULT_SCENARIO_KEY: "default",
   assumptionsService: {
     getAssumptionsBundle: runtime.getAssumptionsBundle,
+  },
+}));
+
+vi.mock("@/services/retirement", () => ({
+  getRetirementSummary: runtime.getRetirementSummary,
+}));
+
+vi.mock("@/services/projection/events", () => ({
+  projectionEventsService: {
+    listEvents: runtime.listEvents,
+  },
+}));
+
+vi.mock("@/services/snapshots", () => ({
+  snapshotReadModel: {
+    loadHistory: runtime.loadHistory,
   },
 }));
 
@@ -197,6 +226,14 @@ describe("ExecutiveDashboardService", () => {
         salaryStopYear: 2042,
       },
     });
+
+    runtime.getRetirementSummary.mockResolvedValue({
+      totalRetirementAssets: 450000,
+      count: 3,
+    });
+
+    runtime.listEvents.mockResolvedValue([]);
+    runtime.loadHistory.mockResolvedValue([]);
 
     runtime.simulationRun.mockResolvedValue({
       ok: true,
@@ -442,6 +479,49 @@ describe("ExecutiveDashboardService", () => {
     expect(result.monthlyReviewSummary.available).toBe(false);
     expect(result.netWorthTrend.available).toBe(false);
     expect(result.netWorthTrend.message).toBe("Add monthly snapshots to view net worth trend.");
+  });
+
+  it("returns partial data if monthly review summary fails", async () => {
+    runtime.getMonthlyReviewWorkspace.mockRejectedValueOnce(new Error("Monthly review unavailable"));
+
+    const service = new ExecutiveDashboardService();
+    const result = await service.getDashboardCore();
+
+    expect(result.executiveSummary.netWorth).toBe(1100000);
+    expect(result.monthlyReviewSummary.available).toBe(false);
+    expect(result.monthlyReviewSummary.ctaLabel).toBe("Start Monthly Review");
+  });
+
+  it("returns partial data if retirement summary fails", async () => {
+    runtime.getRetirementSummary.mockRejectedValueOnce(new Error("Retirement unavailable"));
+
+    const service = new ExecutiveDashboardService();
+    const result = await service.getDashboardCore();
+
+    expect(result.retirement.available).toBe(true);
+    expect(result.retirement.accountsCount).toBeNull();
+    expect(result.retirement.totalRetirementAssets).toBe(450000);
+  });
+
+  it("returns partial data if assumptions are missing", async () => {
+    runtime.getAssumptionsBundle.mockRejectedValueOnce(new Error("Assumptions unavailable"));
+
+    const service = new ExecutiveDashboardService();
+    const result = await service.getDashboardCore();
+
+    expect(result.executiveSummary.netWorth).toBe(1100000);
+    expect(result.investments.plannedPortfolio).toBe(650000);
+    expect(result.investments.monthlyInvestment).toBe(0);
+    expect(result.retirement.retirementDate).toBeNull();
+    expect(result.retirement.projectionEndDate).toBeNull();
+  });
+
+  it("hard-fails when auth or user context is unavailable", async () => {
+    runtime.getBalanceSheetData.mockRejectedValueOnce(new Error("Authentication required."));
+
+    const service = new ExecutiveDashboardService();
+
+    await expect(service.getDashboardCore()).rejects.toThrow("Authentication required.");
   });
 
   it("loads core dashboard without optional-heavy services", async () => {

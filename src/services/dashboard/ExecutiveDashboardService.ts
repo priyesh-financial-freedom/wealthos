@@ -3,6 +3,7 @@ import { DEFAULT_SCENARIO_KEY, assumptionsService } from "@/services/assumptions
 import { buildCashFlowSummary, cashFlowManagementService } from "@/services/cashFlowManagement";
 import { compensationService } from "@/services/compensation";
 import { getBalanceSheetData } from "@/services/balanceSheet";
+import type { BalanceSheetData } from "@/services/balanceSheet";
 import { buildAssetSummaryFromAssets } from "@/services/assetManagement";
 import { buildExecutiveInsights, buildFinancialHealthScore } from "@/services/finance";
 import { buildInvestmentSummary } from "@/services/investments";
@@ -68,6 +69,121 @@ function createDevTimer(label: string) {
   return {
     end: () => console.timeEnd(label),
   };
+}
+
+type DashboardCoreStep =
+  | "auth/user/household lookup"
+  | "balance sheet load"
+  | "assumptions load"
+  | "financial health load"
+  | "retirement hero load"
+  | "monthly review summary load";
+
+function logDashboardCoreStepFailure(step: DashboardCoreStep) {
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(`[dashboard.core] ${step} failed`);
+  }
+}
+
+function isAuthenticationFailure(error: unknown): boolean {
+  return error instanceof Error
+    && (error.message.includes("Authentication required")
+      || error.message.includes("Supabase client is not configured"));
+}
+
+function createEmptyBalanceSheetData(): BalanceSheetData {
+  const emptyAssets: BalanceSheetData["assets"] = [];
+  const emptyLiabilities: BalanceSheetData["liabilities"] = [];
+  const emptyInvestments: BalanceSheetData["investments"] = [];
+  const emptyBankAccounts: BalanceSheetData["bankAccounts"] = [];
+  const emptyRetirementAccounts: BalanceSheetData["retirementAccounts"] = [];
+  const emptyFixedDeposits: BalanceSheetData["fixedDeposits"] = [];
+  const emptyGoldHoldings: BalanceSheetData["goldHoldings"] = [];
+  const emptySilverHoldings: BalanceSheetData["silverHoldings"] = [];
+  const emptyRealEstateProperties: BalanceSheetData["realEstateProperties"] = [];
+
+  const emptySummary: BalanceSheetData["summary"] = {
+    totalAssets: 0,
+    totalInvestments: 0,
+    totalLiabilities: 0,
+    totalBalanceSheetAssets: 0,
+    netWorth: 0,
+    debtRatio: 0,
+    monthlyEmi: 0,
+    cashHoldings: 0,
+    cashRatio: 0,
+    liquidityRatio: null,
+    investmentRatio: 0,
+    retirementRatio: 0,
+    realEstateRatio: 0,
+    assetAllocation: [],
+    liabilityAllocation: [],
+    largestAsset: null,
+    largestLiability: null,
+    categoryTotals: {
+      cashAndBank: 0,
+      investments: 0,
+      retirement: 0,
+      fixedDeposits: 0,
+      goldAndSilver: 0,
+      realEstate: 0,
+      vehicles: 0,
+      otherAssets: 0,
+      homeLoan: 0,
+      carLoan: 0,
+      creditCards: 0,
+      personalLoan: 0,
+      otherLiabilities: 0,
+    },
+    assetSections: [
+      { label: "Cash & Bank", value: 0, href: "/accounts", description: "Cash-like assets plus active bank balances." },
+      { label: "Investments", value: 0, href: "/investments", description: "Market-linked holdings excluding retirement, fixed deposits, and precious metals." },
+      { label: "Retirement", value: 0, href: "/retirement", description: "Dedicated retirement accounts and retirement-classified investment holdings." },
+      { label: "Fixed Deposits", value: 0, href: "/fixed-deposits", description: "FD and RD values across dedicated deposits and investment-linked fixed deposits." },
+      { label: "Gold & Silver", value: 0, href: "/investments/gold", description: "Precious metal holdings including gold, silver, and sovereign gold bonds." },
+      { label: "Real Estate", value: 0, href: "/assets", description: "Property and land positions from the asset registry." },
+      { label: "Vehicles", value: 0, href: "/assets", description: "Vehicles tracked on the balance sheet." },
+      { label: "Other Assets", value: 0, href: "/assets", description: "Residual business and other asset holdings." },
+    ],
+    liabilitySections: [
+      { label: "Home Loan", value: 0, href: "/liabilities", description: "Housing debt obligations." },
+      { label: "Car Loan", value: 0, href: "/liabilities", description: "Vehicle financing outstanding balances." },
+      { label: "Credit Cards", value: 0, href: "/liabilities", description: "Revolving card balances." },
+      { label: "Personal Loan", value: 0, href: "/liabilities", description: "Personal loans and overdraft or line-of-credit exposures." },
+      { label: "Other Liabilities", value: 0, href: "/liabilities", description: "Education loans and all remaining liability obligations." },
+    ],
+  };
+
+  return {
+    assets: emptyAssets,
+    liabilities: emptyLiabilities,
+    investments: emptyInvestments,
+    bankAccounts: emptyBankAccounts,
+    retirementAccounts: emptyRetirementAccounts,
+    fixedDeposits: emptyFixedDeposits,
+    goldHoldings: emptyGoldHoldings,
+    silverHoldings: emptySilverHoldings,
+    realEstateProperties: emptyRealEstateProperties,
+    summary: emptySummary,
+  };
+}
+
+async function loadDashboardStep<T>(
+  step: DashboardCoreStep,
+  operation: () => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isAuthenticationFailure(error)) {
+      logDashboardCoreStepFailure("auth/user/household lookup");
+      throw error;
+    }
+
+    logDashboardCoreStepFailure(step);
+    return fallback;
+  }
 }
 
 export interface ExecutiveGoalProgressItem {
@@ -561,7 +677,17 @@ export class ExecutiveDashboardService {
     const projectionMonthly = optionalData?.projectionSummary ?? null;
     const decisionRecommendations = optionalData?.recommendations ?? [];
     const healthTimer = createDevTimer("dashboard.health-load");
-    const healthScore = includeHeavyWidgets ? await healthScoreService.calculateHealthScore().catch(() => null) : null;
+    const healthScore = includeHeavyWidgets
+      ? await healthScoreService.calculateHealthScore().catch((error) => {
+        if (isAuthenticationFailure(error)) {
+          logDashboardCoreStepFailure("auth/user/household lookup");
+          throw error;
+        }
+
+        logDashboardCoreStepFailure("financial health load");
+        return null;
+      })
+      : null;
     healthTimer.end();
 
     const investmentSummary = buildInvestmentSummary(balanceSheetData.investments);
@@ -899,16 +1025,16 @@ export class ExecutiveDashboardService {
   private async loadCoreContext(): Promise<ExecutiveDashboardCoreContext> {
     const balanceSheetTimer = createDevTimer("dashboard.balance-sheet-load");
     const [balanceSheetData, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview, monthlyReviewWorkspace, coreGoals] = await Promise.all([
-      getBalanceSheetData(),
-      assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
-      loadSimulation().catch(() => null),
-      cashFlowManagementService.getCashFlowSummary().catch(() => null),
-      compensationService.getSummary(DEFAULT_SCENARIO_KEY).catch(() => null),
-      getRetirementSummary().catch(() => null),
-      projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => null),
-      loadLastMonthlyReviewLabel().catch(() => null),
-      monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null),
-      goalService.listGoals({ includeProgress: false }).catch(() => []),
+      loadDashboardStep("balance sheet load", () => getBalanceSheetData(), createEmptyBalanceSheetData()),
+      loadDashboardStep("assumptions load", () => assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY), null),
+      loadDashboardStep("financial health load", () => loadSimulation(), null),
+      loadDashboardStep("monthly review summary load", () => cashFlowManagementService.getCashFlowSummary(), null),
+      loadDashboardStep("monthly review summary load", () => compensationService.getSummary(DEFAULT_SCENARIO_KEY), null),
+      loadDashboardStep("retirement hero load", () => getRetirementSummary(), null),
+      loadDashboardStep("monthly review summary load", () => projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY), null),
+      loadDashboardStep("monthly review summary load", () => loadLastMonthlyReviewLabel(), null),
+      loadDashboardStep("monthly review summary load", () => monthlyReviewService.getMonthlyReviewWorkspace(), null),
+      loadDashboardStep("monthly review summary load", () => goalService.listGoals({ includeProgress: false }), []),
     ]);
     balanceSheetTimer.end();
 
