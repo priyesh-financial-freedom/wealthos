@@ -2,7 +2,7 @@ import { Sparkles } from "lucide-react";
 
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { WidgetHeader } from "@/components/dashboard/WidgetPrimitives";
-import type { ExecutiveDashboardData } from "@/services/dashboard";
+import type { ExecutiveDashboardData } from "@/components/dashboard/dashboardTypes";
 
 interface RecommendedActionsWidgetProps {
   actions: ExecutiveDashboardData["recommendedActions"];

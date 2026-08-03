@@ -57,6 +57,12 @@ export interface MonthlyReviewWorkspace {
   summary: MonthlyReviewSummary | null;
 }
 
+export interface MonthlyReviewNetWorthTrendPoint {
+  month: string;
+  actual: number | null;
+  planned: number | null;
+}
+
 type ValueMap = Record<MonthEndCloseItemKey, number>;
 
 interface MonthEndCloseHeader {
@@ -66,6 +72,13 @@ interface MonthEndCloseHeader {
   close_year: number;
   version_number: number;
   status: "draft" | "closed";
+}
+
+interface MonthEndCloseTrendItem {
+  close_id: string;
+  item_type: "asset" | "liability";
+  actual_value: number | string | null;
+  projected_value: number | string | null;
 }
 
 function assertSupabaseClient() {
@@ -494,6 +507,63 @@ export class MonthlyReviewService {
     };
 
     return workspace;
+  }
+
+  async getNetWorthTrendPoints(limit = 12): Promise<MonthlyReviewNetWorthTrendPoint[]> {
+    const { client, user } = await requireAuthenticatedUser();
+    const periods = await listClosedPeriods(client, user.id);
+    const selectedPeriods = periods.slice(0, Math.max(0, limit));
+
+    if (selectedPeriods.length === 0) {
+      return [];
+    }
+
+    const closeIds = selectedPeriods.map((period) => period.closeId);
+    const { data, error } = await client
+      .from("month_end_close_items")
+      .select("close_id, item_type, actual_value, projected_value")
+      .in("close_id", closeIds);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const totalsByCloseId = new Map<string, { assetActual: number; liabilityActual: number; assetProjected: number; liabilityProjected: number }>();
+
+    for (const row of (data ?? []) as MonthEndCloseTrendItem[]) {
+      const current = totalsByCloseId.get(row.close_id) ?? { assetActual: 0, liabilityActual: 0, assetProjected: 0, liabilityProjected: 0 };
+      const actualValue = Number(row.actual_value ?? 0);
+      const projectedValue = Number(row.projected_value ?? 0);
+
+      if (row.item_type === "asset") {
+        current.assetActual += Number.isFinite(actualValue) ? actualValue : 0;
+        current.assetProjected += Number.isFinite(projectedValue) ? projectedValue : 0;
+      } else {
+        current.liabilityActual += Number.isFinite(actualValue) ? actualValue : 0;
+        current.liabilityProjected += Number.isFinite(projectedValue) ? projectedValue : 0;
+      }
+
+      totalsByCloseId.set(row.close_id, current);
+    }
+
+    return selectedPeriods
+      .map((period) => {
+        const totals = totalsByCloseId.get(period.closeId);
+        if (!totals) {
+          return {
+            month: period.label,
+            actual: null,
+            planned: null,
+          };
+        }
+
+        return {
+          month: period.label,
+          actual: totals.assetActual - totals.liabilityActual,
+          planned: totals.assetProjected - totals.liabilityProjected,
+        };
+      })
+      .reverse();
   }
 }
 

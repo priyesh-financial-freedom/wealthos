@@ -161,12 +161,13 @@ describe("ExecutiveDashboard", () => {
   });
 
   it("renders all required sections", () => {
-    const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} data={populatedData} error={null} />);
+    const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} optionalLoading data={populatedData} error={null} />);
 
     expect(html).toContain("Project North Star");
     expect(html).toContain("Financial Health Score");
     expect(html).toContain("Where am I today");
     expect(html).toContain("Recommended actions");
+    expect(html).toContain("Loading optional dashboard data...");
     expect(html).toContain("Investments");
     expect(html).toContain("Liabilities");
     expect(html).toContain("Corpus Progress vs Plan");
@@ -184,20 +185,16 @@ describe("ExecutiveDashboard", () => {
     expect(html).toContain("not yet a full retirement sufficiency calculation");
   });
 
-  it("renders no-data state messages for retirement and net worth trend", () => {
+  it("renders no-data state messages for retirement while optional sections stay deferred", () => {
     const html = renderToStaticMarkup(
       <ExecutiveDashboard
         loading={false}
+        optionalLoading={false}
         data={{
           ...populatedData,
           retirement: {
             ...populatedData.retirement,
             available: false,
-          },
-          netWorthTrend: {
-            available: false,
-            message: "Add monthly snapshots to view net worth trend.",
-            points: [],
           },
         }}
         error={null}
@@ -205,7 +202,7 @@ describe("ExecutiveDashboard", () => {
     );
 
     expect(html).toContain("Data required");
-    expect(html).toContain("Add monthly snapshots to view net worth trend.");
+    expect(html).toContain("Loading optional dashboard data...");
   });
 
   it("renders negative monthly review variance and goal gap text", () => {
@@ -238,5 +235,14 @@ describe("ExecutiveDashboard", () => {
 
     expect(html).toContain("-₹5,000");
     expect(html).toContain("Gap");
+  });
+
+  it("keeps core dashboard rendering available while optional widgets are still loading", () => {
+    const html = renderToStaticMarkup(<ExecutiveDashboard loading={false} optionalLoading data={populatedData} error={null} />);
+
+    expect(html).toContain("Project North Star");
+    expect(html).toContain("Financial Health Score");
+    expect(html).toContain("Corpus Progress vs Plan");
+    expect(html).toContain("Loading optional dashboard data...");
   });
 });

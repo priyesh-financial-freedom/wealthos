@@ -5,7 +5,7 @@ import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { WidgetHeader, WidgetMetric, WidgetMetricGrid } from "@/components/dashboard/WidgetPrimitives";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import type { ExecutiveDashboardData } from "@/services/dashboard";
+import type { ExecutiveDashboardData } from "@/components/dashboard/dashboardTypes";
 
 interface MonthlyReviewSummaryWidgetProps {
   summary: ExecutiveDashboardData["monthlyReviewSummary"];

@@ -12,6 +12,7 @@ const runtime = vi.hoisted(() => ({
   buildContext: vi.fn(),
   projectionRun: vi.fn(),
   getMonthlyReviewWorkspace: vi.fn(),
+  getNetWorthTrendPoints: vi.fn(),
   calculateHealthScore: vi.fn(),
   generateRecommendations: vi.fn(),
 }));
@@ -67,6 +68,7 @@ vi.mock("@/services/projection", () => ({
   },
   monthlyReviewService: {
     getMonthlyReviewWorkspace: runtime.getMonthlyReviewWorkspace,
+    getNetWorthTrendPoints: runtime.getNetWorthTrendPoints,
   },
 }));
 
@@ -295,6 +297,14 @@ describe("ExecutiveDashboardService", () => {
       },
     });
 
+    runtime.getNetWorthTrendPoints.mockResolvedValue([
+      {
+        month: "Jul 2026",
+        actual: 1100000,
+        planned: 1080000,
+      },
+    ]);
+
     runtime.calculateHealthScore.mockResolvedValue({
       overallScore: 81,
       grade: "B",
@@ -325,6 +335,8 @@ describe("ExecutiveDashboardService", () => {
     expect(runtime.buildAssetSummaryFromAssets).toHaveBeenCalledWith([{ id: "asset-1" }]);
     expect(runtime.getCashFlowSummary).toHaveBeenCalledTimes(1);
     expect(runtime.buildInvestmentSummary).toHaveBeenCalledWith([{ id: "inv-1" }]);
+    expect(runtime.getMonthlyReviewWorkspace).toHaveBeenCalledTimes(1);
+    expect(runtime.getNetWorthTrendPoints).toHaveBeenCalledTimes(1);
 
     expect(result.executiveSummary.netWorth).toBe(1100000);
     expect(result.executiveSummary.assets).toBe(900000);
@@ -412,7 +424,7 @@ describe("ExecutiveDashboardService", () => {
   });
 
   it("handles missing goals and missing monthly snapshots with explicit empty states", async () => {
-    runtime.listGoals.mockResolvedValueOnce([]);
+    runtime.listGoals.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     runtime.getMonthlyReviewWorkspace.mockResolvedValueOnce({
       periods: [],
       selectedPeriod: null,
@@ -420,13 +432,7 @@ describe("ExecutiveDashboardService", () => {
       kpis: [],
       summary: null,
     });
-    runtime.getMonthlyReviewWorkspace.mockResolvedValueOnce({
-      periods: [],
-      selectedPeriod: null,
-      entities: [],
-      kpis: [],
-      summary: null,
-    });
+    runtime.getNetWorthTrendPoints.mockResolvedValueOnce([]);
 
     const service = new ExecutiveDashboardService();
     const result = await service.getDashboard();
@@ -436,6 +442,24 @@ describe("ExecutiveDashboardService", () => {
     expect(result.monthlyReviewSummary.available).toBe(false);
     expect(result.netWorthTrend.available).toBe(false);
     expect(result.netWorthTrend.message).toBe("Add monthly snapshots to view net worth trend.");
+  });
+
+  it("loads core dashboard without optional-heavy services", async () => {
+    const service = new ExecutiveDashboardService();
+    const result = await service.getDashboardCore();
+
+    expect(runtime.generateRecommendations).not.toHaveBeenCalled();
+    expect(runtime.calculateHealthScore).not.toHaveBeenCalled();
+    expect(runtime.getNetWorthTrendPoints).not.toHaveBeenCalled();
+    expect(runtime.buildContext).not.toHaveBeenCalled();
+    expect(runtime.projectionRun).not.toHaveBeenCalled();
+
+    expect(result.goals.items).toEqual([]);
+    expect(result.goals.heatmap).toEqual([]);
+    expect(result.recommendedActions).toEqual([]);
+    expect(result.netWorthTrend.available).toBe(false);
+    expect(result.netWorthTrend.points).toEqual([]);
+    expect(result.netWorthTrend.message).toBe("Loading trend data...");
   });
 
   it("marks empty state when assets and liabilities are zero", async () => {

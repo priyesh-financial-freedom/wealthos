@@ -1,30 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import { memo } from "react";
+import type { ComponentType } from "react";
+import { memo, useEffect, useState } from "react";
 
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
-import { AssetAllocationDriftWidget } from "@/components/dashboard/AssetAllocationDriftWidget";
-import { GoalFundingHeatmapWidget } from "@/components/dashboard/GoalFundingHeatmapWidget";
 import { InvestmentsWidget } from "@/components/dashboard/InvestmentsWidget";
 import { LiabilitiesWidget } from "@/components/dashboard/LiabilitiesWidget";
 import { MonthlyReviewSummaryWidget } from "@/components/dashboard/MonthlyReviewSummaryWidget";
 import { NetWorthWidget } from "@/components/dashboard/NetWorthWidget";
-import { NetWorthTrendWidget } from "@/components/dashboard/NetWorthTrendWidget";
-import { RecommendedActionsWidget } from "@/components/dashboard/RecommendedActionsWidget";
 import { RetirementHeroWidget } from "@/components/dashboard/RetirementHeroWidget";
 import { UpcomingWidget } from "@/components/dashboard/UpcomingWidget";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { Button } from "@/components/ui/button";
-import type { ExecutiveDashboardData } from "@/services/dashboard";
+import type { ExecutiveDashboardData } from "@/components/dashboard/dashboardTypes";
+
+type DashboardOptionalWidgetsComponent = ComponentType<{ data: ExecutiveDashboardData }>;
 
 interface ExecutiveDashboardProps {
   loading: boolean;
+  optionalLoading?: boolean;
   data: ExecutiveDashboardData | null;
   error?: string | null;
 }
 
-export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, data, error }: ExecutiveDashboardProps) {
+export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, optionalLoading = false, data, error }: ExecutiveDashboardProps) {
+  const [OptionalWidgets, setOptionalWidgets] = useState<DashboardOptionalWidgetsComponent | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void import("./DashboardOptionalWidgets")
+      .then((module) => {
+        if (isMounted) {
+          setOptionalWidgets(() => module.DashboardOptionalWidgets);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setOptionalWidgets(null);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   if (loading) {
     return <DashboardLoadingSkeleton />;
   }
@@ -97,11 +119,21 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
           topContributors={data.executiveSummary.topContributors}
           lastMonthlyReview={data.executiveSummary.lastMonthlyReview}
         />
-        <RecommendedActionsWidget actions={data.recommendedActions} />
         <MonthlyReviewSummaryWidget summary={data.monthlyReviewSummary} />
-        <GoalFundingHeatmapWidget goals={data.goals} />
-        <NetWorthTrendWidget trend={data.netWorthTrend} />
-        <AssetAllocationDriftWidget drift={data.assetAllocationDrift} />
+      </section>
+
+      {optionalLoading || OptionalWidgets === null ? (
+        <section className="grid gap-5 lg:grid-cols-2">
+          <OptionalWidgetSkeleton title="Recommended actions" />
+          <OptionalWidgetSkeleton title="Goal funding heatmap" />
+          <OptionalWidgetSkeleton title="Net worth trend" />
+          <OptionalWidgetSkeleton title="Asset allocation drift" />
+        </section>
+      ) : (
+        <OptionalWidgets data={data} />
+      )}
+
+      <section className="grid gap-5 lg:grid-cols-2">
         <InvestmentsWidget
           available
           currentPortfolio={data.investments.currentPortfolio}
@@ -121,6 +153,17 @@ export const ExecutiveDashboard = memo(function ExecutiveDashboard({ loading, da
     </div>
   );
 });
+
+
+function OptionalWidgetSkeleton({ title }: { title: string }) {
+  return (
+    <DashboardCard>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</p>
+      <div className="mt-4 h-40 animate-pulse rounded-2xl bg-slate-100" />
+      <p className="mt-3 text-sm text-slate-500">Loading optional dashboard data...</p>
+    </DashboardCard>
+  );
+}
 
 function DashboardLoadingSkeleton() {
   return (

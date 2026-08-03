@@ -1,3 +1,4 @@
+
 import { DEFAULT_SCENARIO_KEY, assumptionsService } from "@/services/assumptions";
 import { buildCashFlowSummary, cashFlowManagementService } from "@/services/cashFlowManagement";
 import { compensationService } from "@/services/compensation";
@@ -30,6 +31,44 @@ import {
 import type { SimulationResult } from "@/services/simulation";
 import type { ProjectionScenario } from "@/types/projection";
 import type { Liability } from "@/types/liability";
+
+interface ExecutiveDashboardLoadOptions {
+  includeHeavyWidgets?: boolean;
+  includeProjectionSummary?: boolean;
+}
+
+interface ExecutiveDashboardCoreContext {
+  balanceSheetData: Awaited<ReturnType<typeof getBalanceSheetData>>;
+  assumptions: Awaited<ReturnType<typeof assumptionsService.getAssumptionsBundle>> | null;
+  simulation: SimulationResult | null;
+  persistedCashFlowSummary: Awaited<ReturnType<typeof cashFlowManagementService.getCashFlowSummary>> | null;
+  compensationSummary: Awaited<ReturnType<typeof compensationService.getSummary>> | null;
+  retirementSummary: Awaited<ReturnType<typeof getRetirementSummary>> | null;
+  events: Awaited<ReturnType<typeof projectionEventsService.listEvents>> | null;
+  lastMonthlyReview: string | null;
+  monthlyReviewWorkspace: Awaited<ReturnType<typeof monthlyReviewService.getMonthlyReviewWorkspace>> | null;
+  coreGoals: Awaited<ReturnType<typeof goalService.listGoals>>;
+}
+
+interface ExecutiveDashboardOptionalData {
+  goals: Awaited<ReturnType<typeof goalService.listGoals>>;
+  recommendations: Awaited<ReturnType<typeof decisionEngine.generateRecommendations>>;
+  trendPoints: Array<{ month: string; actual: number | null; planned: number | null }>;
+  projectionSummary: Awaited<ReturnType<typeof loadCurrentMonthProjectionSummary>>;
+}
+
+function createDevTimer(label: string) {
+  if (process.env.NODE_ENV === "production") {
+    return {
+      end: () => undefined,
+    };
+  }
+
+  console.time(label);
+  return {
+    end: () => console.timeEnd(label),
+  };
+}
 
 export interface ExecutiveGoalProgressItem {
   id: string;
@@ -411,26 +450,7 @@ function toRetirementDateLabel(month: number | undefined, year: number | undefin
 }
 
 async function loadNetWorthTrendPoints(): Promise<Array<{ month: string; actual: number | null; planned: number | null }>> {
-  const workspace = await monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null);
-  if (!workspace || workspace.periods.length === 0) {
-    return [];
-  }
-
-  const periods = workspace.periods.slice(0, 12);
-  const rows = await Promise.all(
-    periods.map(async (period) => {
-      const review = await monthlyReviewService.getMonthlyReviewWorkspace(period.closeId).catch(() => null);
-      const netWorthKpi = review?.kpis.find((item) => item.key === "net_worth") ?? null;
-
-      return {
-        month: period.label,
-        actual: netWorthKpi ? Number(netWorthKpi.actual ?? 0) : null,
-        planned: netWorthKpi ? Number(netWorthKpi.projected ?? 0) : null,
-      };
-    }),
-  );
-
-  return rows.reverse();
+  return monthlyReviewService.getNetWorthTrendPoints(12).catch(() => []);
 }
 
 function computeRetirementReadinessChangePercent(entities: Awaited<ReturnType<typeof monthlyReviewService.getMonthlyReviewWorkspace>>["entities"]): number | null {
@@ -472,30 +492,81 @@ function computeCurrentAllocationClasses(summary: Awaited<ReturnType<typeof getB
 }
 
 export class ExecutiveDashboardService {
-  async getDashboard(): Promise<ExecutiveDashboardData> {
-    const [balanceSheetData, goals, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview, healthScore, decisionRecommendations, monthlyReviewWorkspace, netWorthTrendPoints] = await Promise.all([
+  async getDashboardCore(): Promise<ExecutiveDashboardData> {
+    return this.getDashboard({ includeHeavyWidgets: false, includeProjectionSummary: false });
+  }
+
+  async getDashboardOptional(): Promise<Pick<ExecutiveDashboardData, "goals" | "recommendedActions" | "netWorthTrend" | "assetAllocationDrift">> {
+    const [balanceSheetData, goals, decisionRecommendations, netWorthTrendPoints, monthlyReviewWorkspace] = await Promise.all([
       getBalanceSheetData(),
       goalService.listGoals({ includeProgress: true }).catch(() => []),
-      assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
-      loadSimulation().catch(() => null),
-      cashFlowManagementService.getCashFlowSummary().catch(() => null),
-      compensationService.getSummary(DEFAULT_SCENARIO_KEY).catch(() => null),
-      getRetirementSummary().catch(() => null),
-      projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => null),
-      loadLastMonthlyReviewLabel().catch(() => null),
-      healthScoreService.calculateHealthScore().catch(() => null),
       decisionEngine.generateRecommendations().catch(() => []),
-      monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null),
       loadNetWorthTrendPoints().catch(() => []),
+      monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null),
     ]);
 
-    const projectionMonthly = assumptions
-      ? await loadCurrentMonthProjectionSummary(assumptions.planning.startMonth, assumptions.planning.endYear).catch(() => null)
+    const allocationDriftRows = buildAllocationDriftRows({
+      currentByClass: computeCurrentAllocationClasses(balanceSheetData.summary),
+      targetByClass: null,
+      driftThresholdPercent: 5,
+    });
+
+    return {
+      goals: {
+        total: goals.length,
+        onTrack: goals.filter((goal) => goal.status === "ON_TRACK" || goal.status === "COMPLETED").length,
+        atRisk: goals.filter((goal) => goal.status === "AT_RISK").length,
+        completed: goals.filter((goal) => goal.status === "COMPLETED").length,
+        items: buildGoalProgressItems(goals),
+        heatmap: buildGoalHeatmapRows(goals),
+      },
+      recommendedActions: buildDashboardRecommendations({
+        decisionRecommendations,
+        balanceSheetSummary: balanceSheetData.summary,
+        goals,
+        monthlySavings: 0,
+        hasMonthlyReview: Boolean(monthlyReviewWorkspace?.selectedPeriod),
+      }),
+      netWorthTrend: {
+        available: netWorthTrendPoints.length > 0,
+        message: netWorthTrendPoints.length > 0 ? null : "Add monthly snapshots to view net worth trend.",
+        points: netWorthTrendPoints,
+      },
+      assetAllocationDrift: {
+        available: true,
+        message: "Set target allocation in Assumptions.",
+        rows: allocationDriftRows,
+      },
+    };
+  }
+
+  async getDashboard(options: ExecutiveDashboardLoadOptions = {}): Promise<ExecutiveDashboardData> {
+    const includeHeavyWidgets = options.includeHeavyWidgets ?? true;
+    const includeProjectionSummary = options.includeProjectionSummary ?? true;
+    const totalTimer = createDevTimer("dashboard.total");
+
+    const coreContextTimer = createDevTimer("dashboard.core-context");
+    const context = await this.loadCoreContext();
+    coreContextTimer.end();
+
+    const optionalDataTimer = createDevTimer("dashboard.optional-data");
+    const optionalData = includeHeavyWidgets
+      ? await this.loadOptionalData(context, includeProjectionSummary)
       : null;
+    optionalDataTimer.end();
+
+    const { balanceSheetData, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview, monthlyReviewWorkspace, coreGoals } = context;
+    const goals = optionalData?.goals ?? coreGoals;
+    const netWorthTrendPoints = optionalData?.trendPoints ?? [];
+    const projectionMonthly = optionalData?.projectionSummary ?? null;
+    const decisionRecommendations = optionalData?.recommendations ?? [];
+    const healthTimer = createDevTimer("dashboard.health-load");
+    const healthScore = includeHeavyWidgets ? await healthScoreService.calculateHealthScore().catch(() => null) : null;
+    healthTimer.end();
 
     const investmentSummary = buildInvestmentSummary(balanceSheetData.investments);
     const assetSummary = buildAssetSummaryFromAssets(balanceSheetData.assets);
-    const goalItems = buildGoalProgressItems(goals);
+    const goalItems = includeHeavyWidgets ? buildGoalProgressItems(goals) : [];
     const goalsOnTrack = goals.filter((goal) => goal.status === "ON_TRACK" || goal.status === "COMPLETED").length;
     const atRiskGoals = goals.filter((goal) => goal.status === "AT_RISK").length;
     const completedGoals = goals.filter((goal) => goal.status === "COMPLETED").length;
@@ -579,14 +650,16 @@ export class ExecutiveDashboardService {
       emergencyFundScore: healthScore?.components.find((component) => component.key === "emergencyFund")?.score ?? null,
       insuranceCoverageScore: null,
     });
-    const goalHeatmap = buildGoalHeatmapRows(goals);
-    const dashboardRecommendations = buildDashboardRecommendations({
-      decisionRecommendations,
-      balanceSheetSummary: balanceSheetData.summary,
-      goals,
-      monthlySavings: monthlyCashFlow.monthlySavings,
-      hasMonthlyReview: Boolean(monthlyReviewWorkspace?.selectedPeriod),
-    });
+    const goalHeatmap = includeHeavyWidgets ? buildGoalHeatmapRows(goals) : [];
+    const dashboardRecommendations = includeHeavyWidgets
+      ? buildDashboardRecommendations({
+        decisionRecommendations,
+        balanceSheetSummary: balanceSheetData.summary,
+        goals,
+        monthlySavings: monthlyCashFlow.monthlySavings,
+        hasMonthlyReview: Boolean(monthlyReviewWorkspace?.selectedPeriod),
+      })
+      : [];
     const allocationDriftRows = buildAllocationDriftRows({
       currentByClass: computeCurrentAllocationClasses(balanceSheetData.summary),
       targetByClass: null,
@@ -770,14 +843,16 @@ export class ExecutiveDashboardService {
       },
       recommendedActions: dashboardRecommendations,
       netWorthTrend: {
-        available: netWorthTrendPoints.length > 0,
-        message: netWorthTrendPoints.length > 0 ? null : "Add monthly snapshots to view net worth trend.",
-        points: netWorthTrendPoints,
+        available: includeHeavyWidgets && netWorthTrendPoints.length > 0,
+        message: includeHeavyWidgets
+          ? (netWorthTrendPoints.length > 0 ? null : "Add monthly snapshots to view net worth trend.")
+          : "Loading trend data...",
+        points: includeHeavyWidgets ? netWorthTrendPoints : [],
       },
       assetAllocationDrift: {
         available: true,
-        message: "Set target allocation in Assumptions.",
-        rows: allocationDriftRows,
+        message: includeHeavyWidgets ? "Set target allocation in Assumptions." : "Loading drift data...",
+        rows: includeHeavyWidgets ? allocationDriftRows : [],
       },
       monthlyReviewSummary: {
         available: Boolean(monthlyReviewWorkspace?.selectedPeriod && monthlyReviewWorkspace.summary),
@@ -816,7 +891,70 @@ export class ExecutiveDashboardService {
       },
     };
 
+    totalTimer.end();
+
     return output;
+  }
+
+  private async loadCoreContext(): Promise<ExecutiveDashboardCoreContext> {
+    const balanceSheetTimer = createDevTimer("dashboard.balance-sheet-load");
+    const [balanceSheetData, assumptions, simulation, persistedCashFlowSummary, compensationSummary, retirementSummary, events, lastMonthlyReview, monthlyReviewWorkspace, coreGoals] = await Promise.all([
+      getBalanceSheetData(),
+      assumptionsService.getAssumptionsBundle(DEFAULT_SCENARIO_KEY).catch(() => null),
+      loadSimulation().catch(() => null),
+      cashFlowManagementService.getCashFlowSummary().catch(() => null),
+      compensationService.getSummary(DEFAULT_SCENARIO_KEY).catch(() => null),
+      getRetirementSummary().catch(() => null),
+      projectionEventsService.listEvents(DEFAULT_SCENARIO_KEY).catch(() => null),
+      loadLastMonthlyReviewLabel().catch(() => null),
+      monthlyReviewService.getMonthlyReviewWorkspace().catch(() => null),
+      goalService.listGoals({ includeProgress: false }).catch(() => []),
+    ]);
+    balanceSheetTimer.end();
+
+    return {
+      balanceSheetData,
+      assumptions,
+      simulation,
+      persistedCashFlowSummary,
+      compensationSummary,
+      retirementSummary,
+      events,
+      lastMonthlyReview,
+      monthlyReviewWorkspace,
+      coreGoals,
+    };
+  }
+
+  private async loadOptionalData(context: ExecutiveDashboardCoreContext, includeProjectionSummary: boolean): Promise<ExecutiveDashboardOptionalData> {
+    const goalsTimer = createDevTimer("dashboard.goals-load");
+    const goalsPromise = goalService.listGoals({ includeProgress: true }).catch(() => []);
+    const trendTimer = createDevTimer("dashboard.trend-load");
+    const trendPromise = loadNetWorthTrendPoints().catch(() => []);
+    const recommendationTimer = createDevTimer("dashboard.recommendation-load");
+    const recommendationsPromise = decisionEngine.generateRecommendations().catch(() => []);
+    const projectionTimer = createDevTimer("dashboard.projection-summary-load");
+    const projectionPromise = includeProjectionSummary && context.assumptions
+      ? loadCurrentMonthProjectionSummary(context.assumptions.planning.startMonth, context.assumptions.planning.endYear).catch(() => null)
+      : Promise.resolve(null);
+
+    const [goals, trendPoints, recommendations, projectionSummary] = await Promise.all([
+      goalsPromise,
+      trendPromise,
+      recommendationsPromise,
+      projectionPromise,
+    ]);
+    goalsTimer.end();
+    trendTimer.end();
+    recommendationTimer.end();
+    projectionTimer.end();
+
+    return {
+      goals,
+      trendPoints,
+      recommendations,
+      projectionSummary,
+    };
   }
 }
 

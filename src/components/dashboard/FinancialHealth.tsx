@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { Activity, ShieldCheck, ShieldAlert } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { ExecutiveDashboardData } from "@/services/dashboard";
+import type { ExecutiveDashboardData } from "@/components/dashboard/dashboardTypes";
 
 interface FinancialHealthProps {
   score: number | null;

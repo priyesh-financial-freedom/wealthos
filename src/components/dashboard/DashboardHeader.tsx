@@ -1,7 +1,7 @@
 import { CalendarDays, Sparkles } from "lucide-react";
 
 import { FinancialHealth } from "@/components/dashboard/FinancialHealth";
-import type { ExecutiveDashboardData } from "@/services/dashboard";
+import type { ExecutiveDashboardData } from "@/components/dashboard/dashboardTypes";
 
 interface DashboardHeaderProps {
   dateLabel: string;
