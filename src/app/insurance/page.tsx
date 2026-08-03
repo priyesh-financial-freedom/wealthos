@@ -8,9 +8,9 @@ export default function InsurancePage() {
   return (
     <AppLayout>
       <PageContainer>
-        <PageHeader title="Insurance" description="Keep coverage, beneficiaries, and protection plans organized in one place." />
+        <PageHeader title="Insurance" description="Keep policy ownership, beneficiaries, and protection plans organized in one place." />
         <ContentCard>
-          <EmptyState title="Insurance overview coming soon" description="This section will present policies, beneficiaries, and annual premiums with transparency." />
+          <EmptyState title="Insurance overview coming soon" description="This section will present owner-wise policies, beneficiaries, and annual premiums with transparency." />
         </ContentCard>
       </PageContainer>
     </AppLayout>
