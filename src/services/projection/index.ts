@@ -21,6 +21,11 @@ export { projectionEventsService, ProjectionEventsService, DEFAULT_PROJECTION_SC
 export { SalaryProjectionService, salaryProjectionService } from "./SalaryProjectionService";
 export type { SalaryProjectionInput, SalaryProjectionPoint, SalaryProjectionSource } from "./SalaryProjectionService";
 export { FixedProjectionService, fixedProjectionService } from "./FixedProjectionService";
+export {
+  FixedProjectionInputBuilder,
+  fixedProjectionInputBuilder,
+  FIXED_PROJECTION_INPUT_BUILDER_DEFAULTS,
+} from "./FixedProjectionInputBuilder";
 export { RollingProjectionService, rollingProjectionService } from "./RollingProjectionService";
 export { MonthlyReviewComparisonService, monthlyReviewComparisonService } from "./MonthlyReviewComparisonService";
 export type {
@@ -30,6 +35,11 @@ export type {
   FixedProjectionBucketKey,
   FixedProjectionOpeningBalances,
 } from "./FixedProjectionService";
+export type {
+  FixedProjectionInputBuildResult,
+  FixedProjectionInputSourceReportItem,
+  FixedProjectionInputValidation,
+} from "./FixedProjectionInputBuilder";
 export type {
   CreateRollingProjectionV1Input,
   CreateRollingProjectionV1Result,
