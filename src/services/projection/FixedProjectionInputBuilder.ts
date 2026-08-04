@@ -28,6 +28,9 @@ const DEFAULT_NPS_SPLIT_POLICY = {
   lumpsumPercent: 50,
   annuityPercent: 50,
 } as const;
+const DEFAULT_STOCKS_ANNUAL_RETURN_PERCENT = 11;
+const DEFAULT_NPS_ANNUAL_RETURN_PERCENT = 9;
+const DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT = 5;
 const DEFAULT_PPF_ANNUAL_CONTRIBUTION_MONTH = 4;
 const DEFAULT_EPF_TRANSFER_AFTER_RETIREMENT_YEARS = 3;
 const DEFAULT_PROPERTY_LIQUIDATION_ALLOWED = false;
@@ -528,10 +531,11 @@ export class FixedProjectionInputBuilder {
     const monthlyInsurancePremium: BuiltField<number> = (() => {
       if (!cashFlowSnapshot || !loadedData) {
         return {
-          value: null,
-          previewBlocker: "Insurance premium is missing.",
+          value: 0,
           freezeBlocker: "Insurance premium is required before freezing Fixed Projection unless explicitly confirmed zero.",
           report: { fieldName: "monthlyInsurancePremium", source: "CashFlowManagementService insurance expenses / premium commitments", status: "missing" },
+          warning: "Insurance premium source is not configured.",
+          defaultUsed: "monthlyInsurancePremium is set to 0 for preview calculations only until an insurance source is configured or zero is explicitly confirmed.",
         };
       }
 
@@ -547,10 +551,11 @@ export class FixedProjectionInputBuilder {
       }
 
       return {
-        value: null,
-        previewBlocker: "Insurance premium is missing.",
+        value: 0,
         freezeBlocker: "Insurance premium is required before freezing Fixed Projection unless explicitly confirmed zero.",
         report: { fieldName: "monthlyInsurancePremium", source: "CashFlowManagementService Insurance manual expenses + Premium automatic commitments", status: "missing" },
+        warning: "Insurance premium source is not configured.",
+        defaultUsed: "monthlyInsurancePremium is set to 0 for preview calculations only until an insurance source is configured or zero is explicitly confirmed.",
       };
     })();
 
@@ -805,10 +810,9 @@ export class FixedProjectionInputBuilder {
       }
 
       return {
-        value: null,
-        previewBlocker: "Stocks Return % is missing.",
-        freezeBlocker: "Stocks Return present is required before freezing Fixed Projection.",
-        report: { fieldName: "stocksAnnualReturnPercent", source: "No distinct stock return assumption exists in current planning assumptions.", status: "missing" },
+        value: DEFAULT_STOCKS_ANNUAL_RETURN_PERCENT,
+        report: { fieldName: "stocksAnnualReturnPercent", source: "System default stocks return assumption for Fixed Projection", status: "default" },
+        defaultUsed: `stocksAnnualReturnPercent defaulted to ${DEFAULT_STOCKS_ANNUAL_RETURN_PERCENT}% because no user-configured stocks return exists.`,
       };
     })();
 
@@ -836,15 +840,6 @@ export class FixedProjectionInputBuilder {
       };
 
     const npsAnnualReturnPercent: BuiltField<number> = (() => {
-      if (!effectiveAssumptions) {
-        return {
-          value: null,
-          previewBlocker: "NPS Return % is missing.",
-          freezeBlocker: "NPS Return present is required before freezing Fixed Projection.",
-          report: { fieldName: "npsAnnualReturnPercent", source: "planning_assumptions.nps_equity_return + nps_debt_return", status: "missing" },
-        };
-      }
-
       const explicitNpsReturn = assumptionsRecord ? readOptionalNumericField(assumptionsRecord, ["npsAnnualReturnPercent"]) : null;
       if (explicitNpsReturn !== null) {
         return {
@@ -853,13 +848,20 @@ export class FixedProjectionInputBuilder {
         };
       }
 
+      if (!effectiveAssumptions) {
+        return {
+          value: DEFAULT_NPS_ANNUAL_RETURN_PERCENT,
+          report: { fieldName: "npsAnnualReturnPercent", source: "Default NPS return used because effective NPS assumptions are unavailable", status: "default" },
+          defaultUsed: `npsAnnualReturnPercent defaulted to ${DEFAULT_NPS_ANNUAL_RETURN_PERCENT}% because effective NPS assumptions are unavailable.`,
+        };
+      }
+
       const activeAccounts = npsAccounts.filter((account) => Number(account.current_balance ?? 0) > 0 || Number(account.contribution_amount ?? 0) > 0);
       if (activeAccounts.length === 0) {
         return {
-          value: 0,
-          report: { fieldName: "npsAnnualReturnPercent", source: "No active NPS balances or contributions exist", status: "default" },
-          warning: "NPS Return % defaulted to 0 because no active NPS balance or contribution exists.",
-          defaultUsed: "npsAnnualReturnPercent defaulted to 0 because NPS is inactive in the current data.",
+          value: DEFAULT_NPS_ANNUAL_RETURN_PERCENT,
+          report: { fieldName: "npsAnnualReturnPercent", source: "No active NPS balances or contributions exist; using default NPS return", status: "default" },
+          defaultUsed: `npsAnnualReturnPercent defaulted to ${DEFAULT_NPS_ANNUAL_RETURN_PERCENT}% because NPS allocation data is unavailable.`,
         };
       }
 
@@ -874,10 +876,9 @@ export class FixedProjectionInputBuilder {
 
         if (!Number.isFinite(allocationTotal) || allocationTotal <= 0 || alternativePercent > 0) {
           return {
-            value: null,
-            previewBlocker: "NPS Return % is missing.",
-            freezeBlocker: "NPS Return present is required before freezing Fixed Projection.",
-            report: { fieldName: "npsAnnualReturnPercent", source: "NPS blend requires clear equity/debt allocation without alternative assets.", status: "missing" },
+            value: DEFAULT_NPS_ANNUAL_RETURN_PERCENT,
+            report: { fieldName: "npsAnnualReturnPercent", source: "NPS allocation data is unavailable for weighted blending; using default NPS return", status: "default" },
+            defaultUsed: `npsAnnualReturnPercent defaulted to ${DEFAULT_NPS_ANNUAL_RETURN_PERCENT}% because NPS allocation data is unavailable.`,
           };
         }
 
@@ -898,10 +899,9 @@ export class FixedProjectionInputBuilder {
       }
 
       return {
-        value: null,
-        previewBlocker: "NPS Return % is missing.",
-        freezeBlocker: "NPS Return present is required before freezing Fixed Projection.",
-        report: { fieldName: "npsAnnualReturnPercent", source: "planning_assumptions.nps_equity_return + nps_debt_return", status: "missing" },
+        value: DEFAULT_NPS_ANNUAL_RETURN_PERCENT,
+        report: { fieldName: "npsAnnualReturnPercent", source: "Unable to derive weighted NPS return; using default NPS return", status: "default" },
+        defaultUsed: `npsAnnualReturnPercent defaulted to ${DEFAULT_NPS_ANNUAL_RETURN_PERCENT}% because weighted derivation could not be completed.`,
       };
     })();
 
@@ -916,43 +916,57 @@ export class FixedProjectionInputBuilder {
 
       if (!effectiveAssumptions || openingProperty.value === null || openingGold.value === null || openingOtherNonFinancialAssets.value === null || loadedData === null) {
         return {
-          value: null,
-          previewBlocker: "Property / non-financial return % is missing.",
-          freezeBlocker: "Property / non-financial return % is required before freezing Fixed Projection.",
-          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Weighted blend of real estate and precious metals returns", status: "missing" },
+          value: DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT,
+          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Default non-financial return used because weighted blend inputs are incomplete", status: "default" },
+          defaultUsed: `nonFinancialAnnualReturnPercent defaulted to ${DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT}% because weighted blending inputs are incomplete.`,
         };
       }
 
-      const unsupportedOtherAssets = Math.max(0, openingOtherNonFinancialAssets.value - (silverFoldedBalance ?? 0));
+      const silverBalance = silverFoldedBalance ?? 0;
+      const otherNonFinancialBalance = Math.max(0, openingOtherNonFinancialAssets.value - silverBalance);
+      const propertyReturn = Number(effectiveAssumptions.realEstateReturn);
+      const goldReturn = Number(effectiveAssumptions.goldReturn);
       const silverReturn = Number(effectiveAssumptions.silverReturn);
-      const supportedBalance = openingProperty.value + openingGold.value + (silverFoldedBalance ?? 0);
-      if (supportedBalance === 0 && unsupportedOtherAssets === 0) {
+      const otherNonFinancialReturn = readOptionalNumericField(assumptionsRecord, [
+        "otherNonFinancialAnnualReturnPercent",
+        "otherAssetsAnnualReturnPercent",
+      ]) ?? Number(effectiveAssumptions.propertyInflation);
+
+      const totalBalance = openingProperty.value + openingGold.value + silverBalance + otherNonFinancialBalance;
+      if (totalBalance <= 0) {
         return {
-          value: 0,
-          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "No active property, gold, silver, or other non-financial assets exist", status: "default" },
-          warning: "Property / non-financial return % defaulted to 0 because no non-financial assets are active.",
-          defaultUsed: "nonFinancialAnnualReturnPercent defaulted to 0 because non-financial assets are inactive.",
+          value: DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT,
+          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "No active non-financial balances for weighted blending; using default non-financial return", status: "default" },
+          defaultUsed: `nonFinancialAnnualReturnPercent defaulted to ${DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT}% because there are no active non-financial balances for blending.`,
         };
       }
 
-      if (unsupportedOtherAssets > 0) {
+      if (![propertyReturn, goldReturn, silverReturn, otherNonFinancialReturn].every(Number.isFinite)) {
         return {
-          value: null,
-          previewBlocker: "Property / non-financial return % is missing.",
-          freezeBlocker: "Property / non-financial return % is required before freezing Fixed Projection.",
-          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Cannot derive a blended return while unsupported other non-financial assets are present.", status: "missing" },
+          value: DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT,
+          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Weighted blend inputs contain invalid returns; using default non-financial return", status: "default" },
+          defaultUsed: `nonFinancialAnnualReturnPercent defaulted to ${DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT}% because weighted blending inputs are invalid.`,
         };
       }
 
       const weightedReturn = (
-        openingProperty.value * Number(effectiveAssumptions.realEstateReturn)
-        + openingGold.value * Number(effectiveAssumptions.goldReturn)
-        + (silverFoldedBalance ?? 0) * silverReturn
-      ) / supportedBalance;
+        openingProperty.value * propertyReturn
+        + openingGold.value * goldReturn
+        + silverBalance * silverReturn
+        + otherNonFinancialBalance * otherNonFinancialReturn
+      ) / totalBalance;
+
+      if (!Number.isFinite(weightedReturn)) {
+        return {
+          value: DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT,
+          report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Weighted blend could not be computed; using default non-financial return", status: "default" },
+          defaultUsed: `nonFinancialAnnualReturnPercent defaulted to ${DEFAULT_NON_FINANCIAL_ANNUAL_RETURN_PERCENT}% because weighted blending could not be computed.`,
+        };
+      }
 
       return {
         value: weightedReturn,
-        report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Weighted blend of realEstateReturn, goldReturn, and silverReturn by opening balances", status: "derived" },
+        report: { fieldName: "nonFinancialAnnualReturnPercent", source: "Weighted blend of realEstateReturn, goldReturn, silverReturn, and other non-financial return assumptions by opening balances", status: "derived" },
       };
     })();
 

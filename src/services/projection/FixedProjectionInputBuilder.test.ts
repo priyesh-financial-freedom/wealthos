@@ -703,8 +703,86 @@ describe("FixedProjectionInputBuilder", () => {
 
     const result = await builder.buildFixedProjectionInput();
 
-    expect(result.input).toBeNull();
-    expect(result.validation.blockers).toContain("Stocks Return % is missing.");
+    expect(result.input).not.toBeNull();
+    expect(result.input?.assumptions.returns.stocksAnnualReturnPercent).toBe(11);
+    expect(result.validation.blockers).not.toContain("Stocks Return % is missing.");
+    expect(result.validation.defaultsUsed).toContain("stocksAnnualReturnPercent defaulted to 11% because no user-configured stocks return exists.");
+    expect(result.sourceReport).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldName: "stocksAnnualReturnPercent", status: "default" }),
+    ]));
+  });
+
+  it("falls back to default NPS return when allocation data cannot be used", async () => {
+    const loadedData = buildLoadedData({
+      retirementAccounts: buildLoadedData().retirementAccounts.map((account) => (
+        account.account_type === "NPS"
+          ? {
+            ...account,
+            alternative_assets_percent: 5,
+          }
+          : account
+      )),
+    });
+
+    const builder = new FixedProjectionInputBuilder(buildDependencies({ loadedData }));
+    const result = await builder.buildFixedProjectionInput();
+
+    expect(result.input).not.toBeNull();
+    expect(result.input?.assumptions.returns.npsAnnualReturnPercent).toBe(9);
+    expect(result.validation.blockers).not.toContain("NPS Return % is missing.");
+    expect(result.sourceReport).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldName: "npsAnnualReturnPercent", status: "default" }),
+    ]));
+  });
+
+  it("falls back to default non-financial return when weighted blend inputs are invalid", async () => {
+    const builder = new FixedProjectionInputBuilder(buildDependencies({
+      effectiveAssumptions: buildEffectiveAssumptions({
+        stocksReturn: 13,
+        goldReturn: Number.NaN,
+      }),
+    }));
+
+    const result = await builder.buildFixedProjectionInput();
+
+    expect(result.input).not.toBeNull();
+    expect(result.input?.assumptions.returns.nonFinancialAnnualReturnPercent).toBe(5);
+    expect(result.validation.blockers).not.toContain("Property / non-financial return % is missing.");
+    expect(result.sourceReport).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldName: "nonFinancialAnnualReturnPercent", status: "default" }),
+    ]));
+  });
+
+  it("keeps insurance premium as freeze blocker when no source is configured while allowing preview", async () => {
+    const builder = new FixedProjectionInputBuilder(buildDependencies({
+      cashFlowSnapshot: buildCashFlowSnapshot({
+        manualExpenseEntries: [
+          {
+            id: "expense-1",
+            name: "Household",
+            category: "Household",
+            monthlyAmount: 40000,
+            annualInflation: 6,
+            startDate: "2026-07-01",
+            status: "Active",
+            notes: null,
+          },
+        ],
+        automaticCommitments: [],
+      }),
+    }));
+
+    const result = await builder.buildFixedProjectionInput();
+
+    expect(result.input).not.toBeNull();
+    expect(result.validation.canPreview).toBe(true);
+    expect(result.validation.canFreeze).toBe(false);
+    expect(result.validation.blockers).toContain("Insurance premium is required before freezing Fixed Projection unless explicitly confirmed zero.");
+    expect(result.validation.warnings).toContain("Insurance premium source is not configured.");
+    expect(result.input?.assumptions.expenses.monthlyInsurancePremium).toBe(0);
+    expect(result.sourceReport).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldName: "monthlyInsurancePremium", status: "missing" }),
+    ]));
   });
 
   it("reports blocker for missing monthly expenses", async () => {
