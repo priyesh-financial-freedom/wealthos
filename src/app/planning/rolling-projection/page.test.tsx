@@ -25,12 +25,9 @@ vi.mock("@/components/layout/PageHeader", () => ({
   ),
 }));
 
-vi.mock("@/components/layout/EmptyState", () => ({
-  EmptyState: ({ title, description }: { title: string; description: string }) => (
-    <div>
-      <h2>{title}</h2>
-      <p>{description}</p>
-    </div>
+vi.mock("./RollingProjectionWorkflow", () => ({
+  RollingProjectionWorkflow: ({ lockedProjection }: { lockedProjection: unknown }) => (
+    <div>{lockedProjection == null ? "No Rolling Projection is available yet." : "Rolling Projection Loaded"}</div>
   ),
 }));
 

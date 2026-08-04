@@ -181,22 +181,30 @@ class InMemoryProjectionVersioningService {
 }
 
 class InMemoryRollingProjectionSource implements RollingProjectionSource {
+  latestRollingVersionNo: number | null;
+
   constructor(
-    private readonly fixedPlan: ProjectionPlanVersionRecord,
-    private readonly fixedSnapshot: ProjectionAssumptionSnapshotRecord,
+    private readonly fixedPlan: ProjectionPlanVersionRecord | null,
+    private readonly fixedSnapshot: ProjectionAssumptionSnapshotRecord | null,
+    private readonly latestClosedMonth: { id: string; close_month: number; close_year: number } | null,
     private readonly closeItems: RollingProjectionCloseItem[],
-  ) {}
+    private readonly goals: Array<Record<string, unknown>> = [],
+    private readonly projectionEvents: Array<Record<string, unknown>> = [],
+    latestRollingVersionNo: number | null = null,
+  ) {
+    this.latestRollingVersionNo = latestRollingVersionNo;
+  }
 
   async getLatestClosedMonthEnd() {
-    return {
-      id: "close-2026-07",
-      close_month: 7,
-      close_year: 2026,
-    };
+    return this.latestClosedMonth;
   }
 
   async getLatestLockedFixedPlan() {
     return this.fixedPlan;
+  }
+
+  async getLatestRollingVersionNo() {
+    return this.latestRollingVersionNo;
   }
 
   async getAssumptionSnapshotByPlanVersionId() {
@@ -205,6 +213,14 @@ class InMemoryRollingProjectionSource implements RollingProjectionSource {
 
   async getMonthEndCloseItems() {
     return this.closeItems;
+  }
+
+  async getGoals() {
+    return this.goals as never;
+  }
+
+  async getProjectionEvents() {
+    return this.projectionEvents as never;
   }
 }
 
@@ -297,6 +313,11 @@ describe("RollingProjectionService", () => {
     const source = new InMemoryRollingProjectionSource(
       fixed.planVersion,
       fixed.assumptionSnapshot,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
       [
         { item_key: "bank_accounts", actual_value: 120000 },
         { item_key: "mutual_funds", actual_value: 530000 },
@@ -357,5 +378,232 @@ describe("RollingProjectionService", () => {
       .map((row) => ({ ...row }));
 
     expect(fixedRowsAfter).toEqual(fixedRowsBefore);
+  });
+
+  it("blocks preview when no locked fixed projection exists", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+
+    const source = new InMemoryRollingProjectionSource(
+      null,
+      null,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
+      [],
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+
+    await expect(rollingService.createRollingProjectionPreview({})).rejects.toThrow(
+      "A locked Fixed Projection is required before generating Rolling Projection.",
+    );
+  });
+
+  it("blocks preview when no closed month-end exists", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+    const fixed = await fixedService.createFixedProjectionV1(buildFixedInput());
+
+    const source = new InMemoryRollingProjectionSource(
+      fixed.planVersion,
+      fixed.assumptionSnapshot,
+      null,
+      [],
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+
+    await expect(rollingService.createRollingProjectionPreview({})).rejects.toThrow(
+      "Close a monthly review before generating Rolling Projection.",
+    );
+  });
+
+  it("builds preview from latest fixed plan and latest closed month-end balances", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+    const fixed = await fixedService.createFixedProjectionV1(buildFixedInput());
+
+    const source = new InMemoryRollingProjectionSource(
+      fixed.planVersion,
+      fixed.assumptionSnapshot,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
+      [
+        { item_key: "bank_accounts", actual_value: 180000 },
+        { item_key: "mutual_funds", actual_value: 580000 },
+        { item_key: "stocks", actual_value: 250000 },
+        { item_key: "epf", actual_value: 340000 },
+        { item_key: "ppf", actual_value: 120000 },
+        { item_key: "nps", actual_value: 200000 },
+        { item_key: "real_estate", actual_value: 5200000 },
+        { item_key: "gold", actual_value: 320000 },
+        { item_key: "other_assets", actual_value: 150000 },
+        { item_key: "home_loans", actual_value: 650000 },
+        { item_key: "other_liabilities", actual_value: 50000 },
+      ],
+      [],
+      [],
+      4,
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+    const preview = await rollingService.createRollingProjectionPreview({});
+
+    expect(preview.input.versionNo).toBe(5);
+    expect(preview.linkedFixedPlanId).toBe(fixed.planVersion.id);
+    expect(preview.linkedFixedVersionNo).toBe(fixed.planVersion.version_no);
+    expect(preview.rebasedFromMonth).toBe("2026-07");
+    expect(preview.startMonth).toBe("2026-08");
+
+    const firstCash = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "cash");
+    const firstLiabilities = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "liabilities");
+
+    expect(firstCash?.opening_value).toBe(180000);
+    expect(firstLiabilities?.opening_value).toBe(700000);
+  });
+
+  it("carries one-time outflows from goals and events into preview assumptions", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+    const fixed = await fixedService.createFixedProjectionV1(buildFixedInput());
+
+    const source = new InMemoryRollingProjectionSource(
+      fixed.planVersion,
+      fixed.assumptionSnapshot,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
+      [{ item_key: "bank_accounts", actual_value: 150000 }],
+      [
+        {
+          id: "goal-1",
+          name: "MBA tuition",
+          is_completed: false,
+          status: "ACTIVE",
+          target_amount: 400000,
+          target_date: "2026-09-10",
+          goal_type: "education",
+          beneficiary: "Self",
+          funding_source: "Goal",
+        },
+      ],
+      [
+        {
+          id: "event-1",
+          name: "Renovation",
+          isEnabled: true,
+          amount: 250000,
+          date: "2026-10-01",
+          frequency: "one-time",
+          module: "cashflow",
+          type: "expense",
+          metadata: { source: "Financial Event" },
+        },
+      ],
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+    const preview = await rollingService.createRollingProjectionPreview({});
+
+    expect(preview.oneTimeOutflows).toHaveLength(2);
+    expect(preview.oneTimeOutflows.map((outflow) => outflow.month)).toEqual(["2026-09", "2026-10"]);
+
+    const payload = preview.assumptionSnapshotInput.assumption_payload as {
+      oneTimeOutflows?: Array<{ name: string }>;
+    };
+    expect(payload.oneTimeOutflows?.map((item) => item.name)).toEqual(["MBA tuition", "Renovation"]);
+  });
+
+  it("preserves net salary deduction handling from fixed snapshot", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+    const fixed = await fixedService.createFixedProjectionV1(
+      buildFixedInput({
+        assumptions: {
+          ...buildFixedInput().assumptions,
+          netSalaryIncludesEmployeeDeductions: false,
+        },
+      }),
+    );
+
+    const source = new InMemoryRollingProjectionSource(
+      fixed.planVersion,
+      fixed.assumptionSnapshot,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
+      [{ item_key: "bank_accounts", actual_value: 180000 }],
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+    const preview = await rollingService.createRollingProjectionPreview({});
+
+    expect(preview.assumptions.netSalaryIncludesEmployeeDeductions).toBe(false);
+
+    const payload = preview.assumptionSnapshotInput.assumption_payload as {
+      netSalaryIncludesEmployeeDeductions?: boolean;
+    };
+    expect(payload.netSalaryIncludesEmployeeDeductions).toBe(false);
+  });
+
+  it("keeps retirement split parity metadata in preview rows", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+
+    const fixed = await fixedService.createFixedProjectionV1(
+      buildFixedInput({
+        horizonEndMonth: "2026-12",
+        assumptions: {
+          ...buildFixedInput().assumptions,
+          salary: {
+            ...buildFixedInput().assumptions.salary,
+            retirementMonth: "2026-09",
+          },
+        },
+      }),
+    );
+
+    const source = new InMemoryRollingProjectionSource(
+      fixed.planVersion,
+      fixed.assumptionSnapshot,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
+      [
+        { item_key: "bank_accounts", actual_value: 150000 },
+        { item_key: "nps", actual_value: 300000 },
+      ],
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+    const preview = await rollingService.createRollingProjectionPreview({});
+
+    const retirementNpsRow = preview.monthlyPositionRows.find(
+      (row) => row.month_key === "2026-10" && row.bucket_key === "nps",
+    );
+
+    expect(retirementNpsRow).toBeDefined();
+    const metadata = (retirementNpsRow?.metadata ?? {}) as { npsSplitApplied?: boolean; npsLumpSumPercent?: number; npsAnnuityPercent?: number };
+    expect(metadata.npsSplitApplied).toBe(true);
+    expect(metadata.npsLumpSumPercent).toBe(50);
+    expect(metadata.npsAnnuityPercent).toBe(50);
   });
 });

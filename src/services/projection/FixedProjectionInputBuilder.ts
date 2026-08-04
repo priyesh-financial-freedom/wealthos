@@ -73,6 +73,63 @@ interface FixedProjectionInputBuilderDependencies {
   getProjectionEvents: () => Promise<FinancialEvent[]>;
 }
 
+export function buildOneTimeOutflowsFromGoalsAndEvents(
+  goals: FinancialGoalWithProgress[],
+  projectionEvents: FinancialEvent[],
+) {
+  const fromGoals = goals
+    .filter((goal) => !goal.is_completed && goal.status !== "COMPLETED" && Number(goal.target_amount ?? 0) > 0)
+    .map((goal) => {
+      const month = toMonthKeyFromDateString(goal.target_date);
+      if (!month) {
+        return null;
+      }
+
+      return {
+        id: goal.id,
+        name: goal.name,
+        month,
+        amount: Number(goal.target_amount ?? 0),
+        category: goal.goal_type,
+        beneficiary: goal.beneficiary ?? undefined,
+        source: goal.funding_source ?? "Goal",
+      };
+    })
+    .filter((outflow): outflow is NonNullable<typeof outflow> => outflow !== null);
+
+  const fromProjectionEvents = projectionEvents
+    .filter((event) => event.isEnabled && Number(event.amount ?? 0) > 0 && (!event.frequency || event.frequency === "one-time"))
+    .map((event) => {
+      const month = toMonthKeyFromDateString(event.date);
+      if (!month) {
+        return null;
+      }
+
+      const metadata = event.metadata ?? {};
+      const beneficiary = typeof metadata.beneficiary === "string" ? metadata.beneficiary : undefined;
+      const source = typeof metadata.source === "string" ? metadata.source : "Financial Event";
+
+      return {
+        id: event.id,
+        name: event.name,
+        month,
+        amount: Number(event.amount ?? 0),
+        category: `${event.module}:${event.type}`,
+        beneficiary,
+        source,
+      };
+    })
+    .filter((outflow): outflow is NonNullable<typeof outflow> => outflow !== null);
+
+  return [...fromGoals, ...fromProjectionEvents].sort((left, right) => {
+    if (left.month === right.month) {
+      return left.name.localeCompare(right.name);
+    }
+
+    return left.month.localeCompare(right.month);
+  });
+}
+
 type BuiltField<T> = {
   value: T | null;
   report: FixedProjectionInputSourceReportItem;
@@ -1071,59 +1128,7 @@ export class FixedProjectionInputBuilder {
         defaultUsed: "postRetirementExpenseReductionPercent defaulted from the system retirement expense ratio.",
       };
 
-    const oneTimeOutflows = (() => {
-      const fromGoals = goals
-        .filter((goal) => !goal.is_completed && goal.status !== "COMPLETED" && Number(goal.target_amount ?? 0) > 0)
-        .map((goal) => {
-          const month = toMonthKeyFromDateString(goal.target_date);
-          if (!month) {
-            return null;
-          }
-
-          return {
-            id: goal.id,
-            name: goal.name,
-            month,
-            amount: Number(goal.target_amount ?? 0),
-            category: goal.goal_type,
-            beneficiary: goal.beneficiary ?? undefined,
-            source: goal.funding_source ?? "Goal",
-          };
-        })
-        .filter((outflow): outflow is NonNullable<typeof outflow> => outflow !== null);
-
-      const fromProjectionEvents = projectionEvents
-        .filter((event) => event.isEnabled && Number(event.amount ?? 0) > 0 && (!event.frequency || event.frequency === "one-time"))
-        .map((event) => {
-          const month = toMonthKeyFromDateString(event.date);
-          if (!month) {
-            return null;
-          }
-
-          const metadata = event.metadata ?? {};
-          const beneficiary = typeof metadata.beneficiary === "string" ? metadata.beneficiary : undefined;
-          const source = typeof metadata.source === "string" ? metadata.source : "Financial Event";
-
-          return {
-            id: event.id,
-            name: event.name,
-            month,
-            amount: Number(event.amount ?? 0),
-            category: `${event.module}:${event.type}`,
-            beneficiary,
-            source,
-          };
-        })
-        .filter((outflow): outflow is NonNullable<typeof outflow> => outflow !== null);
-
-      return [...fromGoals, ...fromProjectionEvents].sort((left, right) => {
-        if (left.month === right.month) {
-          return left.name.localeCompare(right.name);
-        }
-
-        return left.month.localeCompare(right.month);
-      });
-    })();
+    const oneTimeOutflows = buildOneTimeOutflowsFromGoalsAndEvents(goals, projectionEvents);
 
     sourceReport.push({
       fieldName: "oneTimeOutflows",

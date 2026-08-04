@@ -1,23 +1,32 @@
 import { supabase } from "@/lib/supabase/client";
+import type { FinancialGoalWithProgress } from "@/types/financialGoal";
+import type { FinancialEvent } from "@/types/projection";
 
 import {
   FixedProjectionService,
   type FixedProjectionAssumptions,
   type FixedProjectionBucketKey,
   type FixedProjectionNpsSplitPolicy,
+  type FixedProjectionOneTimeOutflow,
   type FixedProjectionOpeningBalances,
   resolveAnnualExpenseInflationPercent,
   resolvePostRetirementExpenseReductionPercent,
 } from "./FixedProjectionService";
+import { buildOneTimeOutflowsFromGoalsAndEvents } from "./FixedProjectionInputBuilder";
+import { groupMonthlyPositionRows, groupMonthlyPositionSnapshots } from "./ProjectionReadModel";
 import { SalaryProjectionService } from "./SalaryProjectionService";
 import { ProjectionVersioningService } from "./versioning/ProjectionVersioningService";
 import type {
+  CreateProjectionAssumptionSnapshotInput,
   ProjectionAssumptionSnapshotRecord,
   ProjectionMonthlyPositionRecord,
   ProjectionPlanVersionRecord,
   ProjectionRebaseJournalRecord,
   ProjectionSalaryCurveRecord,
+  UpsertProjectionMonthlyPositionInput,
+  UpsertProjectionSalaryCurveInput,
 } from "./versioning/types";
+import type { ProjectionViewerMonthRow, ProjectionViewerMonthSnapshot } from "./ProjectionReadModel";
 
 const DEFAULT_EVENT_DRAWDOWN_ORDER: FixedProjectionBucketKey[] = ["cash", "mutual_funds", "ppf", "epf"];
 
@@ -40,15 +49,44 @@ export interface RollingProjectionCloseItem {
 export interface RollingProjectionSource {
   getLatestClosedMonthEnd(): Promise<RollingProjectionClose | null>;
   getLatestLockedFixedPlan(householdId?: string | null): Promise<ProjectionPlanVersionRecord | null>;
+  getLatestRollingVersionNo(householdId?: string | null): Promise<number | null>;
   getAssumptionSnapshotByPlanVersionId(planVersionId: string): Promise<ProjectionAssumptionSnapshotRecord | null>;
   getMonthEndCloseItems(closeId: string): Promise<RollingProjectionCloseItem[]>;
+  getGoals(): Promise<FinancialGoalWithProgress[]>;
+  getProjectionEvents(): Promise<FinancialEvent[]>;
 }
 
 export interface CreateRollingProjectionV1Input {
   householdId?: string | null;
-  versionNo: number;
+  versionNo?: number;
   assumptions?: FixedProjectionAssumptions;
   priorRollingVersionId?: string | null;
+}
+
+export interface RollingProjectionPreviewValidation {
+  canFreeze: boolean;
+  blockers: string[];
+  warnings: string[];
+}
+
+export interface RollingProjectionPreviewResult {
+  input: Required<CreateRollingProjectionV1Input>;
+  linkedFixedPlanId: string;
+  linkedFixedVersionNo: number;
+  rebasedFromMonth: string;
+  rebasedFromCloseId: string;
+  startMonth: string;
+  horizonEndMonth: string;
+  openingBalances: FixedProjectionOpeningBalances;
+  assumptions: FixedProjectionAssumptions;
+  oneTimeOutflows: FixedProjectionOneTimeOutflow[];
+  validation: RollingProjectionPreviewValidation;
+  canFreeze: boolean;
+  assumptionSnapshotInput: Omit<CreateProjectionAssumptionSnapshotInput, "projection_plan_version_id">;
+  salaryCurveRows: Array<Omit<UpsertProjectionSalaryCurveInput, "projection_plan_version_id">>;
+  monthlyPositionRows: Array<Omit<UpsertProjectionMonthlyPositionInput, "projection_plan_version_id">>;
+  monthRows: ProjectionViewerMonthRow[];
+  monthSnapshots: ProjectionViewerMonthSnapshot[];
 }
 
 export interface CreateRollingProjectionV1Result {
@@ -157,6 +195,7 @@ function readAssumptionsFromSnapshot(snapshot: ProjectionAssumptionSnapshotRecor
     contributions?: FixedProjectionAssumptions["contributions"];
     returns?: FixedProjectionAssumptions["returns"];
     expenses?: FixedProjectionAssumptions["expenses"];
+    netSalaryIncludesEmployeeDeductions?: boolean;
   };
   const retirementPolicy = snapshot.retirement_policy_payload as {
     npsSplitPolicy?: FixedProjectionNpsSplitPolicy;
@@ -178,6 +217,7 @@ function readAssumptionsFromSnapshot(snapshot: ProjectionAssumptionSnapshotRecor
       ),
     },
     npsSplitPolicy: retirementPolicy.npsSplitPolicy,
+    netSalaryIncludesEmployeeDeductions: payload.netSalaryIncludesEmployeeDeductions,
     eventDrawdownOrder: (snapshot.drawdown_policy_payload as { financialEventDrawdownOrder?: FixedProjectionBucketKey[] }).financialEventDrawdownOrder,
     liabilitiesMonthlyRepayment: Number((payload as { liabilitiesMonthlyRepayment?: number }).liabilitiesMonthlyRepayment ?? 0),
   };
@@ -269,6 +309,31 @@ class SupabaseRollingProjectionSource implements RollingProjectionSource {
     };
   }
 
+  async getLatestRollingVersionNo(householdId?: string | null): Promise<number | null> {
+    const { client, user } = await requireAuthenticatedUser();
+    let query = client
+      .from("projection_plan_versions")
+      .select("version_no")
+      .eq("user_id", user.id)
+      .eq("plan_kind", "ROLLING")
+      .order("version_no", { ascending: false })
+      .limit(1);
+
+    if (householdId == null) {
+      query = query.is("household_id", null);
+    } else {
+      query = query.eq("household_id", householdId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const latest = data?.[0] as { version_no?: number } | undefined;
+    return typeof latest?.version_no === "number" ? latest.version_no : null;
+  }
+
   async getAssumptionSnapshotByPlanVersionId(planVersionId: string): Promise<ProjectionAssumptionSnapshotRecord | null> {
     const { client } = await requireAuthenticatedUser();
     const { data, error } = await client
@@ -297,6 +362,16 @@ class SupabaseRollingProjectionSource implements RollingProjectionSource {
 
     return (data ?? []) as RollingProjectionCloseItem[];
   }
+
+  async getGoals(): Promise<FinancialGoalWithProgress[]> {
+    const { goalService } = await import("@/services/planning/goals/GoalService");
+    return goalService.listGoals({ includeProgress: false });
+  }
+
+  async getProjectionEvents(): Promise<FinancialEvent[]> {
+    const { projectionEventsService, DEFAULT_PROJECTION_SCENARIO_KEY } = await import("@/services/projection/events");
+    return projectionEventsService.listEvents(DEFAULT_PROJECTION_SCENARIO_KEY);
+  }
 }
 
 export class RollingProjectionService {
@@ -307,15 +382,20 @@ export class RollingProjectionService {
     private readonly source: RollingProjectionSource = new SupabaseRollingProjectionSource(),
   ) {}
 
-  async createRollingProjectionV1(input: CreateRollingProjectionV1Input): Promise<CreateRollingProjectionV1Result> {
+  private async resolveNextRollingVersionNo(householdId?: string | null): Promise<number> {
+    const latest = await this.source.getLatestRollingVersionNo(householdId ?? null);
+    return (latest ?? 0) + 1;
+  }
+
+  async createRollingProjectionPreview(input: CreateRollingProjectionV1Input): Promise<RollingProjectionPreviewResult> {
     const parentFixedPlan = await this.source.getLatestLockedFixedPlan(input.householdId ?? null);
     if (!parentFixedPlan) {
-      throw new Error("A LOCKED FIXED projection plan is required before creating a ROLLING projection.");
+      throw new Error("A locked Fixed Projection is required before generating Rolling Projection.");
     }
 
     const latestClosedMonth = await this.source.getLatestClosedMonthEnd();
     if (!latestClosedMonth) {
-      throw new Error("At least one CLOSED month-end close is required for rolling projection rebasing.");
+      throw new Error("Close a monthly review before generating Rolling Projection.");
     }
 
     const rebasedFromMonth = formatMonthKey({ year: latestClosedMonth.close_year, month: latestClosedMonth.close_month });
@@ -331,6 +411,8 @@ export class RollingProjectionService {
     if (!assumptions) {
       throw new Error("Rolling projection assumptions are required when parent fixed assumptions are unavailable.");
     }
+
+    const versionNo = input.versionNo ?? await this.resolveNextRollingVersionNo(input.householdId ?? null);
 
     const npsSplitPolicy: FixedProjectionNpsSplitPolicy = assumptions.npsSplitPolicy ?? {
       lumpsumPercent: 50,
@@ -350,20 +432,30 @@ export class RollingProjectionService {
     const closeItems = await this.source.getMonthEndCloseItems(latestClosedMonth.id);
     const openingBalances = openingBalancesFromCloseItems(closeItems);
 
-    const planVersion = await this.versioningService.createPlanVersion({
-      household_id: input.householdId ?? null,
-      plan_kind: "ROLLING",
-      version_no: input.versionNo,
-      status: "LOCKED",
-      start_month: startMonth,
-      horizon_end_month: horizonEndMonth,
-      base_close_id: latestClosedMonth.id,
-      parent_fixed_version_id: parentFixedPlan.id,
-      locked_at: new Date().toISOString(),
-    });
+    const warnings: string[] = [];
+    let oneTimeOutflows: FixedProjectionOneTimeOutflow[] = [];
 
-    const assumptionSnapshot = await this.versioningService.upsertAssumptionSnapshot({
-      projection_plan_version_id: planVersion.id,
+    try {
+      const [goals, projectionEvents] = await Promise.all([
+        this.source.getGoals(),
+        this.source.getProjectionEvents(),
+      ]);
+      oneTimeOutflows = buildOneTimeOutflowsFromGoalsAndEvents(goals, projectionEvents);
+      if (oneTimeOutflows.length === 0) {
+        warnings.push("No active one-time goals/events available for Rolling Projection.");
+      }
+    } catch {
+      warnings.push("One-time goals/events could not be loaded for Rolling Projection preview.");
+    }
+
+    const inputWithDefaults: Required<CreateRollingProjectionV1Input> = {
+      householdId: input.householdId ?? null,
+      versionNo,
+      assumptions,
+      priorRollingVersionId: input.priorRollingVersionId ?? null,
+    };
+
+    const assumptionSnapshotInput: Omit<CreateProjectionAssumptionSnapshotInput, "projection_plan_version_id"> = {
       assumption_payload: {
         startMonth,
         horizonEndMonth,
@@ -371,11 +463,14 @@ export class RollingProjectionService {
         salary: assumptions.salary,
         contributions: assumptions.contributions,
         returns: assumptions.returns,
+        netSalaryIncludesEmployeeDeductions: assumptions.netSalaryIncludesEmployeeDeductions ?? true,
+        liabilitiesMonthlyRepayment: assumptions.liabilitiesMonthlyRepayment ?? 0,
         expenses: {
           ...assumptions.expenses,
           postRetirementExpenseReductionPercent,
-            annualExpenseInflationPercent,
+          annualExpenseInflationPercent,
         },
+        oneTimeOutflows,
       },
       salary_policy_payload: {
         source: "COMMON_SALARY_CURVE",
@@ -399,7 +494,7 @@ export class RollingProjectionService {
         propertyLiquidationAllowed: false,
         notes: "Property and other non-financial assets are excluded from drawdown in Rolling Projection V1.",
       },
-    });
+    };
 
     const salaryCurveRows = this.salaryProjectionService.buildMonthlyCurve({
       startMonth,
@@ -412,8 +507,84 @@ export class RollingProjectionService {
       source: "ROLLING_REBASE",
     });
 
+    const salaryCurveUpsertRows: Array<Omit<UpsertProjectionSalaryCurveInput, "projection_plan_version_id">> = salaryCurveRows.map((row) => ({
+      month_key: row.month_key,
+      gross_salary: row.gross_salary,
+      basic_salary: row.basic_salary,
+      salary_growth_rate_used: row.salary_growth_rate_used,
+      source: row.source,
+    }));
+
+    const monthlyPositions = this.fixedProjectionService.buildMonthlyPositionsV1({
+      projectionPlanVersionId: "preview",
+      startMonth,
+      horizonEndMonth,
+      salaryCurve: salaryCurveRows,
+      openingBalances,
+      assumptions,
+      oneTimeOutflows,
+      postRetirementExpenseReductionPercent,
+      annualExpenseInflationPercent,
+      eventDrawdownOrder,
+      npsSplitPolicy,
+    });
+
+    const monthlyPositionRows: Array<Omit<UpsertProjectionMonthlyPositionInput, "projection_plan_version_id">> = monthlyPositions.map(
+      ({ projection_plan_version_id: _projectionPlanVersionId, ...row }) => row,
+    );
+
+    const viewerRows = monthlyPositionRows.map((row) => ({
+      month_key: row.month_key,
+      bucket_key: row.bucket_key,
+      closing_value: row.closing_value,
+      metadata: row.metadata,
+    }));
+
+    return {
+      input: inputWithDefaults,
+      linkedFixedPlanId: parentFixedPlan.id,
+      linkedFixedVersionNo: parentFixedPlan.version_no,
+      rebasedFromMonth,
+      rebasedFromCloseId: latestClosedMonth.id,
+      startMonth,
+      horizonEndMonth,
+      openingBalances,
+      assumptions,
+      oneTimeOutflows,
+      validation: {
+        canFreeze: true,
+        blockers: [],
+        warnings,
+      },
+      canFreeze: true,
+      assumptionSnapshotInput,
+      salaryCurveRows: salaryCurveUpsertRows,
+      monthlyPositionRows,
+      monthRows: groupMonthlyPositionRows(viewerRows),
+      monthSnapshots: groupMonthlyPositionSnapshots(viewerRows),
+    };
+  }
+
+  async freezeRollingProjectionV1Preview(preview: RollingProjectionPreviewResult): Promise<CreateRollingProjectionV1Result> {
+    const planVersion = await this.versioningService.createPlanVersion({
+      household_id: preview.input.householdId,
+      plan_kind: "ROLLING",
+      version_no: preview.input.versionNo,
+      status: "DRAFT",
+      start_month: preview.startMonth,
+      horizon_end_month: preview.horizonEndMonth,
+      base_close_id: preview.rebasedFromCloseId,
+      parent_fixed_version_id: preview.linkedFixedPlanId,
+      locked_at: null,
+    });
+
+    const assumptionSnapshot = await this.versioningService.upsertAssumptionSnapshot({
+      projection_plan_version_id: planVersion.id,
+      ...preview.assumptionSnapshotInput,
+    });
+
     const persistedSalaryCurve = await this.versioningService.upsertSalaryCurve(
-      salaryCurveRows.map((row) => ({
+      preview.salaryCurveRows.map((row) => ({
         projection_plan_version_id: planVersion.id,
         month_key: row.month_key,
         gross_salary: row.gross_salary,
@@ -423,37 +594,42 @@ export class RollingProjectionService {
       })),
     );
 
-    const monthlyPositions = this.fixedProjectionService.buildMonthlyPositionsV1({
-      projectionPlanVersionId: planVersion.id,
-      startMonth,
-      horizonEndMonth,
-      salaryCurve: salaryCurveRows,
-      openingBalances,
-      assumptions,
-      oneTimeOutflows: [],
-      postRetirementExpenseReductionPercent,
-      annualExpenseInflationPercent,
-      eventDrawdownOrder,
-      npsSplitPolicy,
-    });
-
-    const persistedMonthlyPositions = await this.versioningService.upsertMonthlyPositions(monthlyPositions);
+    const persistedMonthlyPositions = await this.versioningService.upsertMonthlyPositions(
+      preview.monthlyPositionRows.map((row) => ({
+        projection_plan_version_id: planVersion.id,
+        month_key: row.month_key,
+        bucket_key: row.bucket_key,
+        opening_value: row.opening_value,
+        contribution: row.contribution,
+        growth: row.growth,
+        withdrawal: row.withdrawal,
+        closing_value: row.closing_value,
+        metadata: row.metadata,
+      })),
+    );
 
     const rebaseJournal = await this.versioningService.appendRebaseJournal({
       rolling_version_id: planVersion.id,
-      parent_fixed_version_id: parentFixedPlan.id,
-      rebased_from_close_id: latestClosedMonth.id,
-      rebased_month: rebasedFromMonth,
-      prior_rolling_version_id: input.priorRollingVersionId ?? null,
+      parent_fixed_version_id: preview.linkedFixedPlanId,
+      rebased_from_close_id: preview.rebasedFromCloseId,
+      rebased_month: preview.rebasedFromMonth,
+      prior_rolling_version_id: preview.input.priorRollingVersionId,
     });
 
+    const lockedPlanVersion = await this.versioningService.lockPlanVersion(planVersion.id);
+
     return {
-      planVersion,
+      planVersion: lockedPlanVersion,
       assumptionSnapshot,
       salaryCurve: persistedSalaryCurve,
       monthlyPositions: persistedMonthlyPositions,
       rebaseJournal,
     };
+  }
+
+  async createRollingProjectionV1(input: CreateRollingProjectionV1Input): Promise<CreateRollingProjectionV1Result> {
+    const preview = await this.createRollingProjectionPreview(input);
+    return this.freezeRollingProjectionV1Preview(preview);
   }
 }
 
