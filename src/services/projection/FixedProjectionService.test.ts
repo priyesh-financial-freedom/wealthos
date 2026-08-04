@@ -228,6 +228,37 @@ function findPosition(
 }
 
 describe("FixedProjectionService", () => {
+  it("builds preview in memory without writing projection plan, positions, salary curve, or assumptions", () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const preview = service.createFixedProjectionPreview(buildInput());
+
+    expect(preview.monthRows.length).toBeGreaterThan(0);
+    expect(preview.monthSnapshots.length).toBeGreaterThan(0);
+    expect(versioning.plans.size).toBe(0);
+    expect(versioning.salaryCurveRows.length).toBe(0);
+    expect(versioning.monthlyPositions.length).toBe(0);
+    expect(versioning.snapshots.size).toBe(0);
+  });
+
+  it("freezes using the exact preview artifacts without recomputing a different payload", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const preview = service.createFixedProjectionPreview(buildInput());
+    preview.monthlyPositionRows[0] = {
+      ...preview.monthlyPositionRows[0],
+      closing_value: 123456,
+    };
+
+    const result = await service.freezeFixedProjectionV1Preview(preview);
+    const persistedFirst = result.monthlyPositions[0];
+
+    expect(result.planVersion.status).toBe("LOCKED");
+    expect(persistedFirst?.closing_value).toBe(123456);
+  });
+
   it("creates a FIXED plan, stores snapshot, writes salary curve and monthly positions, and locks the plan", async () => {
     const versioning = new InMemoryProjectionVersioningService();
     const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());

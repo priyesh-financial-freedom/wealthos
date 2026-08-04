@@ -1,13 +1,17 @@
 import { SalaryProjectionService, type SalaryProjectionPoint } from "./SalaryProjectionService";
 import { ProjectionVersioningService } from "./versioning/ProjectionVersioningService";
 import { SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS } from "@/services/planning/assumptions/AssumptionRegistry";
+import { groupMonthlyPositionRows, groupMonthlyPositionSnapshots } from "./ProjectionReadModel";
 import type {
+  CreateProjectionAssumptionSnapshotInput,
   ProjectionAssumptionSnapshotRecord,
   ProjectionMonthlyPositionRecord,
   ProjectionPlanVersionRecord,
   ProjectionSalaryCurveRecord,
   UpsertProjectionMonthlyPositionInput,
+  UpsertProjectionSalaryCurveInput,
 } from "./versioning/types";
+import type { ProjectionViewerMonthRow, ProjectionViewerMonthSnapshot } from "./ProjectionReadModel";
 
 const DEFAULT_FIXED_START_MONTH = "2026-07";
 const DEFAULT_FIXED_HORIZON_END_MONTH = "2062-07";
@@ -110,6 +114,18 @@ export interface CreateFixedProjectionV1Result {
   assumptionSnapshot: ProjectionAssumptionSnapshotRecord;
   salaryCurve: ProjectionSalaryCurveRecord[];
   monthlyPositions: ProjectionMonthlyPositionRecord[];
+}
+
+export interface FixedProjectionPreviewResult {
+  input: CreateFixedProjectionV1Input;
+  startMonth: string;
+  horizonEndMonth: string;
+  canFreeze: boolean;
+  assumptionSnapshotInput: Omit<CreateProjectionAssumptionSnapshotInput, "projection_plan_version_id">;
+  salaryCurveRows: Array<Omit<UpsertProjectionSalaryCurveInput, "projection_plan_version_id">>;
+  monthlyPositionRows: Array<Omit<UpsertProjectionMonthlyPositionInput, "projection_plan_version_id">>;
+  monthRows: ProjectionViewerMonthRow[];
+  monthSnapshots: ProjectionViewerMonthSnapshot[];
 }
 
 interface MonthStamp {
@@ -230,6 +246,12 @@ export class FixedProjectionService {
   ) {}
 
   async createFixedProjectionV1(input: CreateFixedProjectionV1Input): Promise<CreateFixedProjectionV1Result> {
+    const preview = this.createFixedProjectionPreview(input);
+
+    return this.freezeFixedProjectionV1Preview(preview);
+  }
+
+  createFixedProjectionPreview(input: CreateFixedProjectionV1Input): FixedProjectionPreviewResult {
     this.assertInputNumbers(input);
 
     const startMonth = input.startMonth ?? DEFAULT_FIXED_START_MONTH;
@@ -249,17 +271,7 @@ export class FixedProjectionService {
 
     const eventDrawdownOrder = input.assumptions.eventDrawdownOrder ?? DEFAULT_EVENT_DRAWDOWN_ORDER;
 
-    const planVersion = await this.versioningService.createPlanVersion({
-      household_id: input.householdId ?? null,
-      plan_kind: "FIXED",
-      version_no: input.versionNo,
-      status: "DRAFT",
-      start_month: startMonth,
-      horizon_end_month: horizonEndMonth,
-    });
-
-    const assumptionSnapshot = await this.versioningService.upsertAssumptionSnapshot({
-      projection_plan_version_id: planVersion.id,
+    const assumptionSnapshotInput: Omit<CreateProjectionAssumptionSnapshotInput, "projection_plan_version_id"> = {
       assumption_payload: {
         startMonth,
         horizonEndMonth,
@@ -296,7 +308,7 @@ export class FixedProjectionService {
         propertyLiquidationAllowed: false,
         notes: "Property and other non-financial assets are excluded from drawdown in Fixed Projection V1.",
       },
-    });
+    };
 
     const salaryCurveRows = this.salaryProjectionService.buildMonthlyCurve({
       startMonth,
@@ -309,19 +321,16 @@ export class FixedProjectionService {
       source: "FIXED_LOCKED",
     });
 
-    const persistedSalaryCurve = await this.versioningService.upsertSalaryCurve(
-      salaryCurveRows.map((row) => ({
-        projection_plan_version_id: planVersion.id,
-        month_key: row.month_key,
-        gross_salary: row.gross_salary,
-        basic_salary: row.basic_salary,
-        salary_growth_rate_used: row.salary_growth_rate_used,
-        source: row.source,
-      })),
-    );
+    const salaryCurveUpsertRows: Array<Omit<UpsertProjectionSalaryCurveInput, "projection_plan_version_id">> = salaryCurveRows.map((row) => ({
+      month_key: row.month_key,
+      gross_salary: row.gross_salary,
+      basic_salary: row.basic_salary,
+      salary_growth_rate_used: row.salary_growth_rate_used,
+      source: row.source,
+    }));
 
     const monthlyPositions = this.buildMonthlyPositionsV1({
-      projectionPlanVersionId: planVersion.id,
+      projectionPlanVersionId: "preview",
       startMonth,
       horizonEndMonth,
       salaryCurve: salaryCurveRows,
@@ -333,7 +342,70 @@ export class FixedProjectionService {
       npsSplitPolicy,
     });
 
-    const persistedMonthlyPositions = await this.versioningService.upsertMonthlyPositions(monthlyPositions);
+    const monthlyPositionRows: Array<Omit<UpsertProjectionMonthlyPositionInput, "projection_plan_version_id">> = monthlyPositions.map(
+      ({ projection_plan_version_id: _projectionPlanVersionId, ...row }) => row,
+    );
+
+    const viewerRows = monthlyPositionRows.map((row) => ({
+      month_key: row.month_key,
+      bucket_key: row.bucket_key,
+      closing_value: row.closing_value,
+      metadata: row.metadata,
+    }));
+
+    return {
+      input,
+      startMonth,
+      horizonEndMonth,
+      canFreeze: true,
+      assumptionSnapshotInput,
+      salaryCurveRows: salaryCurveUpsertRows,
+      monthlyPositionRows,
+      monthRows: groupMonthlyPositionRows(viewerRows),
+      monthSnapshots: groupMonthlyPositionSnapshots(viewerRows),
+    };
+  }
+
+  async freezeFixedProjectionV1Preview(preview: FixedProjectionPreviewResult): Promise<CreateFixedProjectionV1Result> {
+    const planVersion = await this.versioningService.createPlanVersion({
+      household_id: preview.input.householdId ?? null,
+      plan_kind: "FIXED",
+      version_no: preview.input.versionNo,
+      status: "DRAFT",
+      start_month: preview.startMonth,
+      horizon_end_month: preview.horizonEndMonth,
+    });
+
+    const assumptionSnapshot = await this.versioningService.upsertAssumptionSnapshot({
+      projection_plan_version_id: planVersion.id,
+      ...preview.assumptionSnapshotInput,
+    });
+
+    const persistedSalaryCurve = await this.versioningService.upsertSalaryCurve(
+      preview.salaryCurveRows.map((row) => ({
+        projection_plan_version_id: planVersion.id,
+        month_key: row.month_key,
+        gross_salary: row.gross_salary,
+        basic_salary: row.basic_salary,
+        salary_growth_rate_used: row.salary_growth_rate_used,
+        source: row.source,
+      })),
+    );
+
+    const persistedMonthlyPositions = await this.versioningService.upsertMonthlyPositions(
+      preview.monthlyPositionRows.map((row) => ({
+        projection_plan_version_id: planVersion.id,
+        month_key: row.month_key,
+        bucket_key: row.bucket_key,
+        opening_value: row.opening_value,
+        contribution: row.contribution,
+        growth: row.growth,
+        withdrawal: row.withdrawal,
+        closing_value: row.closing_value,
+        metadata: row.metadata,
+      })),
+    );
+
     const lockedPlanVersion = await this.versioningService.lockPlanVersion(planVersion.id);
 
     return {

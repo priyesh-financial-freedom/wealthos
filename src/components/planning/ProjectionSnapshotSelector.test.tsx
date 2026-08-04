@@ -71,4 +71,44 @@ describe("ProjectionSnapshotSelector", () => {
     expect(screen.getByText("₹15,00,000")).toBeTruthy();
     expect(screen.getAllByText("₹45,000")).toHaveLength(2);
   });
+
+  it("supports preview snapshot payloads with retirement jump", () => {
+    render(
+      <ProjectionSnapshotSelector
+        monthSnapshots={[
+          {
+            month: "2030-01",
+            net_worth: 1000000,
+            financial_assets_total: 700000,
+            retirement_corpus: 500000,
+            property_value: 300000,
+            total_debt: 120000,
+            monthly_income: 90000,
+            monthly_expense: 50000,
+            corpus_drawdown: 0,
+          },
+          {
+            month: "2034-08",
+            net_worth: 2200000,
+            financial_assets_total: 1800000,
+            retirement_corpus: 1300000,
+            property_value: 500000,
+            total_debt: 0,
+            monthly_income: 0,
+            monthly_expense: 70000,
+            corpus_drawdown: 70000,
+          },
+        ]}
+        projectionStartMonth="2030-01"
+        projectionEndMonth="2040-12"
+        primaryCurrentAge={60}
+        retirementAge={68}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Retirement" }));
+
+    expect(screen.getByRole("heading", { name: "Aug 2034" })).toBeTruthy();
+    expect(screen.getByText("₹22,00,000")).toBeTruthy();
+  });
 });

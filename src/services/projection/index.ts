@@ -31,6 +31,7 @@ export { MonthlyReviewComparisonService, monthlyReviewComparisonService } from "
 export type {
   CreateFixedProjectionV1Input,
   CreateFixedProjectionV1Result,
+  FixedProjectionPreviewResult,
   FixedProjectionAssumptions,
   FixedProjectionBucketKey,
   FixedProjectionOpeningBalances,
