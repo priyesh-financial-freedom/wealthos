@@ -543,6 +543,128 @@ describe("FixedProjectionService", () => {
     expect(septemberNps.contribution).toBe(0);
   });
 
+  it("transfers EPF to cash in 2035-08, the first month after 36 full post-retirement months from retirement month 2032-07", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2035-07",
+      horizonEndMonth: "2035-09",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2032-07",
+        },
+      },
+    }));
+
+    const julyEpf = findPosition(result.monthlyPositions, "2035-07", "epf");
+    const augustEpf = findPosition(result.monthlyPositions, "2035-08", "epf");
+    const septemberEpf = findPosition(result.monthlyPositions, "2035-09", "epf");
+    const julyCash = findPosition(result.monthlyPositions, "2035-07", "cash");
+    const augustCash = findPosition(result.monthlyPositions, "2035-08", "cash");
+
+    expect(julyEpf.closing_value).toBeGreaterThan(0);
+    expect(julyEpf.metadata.epfTransferredToCash).toBe(false);
+    expect(julyEpf.growth).toBeGreaterThan(0);
+
+    expect(augustEpf.opening_value).toBe(julyEpf.closing_value);
+    expect(augustEpf.metadata.epfTransferMonth).toBe("2035-08");
+    expect(augustEpf.metadata.epfTransferredToCash).toBe(true);
+    expect(augustEpf.metadata.epfTransferAmount).toBe(julyEpf.closing_value);
+    expect(augustEpf.contribution).toBe(0);
+    expect(augustEpf.growth).toBe(0);
+    expect(augustEpf.withdrawal).toBe(julyEpf.closing_value);
+    expect(augustEpf.closing_value).toBe(0);
+
+    expect(augustCash.metadata.epfTransferMonth).toBe("2035-08");
+    expect(augustCash.metadata.epfTransferredToCash).toBe(true);
+    expect(augustCash.metadata.epfTransferAmount).toBe(julyEpf.closing_value);
+    expect(augustCash.closing_value).toBe(julyCash.closing_value + augustCash.contribution);
+
+    expect(septemberEpf.opening_value).toBe(0);
+    expect(septemberEpf.contribution).toBe(0);
+    expect(septemberEpf.growth).toBe(0);
+    expect(septemberEpf.closing_value).toBe(0);
+    expect(septemberEpf.metadata.epfTransferredToCash).toBe(false);
+  });
+
+  it("keeps net worth unchanged by EPF transfer because it is only an asset reclassification", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2035-07",
+      horizonEndMonth: "2035-09",
+      openingBalances: {
+        cash: 100000,
+        mutualFunds: 0,
+        stocks: 0,
+        epf: 300000,
+        ppf: 0,
+        nps: 0,
+        property: 0,
+        gold: 0,
+        otherNonFinancialAssets: 0,
+        liabilities: 0,
+      },
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 0,
+          currentNetSalary: 0,
+          currentBasicSalary: 0,
+          retirementMonth: "2032-07",
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 0,
+          stocksMonthlySip: 0,
+          epfEmployeeContributionRate: 0,
+          epfEmployerContributionRate: 0,
+          npsContributionRate: 0,
+          ppfMonthlyContributionPriyesh: 0,
+          ppfAnnualContributionShobhana: 0,
+        },
+        returns: {
+          ...buildInput().assumptions.returns,
+          cashAnnualReturnPercent: 0,
+          mutualFundsAnnualReturnPercent: 0,
+          stocksAnnualReturnPercent: 0,
+          epfAnnualReturnPercent: 0,
+          ppfAnnualReturnPercent: 0,
+          npsAnnualReturnPercent: 0,
+          nonFinancialAnnualReturnPercent: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 0,
+          monthlyEmi: 0,
+          monthlyInsurancePremium: 0,
+          monthlyOtherRecurringCommitments: 0,
+          annualExpenseInflationPercent: 0,
+        },
+        liabilitiesMonthlyRepayment: 0,
+      },
+    }));
+
+    const julyCash = findPosition(result.monthlyPositions, "2035-07", "cash");
+    const augustCash = findPosition(result.monthlyPositions, "2035-08", "cash");
+    const julyEpf = findPosition(result.monthlyPositions, "2035-07", "epf");
+    const augustEpf = findPosition(result.monthlyPositions, "2035-08", "epf");
+    const julyNetWorth = findPosition(result.monthlyPositions, "2035-07", "net_worth");
+    const augustNetWorth = findPosition(result.monthlyPositions, "2035-08", "net_worth");
+
+    expect(julyCash.closing_value).toBe(100000);
+    expect(julyEpf.closing_value).toBe(300000);
+    expect(augustCash.closing_value).toBe(400000);
+    expect(augustEpf.closing_value).toBe(0);
+    expect(julyNetWorth.closing_value).toBe(400000);
+    expect(augustNetWorth.closing_value).toBe(400000);
+  });
+
   it("computes monthly surplus as net income minus total monthly cash outflow", async () => {
     const versioning = new InMemoryProjectionVersioningService();
     const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());

@@ -19,6 +19,7 @@ const DEFAULT_FIXED_HORIZON_END_MONTH = "2062-07";
 const DEFAULT_EVENT_DRAWDOWN_ORDER: FixedProjectionBucketKey[] = ["cash", "mutual_funds", "ppf", "epf"];
 const DEFAULT_POST_RETIREMENT_EXPENSE_REDUCTION_PERCENT = 20;
 const DEFAULT_ANNUAL_EXPENSE_INFLATION_PERCENT = SYSTEM_DEFAULT_PLANNING_ASSUMPTIONS.generalInflation;
+const DEFAULT_EPF_TRANSFER_TO_CASH_AFTER_RETIREMENT_YEARS = 3;
 
 const DEFAULT_PPF_ANNUAL_CONTRIBUTION_MONTH = 4;
 
@@ -184,6 +185,19 @@ function addMonth(input: MonthStamp): MonthStamp {
   return { year: input.year, month: input.month + 1 };
 }
 
+function addMonthsToMonthKey(monthKey: string, monthsToAdd: number): string {
+  if (!Number.isInteger(monthsToAdd) || monthsToAdd < 0) {
+    throw new Error("monthsToAdd must be a non-negative integer.");
+  }
+
+  let cursor = parseMonthKey(monthKey);
+  for (let index = 0; index < monthsToAdd; index += 1) {
+    cursor = addMonth(cursor);
+  }
+
+  return formatMonthKey(cursor);
+}
+
 function listMonthKeys(startMonth: string, endMonth: string): string[] {
   const start = parseMonthKey(startMonth);
   const end = parseMonthKey(endMonth);
@@ -302,7 +316,7 @@ export class FixedProjectionService {
         postRetirementExpenseReductionPercent,
         epfAnnualCreditMonth: "03",
         ppfAnnualCreditMonth: "03",
-        epfTransferToCashAfterRetirementYears: 3,
+        epfTransferToCashAfterRetirementYears: DEFAULT_EPF_TRANSFER_TO_CASH_AFTER_RETIREMENT_YEARS,
         todos: [
           "EPF growth is applied monthly in V1 as a deterministic approximation to annual declared rates.",
           "PPF growth is applied monthly in V1 as a deterministic approximation to annual declared rates.",
@@ -500,6 +514,12 @@ export class FixedProjectionService {
       ? Math.min(1, Math.max(0, input.assumptions.salary.currentNetSalary ?? input.assumptions.salary.currentGrossSalary) / input.assumptions.salary.currentGrossSalary)
       : 0;
     const netSalaryIncludesEmployeeDeductions = input.assumptions.netSalaryIncludesEmployeeDeductions ?? true;
+    const epfTransferMonth = assumptions.salary.retirementMonth
+      ? addMonthsToMonthKey(
+        assumptions.salary.retirementMonth,
+        DEFAULT_EPF_TRANSFER_TO_CASH_AFTER_RETIREMENT_YEARS * 12 + 1,
+      )
+      : null;
 
     let cashOpen = roundCurrency(openingBalances.cash);
     let mutualFundsOpen = roundCurrency(openingBalances.mutualFunds);
@@ -576,7 +596,11 @@ export class FixedProjectionService {
       const eventDrawdownPpf = 0;
       const eventDrawdownEpf = 0;
 
-      const cashContribution = monthlySurplusOrDeficit;
+      // Transfer EPF to cash in the first month after completing 36 full post-retirement months.
+      const epfTransferredToCash = epfTransferMonth === monthKey && epfOpen > 0;
+      const epfTransferAmount = epfTransferredToCash ? epfOpen : 0;
+
+      const cashContribution = roundCurrency(monthlySurplusOrDeficit + epfTransferAmount);
       const cashGrowth = 0;
       const cashWithdrawal = roundCurrency(eventDrawdownCash);
       const cashClose = roundCurrency(nonNegative(cashOpen + cashContribution - cashWithdrawal));
@@ -589,8 +613,8 @@ export class FixedProjectionService {
       const stocksWithdrawal = 0;
       const stocksClose = roundCurrency(nonNegative(stocksOpen + stocksContribution + stocksGrowth - stocksWithdrawal));
 
-      const epfGrowth = roundCurrency(epfOpen * epfRate);
-      const epfWithdrawal = roundCurrency(eventDrawdownEpf);
+      const epfGrowth = epfTransferredToCash ? 0 : roundCurrency(epfOpen * epfRate);
+      const epfWithdrawal = roundCurrency(eventDrawdownEpf + epfTransferAmount);
       const epfClose = roundCurrency(nonNegative(epfOpen + epfContribution + epfGrowth - epfWithdrawal));
 
       const ppfGrowth = roundCurrency(ppfOpen * ppfRate);
@@ -602,9 +626,9 @@ export class FixedProjectionService {
       const npsClose = roundCurrency(nonNegative(npsOpen + npsContribution + npsGrowth - npsWithdrawal));
 
       const financialOpen = roundCurrency(cashOpen + mutualFundsOpen + stocksOpen + epfOpen + ppfOpen + npsOpen);
-      const financialContribution = roundCurrency(cashContribution + mutualFundsContribution + stocksContribution + epfContribution + ppfContribution + npsContribution);
+      const financialContribution = roundCurrency(monthlySurplusOrDeficit + mutualFundsContribution + stocksContribution + epfContribution + ppfContribution + npsContribution);
       const financialGrowth = roundCurrency(cashGrowth + mutualFundsGrowth + stocksGrowth + epfGrowth + ppfGrowth + npsGrowth);
-      const financialWithdrawal = roundCurrency(cashWithdrawal + mutualFundsWithdrawal + stocksWithdrawal + epfWithdrawal + ppfWithdrawal + npsWithdrawal);
+      const financialWithdrawal = roundCurrency(cashWithdrawal + mutualFundsWithdrawal + stocksWithdrawal + eventDrawdownEpf + ppfWithdrawal + npsWithdrawal);
       const financialClose = roundCurrency(cashClose + mutualFundsClose + stocksClose + epfClose + ppfClose + npsClose);
 
       const nonFinancialContribution = 0;
@@ -653,6 +677,9 @@ export class FixedProjectionService {
             netSalaryIncludesEmployeeDeductions,
             monthlySurplusOrDeficit,
             cashGrowthApplied: cashGrowth,
+            epfTransferredToCash,
+            epfTransferAmount,
+            epfTransferMonth,
             expenseInflationAppliedPercent: annualExpenseInflationPercent,
             expenseReductionPercentAfterRetirement: postRetirementExpenseReductionPercent,
             retired,
@@ -698,6 +725,12 @@ export class FixedProjectionService {
             employeeContributionAmount: epfEmployeeContribution,
             employerContributionAmount: epfEmployerContribution,
             annualizedReturnPercent: assumptions.returns.epfAnnualReturnPercent,
+            epfTransferredToCash,
+            epfTransferAmount,
+            epfTransferMonth,
+            epfTransferRule: epfTransferMonth
+              ? `Transfer at the start of ${epfTransferMonth} after 36 full post-retirement months.`
+              : null,
             eventDrawdownPlaceholder: true,
           },
         },
@@ -745,6 +778,8 @@ export class FixedProjectionService {
           closing_value: financialClose,
           metadata: {
             components: ["cash", "mutual_funds", "stocks", "epf", "ppf", "nps"],
+            internalTransfersExcludedFromContributionAndWithdrawal: epfTransferAmount > 0,
+            epfTransferAmount,
           },
         },
         {
