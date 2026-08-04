@@ -2,6 +2,78 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ProjectionScenario } from "@/types/projection";
 
+const supabaseMock = vi.hoisted(() => {
+  const state = {
+    userId: "user-1",
+    closeRows: [] as Array<{ id: string; close_month: number; close_year: number; version_number: number; user_id: string; status: string }>,
+    closeItemsByCloseId: {} as Record<string, Array<{ item_key: string; actual_value: number | string | null }>>,
+  };
+
+  const authGetUser = vi.fn(async () => ({
+    data: { user: { id: state.userId } },
+    error: null,
+  }));
+
+  const buildQuery = (table: string) => {
+    const filters: Record<string, unknown> = {};
+
+    function response() {
+      if (table === "month_end_closes") {
+        let rows = [...state.closeRows];
+        if (filters.user_id !== undefined) {
+          rows = rows.filter((row) => row.user_id === filters.user_id);
+        }
+        if (filters.status !== undefined) {
+          rows = rows.filter((row) => row.status === filters.status);
+        }
+        if (filters.id !== undefined) {
+          rows = rows.filter((row) => row.id === filters.id);
+        }
+        rows.sort((left, right) => right.close_year - left.close_year || right.close_month - left.close_month || right.version_number - left.version_number);
+        return { data: rows.slice(0, 1), error: null };
+      }
+
+      if (table === "month_end_close_items") {
+        const closeId = String(filters.close_id ?? "");
+        return {
+          data: [...(state.closeItemsByCloseId[closeId] ?? [])],
+          error: null,
+        };
+      }
+
+      return { data: [], error: null };
+    }
+
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn((key: string, value: unknown) => {
+        filters[key] = value;
+        return query;
+      }),
+      order: vi.fn(() => query),
+      limit: vi.fn(async () => response()),
+      then: (resolve: (value: { data: unknown[]; error: null }) => unknown, reject?: (reason: unknown) => unknown) =>
+        Promise.resolve(response()).then(resolve, reject),
+    };
+
+    return query;
+  };
+
+  return {
+    state,
+    client: {
+      auth: {
+        getUser: authGetUser,
+      },
+      from: vi.fn((table: string) => buildQuery(table)),
+    },
+  };
+});
+
+vi.mock("@/lib/supabase/client", () => ({
+  supabase: supabaseMock.client,
+}));
+
 vi.mock("@/services/assumptions", () => ({
   DEFAULT_SCENARIO_KEY: "default",
   assumptionsService: {
@@ -521,5 +593,67 @@ describe("ProjectionInputService", () => {
 
     const totalEntityOpening = context.currentState.projectionEntities?.reduce((sum, entity) => sum + entity.openingBalance, 0) ?? 0;
     expect(totalEntityOpening).toBe(12000);
+  });
+
+  it("sums repeated month-end close item keys when seeding latest-closed-month-end start source", async () => {
+    supabaseMock.state.closeRows = [
+      {
+        id: "close-2026-07-v1",
+        close_month: 7,
+        close_year: 2026,
+        version_number: 1,
+        user_id: "user-1",
+        status: "closed",
+      },
+    ];
+    supabaseMock.state.closeItemsByCloseId = {
+      "close-2026-07-v1": [
+        { item_key: "bank_accounts", actual_value: 100000 },
+        { item_key: "bank_accounts", actual_value: 55555 },
+        { item_key: "mutual_funds", actual_value: 400000 },
+        { item_key: "mutual_funds", actual_value: 97285 },
+        { item_key: "stocks", actual_value: 300000 },
+        { item_key: "stocks", actual_value: 35600 },
+        { item_key: "ppf", actual_value: 900000 },
+        { item_key: "ppf", actual_value: 161689 },
+        { item_key: "home_loans", actual_value: 9000000 },
+        { item_key: "car_loans", actual_value: 250000 },
+        { item_key: "other_liabilities", actual_value: 127700 },
+      ],
+    };
+
+    const service = new ProjectionInputService();
+    const scenario: ProjectionScenario = {
+      id: "default",
+      name: "Default projection",
+      description: "test",
+      startMonth: "2026-07",
+      planningHorizonYear: 2030,
+      assumptions: [],
+      events: [],
+      isDefault: true,
+    };
+
+    const context = await service.buildContext({
+      scenario,
+      startSource: { kind: "latest-closed-month-end" },
+    });
+
+    expect(context.openingSource.kind).toBe("month-end-close");
+    expect(context.openingSource.asOfMonth).toBe("2026-07");
+    expect(context.projectionStartDate).toBe("2026-08");
+
+    const entityBalances = new Map((context.currentState.projectionEntities ?? []).map((entity) => [entity.id, entity.openingBalance]));
+    expect(entityBalances.get("entity:cash:aggregate")).toBe(155555);
+    expect(entityBalances.get("entity:mutual-funds:aggregate")).toBe(497285);
+    expect(entityBalances.get("entity:stocks:aggregate")).toBe(335600);
+    expect(entityBalances.get("entity:ppf:aggregate")).toBe(1061689);
+    expect(entityBalances.get("entity:home-loans:aggregate")).toBe(9000000);
+    expect(entityBalances.get("entity:car-loans:aggregate")).toBe(250000);
+    expect(entityBalances.get("entity:other-liabilities:aggregate")).toBe(127700);
+
+    expect(context.currentRecord.openingCash).toBe(155555);
+    expect(context.currentRecord.openingInvestments).toBe(832885);
+    expect(context.currentRecord.openingLiabilities).toBe(9377700);
   });
 });

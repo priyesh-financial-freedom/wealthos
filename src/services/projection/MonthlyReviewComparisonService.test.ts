@@ -195,4 +195,68 @@ describe("MonthlyReviewComparisonService", () => {
       "net_worth",
     ]);
   });
+
+  it("sums repeated month-end close item keys when computing actual comparison lines", async () => {
+    const service = new MonthlyReviewComparisonService(buildSource({
+      getCloseItems: async () => [
+        { item_key: "bank_accounts", actual_value: 100000 },
+        { item_key: "bank_accounts", actual_value: 55555 },
+        { item_key: "mutual_funds", actual_value: 400000 },
+        { item_key: "mutual_funds", actual_value: 97285 },
+        { item_key: "stocks", actual_value: 300000 },
+        { item_key: "stocks", actual_value: 35600 },
+        { item_key: "ppf", actual_value: 900000 },
+        { item_key: "ppf", actual_value: 161689 },
+        { item_key: "epf", actual_value: 18800000 },
+        { item_key: "nps", actual_value: 455000 },
+        { item_key: "real_estate", actual_value: 32000000 },
+        { item_key: "gold", actual_value: 700000 },
+        { item_key: "silver", actual_value: 100000 },
+        { item_key: "other_assets", actual_value: 50000 },
+        { item_key: "home_loans", actual_value: 9000000 },
+        { item_key: "car_loans", actual_value: 250000 },
+        { item_key: "other_liabilities", actual_value: 127700 },
+      ],
+      getMonthlyPositions: async ({ planVersionId }) => {
+        if (planVersionId === "fixed-plan") {
+          return [
+            { bucket_key: "cash", closing_value: 155555 },
+            { bucket_key: "mutual_funds", closing_value: 497285 },
+            { bucket_key: "stocks", closing_value: 335600 },
+            { bucket_key: "epf", closing_value: 18800000 },
+            { bucket_key: "ppf", closing_value: 1061689 },
+            { bucket_key: "nps", closing_value: 455000 },
+            { bucket_key: "financial_assets_total", closing_value: 21305129 },
+            { bucket_key: "non_financial_assets_total", closing_value: 32850000 },
+            { bucket_key: "liabilities", closing_value: 9377700 },
+            { bucket_key: "net_worth", closing_value: 44777429 },
+          ];
+        }
+
+        return [
+          { bucket_key: "cash", closing_value: 155555 },
+          { bucket_key: "mutual_funds", closing_value: 497285 },
+          { bucket_key: "stocks", closing_value: 335600 },
+          { bucket_key: "epf", closing_value: 18800000 },
+          { bucket_key: "ppf", closing_value: 1061689 },
+          { bucket_key: "nps", closing_value: 455000 },
+          { bucket_key: "financial_assets_total", closing_value: 21305129 },
+          { bucket_key: "non_financial_assets_total", closing_value: 32850000 },
+          { bucket_key: "liabilities", closing_value: 9377700 },
+          { bucket_key: "net_worth", closing_value: 44777429 },
+        ];
+      },
+    }) as never);
+
+    const result = await service.getMonthlyReviewComparison(buildInput());
+
+    expect(findRow(result, "cash").actual_value).toBe(155555);
+    expect(findRow(result, "mutual_funds").actual_value).toBe(497285);
+    expect(findRow(result, "stocks").actual_value).toBe(335600);
+    expect(findRow(result, "ppf").actual_value).toBe(1061689);
+    expect(findRow(result, "liabilities").actual_value).toBe(9377700);
+    expect(findRow(result, "financial_assets_total").actual_value).toBe(21305129);
+    expect(findRow(result, "non_financial_assets_total").actual_value).toBe(32850000);
+    expect(findRow(result, "net_worth").actual_value).toBe(44777429);
+  });
 });

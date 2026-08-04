@@ -146,7 +146,7 @@ function variancePercent(varianceValue: number | null, projection: number | null
 
 function actualValuesFromCloseItems(items: MonthEndCloseItemRow[]): Record<string, number> {
   return items.reduce<Record<string, number>>((acc, item) => {
-    acc[item.item_key] = toNumber(item.actual_value);
+    acc[item.item_key] = toNumber(acc[item.item_key]) + toNumber(item.actual_value);
     return acc;
   }, {});
 }

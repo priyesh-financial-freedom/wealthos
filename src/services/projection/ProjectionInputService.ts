@@ -219,7 +219,7 @@ async function getLatestClosedMonthEndSeed(): Promise<{ source: ProjectionOpenin
   }
 
   const values = ((itemResult.data ?? []) as MonthEndCloseItemRow[]).reduce<Record<string, number>>((acc, row) => {
-    acc[row.item_key] = Number(row.actual_value ?? 0);
+    acc[row.item_key] = Number(acc[row.item_key] ?? 0) + Number(row.actual_value ?? 0);
     return acc;
   }, {});
 
@@ -265,7 +265,7 @@ async function getClosedMonthEndSeedByCloseId(closeId: string): Promise<{ source
   }
 
   const values = ((itemResult.data ?? []) as MonthEndCloseItemRow[]).reduce<Record<string, number>>((acc, row) => {
-    acc[row.item_key] = Number(row.actual_value ?? 0);
+    acc[row.item_key] = Number(acc[row.item_key] ?? 0) + Number(row.actual_value ?? 0);
     return acc;
   }, {});
 
