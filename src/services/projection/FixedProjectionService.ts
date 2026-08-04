@@ -49,6 +49,7 @@ export interface FixedProjectionOpeningBalances {
 
 export interface FixedProjectionSalaryAssumptions {
   currentGrossSalary: number;
+  currentNetSalary?: number;
   currentBasicSalary: number;
   annualIncrementPercent: number;
   incrementMonth?: number | null;
@@ -57,6 +58,7 @@ export interface FixedProjectionSalaryAssumptions {
 
 export interface FixedProjectionContributionAssumptions {
   mutualFundsMonthlySip: number;
+  stocksMonthlySip?: number;
   epfEmployeeContributionRate: number;
   epfEmployerContributionRate: number;
   npsContributionRate: number;
@@ -82,6 +84,7 @@ export interface FixedProjectionExpenseAssumptions {
   postRetirementExpenseReductionPercent?: number;
   monthlyEmi: number;
   monthlyInsurancePremium: number;
+  monthlyOtherRecurringCommitments?: number;
 }
 
 export interface FixedProjectionNpsSplitPolicy {
@@ -96,6 +99,7 @@ export interface FixedProjectionAssumptions {
   returns: FixedProjectionReturnAssumptions;
   expenses: FixedProjectionExpenseAssumptions;
   npsSplitPolicy?: FixedProjectionNpsSplitPolicy;
+  netSalaryIncludesEmployeeDeductions?: boolean;
   liabilitiesMonthlyRepayment?: number;
   eventDrawdownOrder?: FixedProjectionBucketKey[];
 }
@@ -279,9 +283,11 @@ export class FixedProjectionService {
         salary: input.assumptions.salary,
         contributions: input.assumptions.contributions,
         returns: input.assumptions.returns,
+        netSalaryIncludesEmployeeDeductions: input.assumptions.netSalaryIncludesEmployeeDeductions ?? true,
         liabilitiesMonthlyRepayment: input.assumptions.liabilitiesMonthlyRepayment ?? 0,
         expenses: {
           ...input.assumptions.expenses,
+          monthlyOtherRecurringCommitments: input.assumptions.expenses.monthlyOtherRecurringCommitments ?? 0,
           annualExpenseInflationPercent,
           postRetirementExpenseReductionPercent,
         },
@@ -435,9 +441,11 @@ export class FixedProjectionService {
       [opening.otherNonFinancialAssets, "openingBalances.otherNonFinancialAssets"],
       [opening.liabilities, "openingBalances.liabilities"],
       [salary.currentGrossSalary, "salary.currentGrossSalary"],
+      [salary.currentNetSalary ?? salary.currentGrossSalary, "salary.currentNetSalary"],
       [salary.currentBasicSalary, "salary.currentBasicSalary"],
       [salary.annualIncrementPercent, "salary.annualIncrementPercent"],
       [contributions.mutualFundsMonthlySip, "contributions.mutualFundsMonthlySip"],
+      [contributions.stocksMonthlySip ?? 0, "contributions.stocksMonthlySip"],
       [contributions.epfEmployeeContributionRate, "contributions.epfEmployeeContributionRate"],
       [contributions.epfEmployerContributionRate, "contributions.epfEmployerContributionRate"],
       [contributions.npsContributionRate, "contributions.npsContributionRate"],
@@ -453,6 +461,7 @@ export class FixedProjectionService {
       [expenses.preRetirementMonthlyExpense, "expenses.preRetirementMonthlyExpense"],
       [expenses.monthlyEmi, "expenses.monthlyEmi"],
       [expenses.monthlyInsurancePremium, "expenses.monthlyInsurancePremium"],
+      [expenses.monthlyOtherRecurringCommitments ?? 0, "expenses.monthlyOtherRecurringCommitments"],
     ];
 
     for (const [value, fieldName] of checks) {
@@ -487,6 +496,10 @@ export class FixedProjectionService {
 
     const months = listMonthKeys(startMonth, horizonEndMonth);
     const salaryByMonth = salaryCurveByMonth(salaryCurve);
+    const monthlyNetToGrossRatio = input.assumptions.salary.currentGrossSalary > 0
+      ? Math.min(1, Math.max(0, input.assumptions.salary.currentNetSalary ?? input.assumptions.salary.currentGrossSalary) / input.assumptions.salary.currentGrossSalary)
+      : 0;
+    const netSalaryIncludesEmployeeDeductions = input.assumptions.netSalaryIncludesEmployeeDeductions ?? true;
 
     let cashOpen = roundCurrency(openingBalances.cash);
     let mutualFundsOpen = roundCurrency(openingBalances.mutualFunds);
@@ -497,7 +510,6 @@ export class FixedProjectionService {
     let nonFinancialOpen = roundCurrency(openingBalances.property + openingBalances.gold + openingBalances.otherNonFinancialAssets);
     let liabilitiesOpen = roundCurrency(openingBalances.liabilities);
 
-    const cashRate = annualPercentToMonthlyRate(assumptions.returns.cashAnnualReturnPercent);
     const mutualFundsRate = annualPercentToMonthlyRate(assumptions.returns.mutualFundsAnnualReturnPercent);
     const stocksRate = annualPercentToMonthlyRate(assumptions.returns.stocksAnnualReturnPercent);
     const epfRate = annualPercentToMonthlyRate(assumptions.returns.epfAnnualReturnPercent);
@@ -522,12 +534,15 @@ export class FixedProjectionService {
       const monthlyExpense = roundCurrency(inflatedPreRetirementExpense * expenseMultiplier);
       const monthlyEmi = roundCurrency(assumptions.expenses.monthlyEmi);
       const monthlyInsurancePremium = roundCurrency(assumptions.expenses.monthlyInsurancePremium);
+      const monthlyOtherRecurringCommitments = roundCurrency(assumptions.expenses.monthlyOtherRecurringCommitments ?? 0);
 
-      const epfContribution = roundCurrency(
-        salaryPoint.basic_salary * ((assumptions.contributions.epfEmployeeContributionRate + assumptions.contributions.epfEmployerContributionRate) / 100),
-      );
-      const npsContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.npsContributionRate / 100));
+      const epfEmployeeContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.epfEmployeeContributionRate / 100));
+      const epfEmployerContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.epfEmployerContributionRate / 100));
+      const epfContribution = roundCurrency(epfEmployeeContribution + epfEmployerContribution);
+      const npsEmployeeContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.npsContributionRate / 100));
+      const npsContribution = npsEmployeeContribution;
       const mutualFundsContribution = roundCurrency(assumptions.contributions.mutualFundsMonthlySip);
+      const stocksContribution = roundCurrency(assumptions.contributions.stocksMonthlySip ?? 0);
 
       const ppfMonthlyContribution = roundCurrency(assumptions.contributions.ppfMonthlyContributionPriyesh);
       const annualContributionMonth = assumptions.contributions.ppfAnnualContributionMonth ?? DEFAULT_PPF_ANNUAL_CONTRIBUTION_MONTH;
@@ -538,22 +553,38 @@ export class FixedProjectionService {
       const ppfAnnualContribution = ppfAnnualContributionActive ? roundCurrency(assumptions.contributions.ppfAnnualContributionShobhana) : 0;
       const ppfContribution = roundCurrency(ppfMonthlyContribution + ppfAnnualContribution);
 
+      const employeeRetirementContributionsToDeductFromCash = netSalaryIncludesEmployeeDeductions
+        ? 0
+        : roundCurrency(epfEmployeeContribution + npsEmployeeContribution);
+
+      const monthlyIncome = roundCurrency(salaryPoint.gross_salary * monthlyNetToGrossRatio);
+      const totalMonthlyCashOutflow = roundCurrency(
+        monthlyExpense
+        + monthlyEmi
+        + monthlyInsurancePremium
+        + mutualFundsContribution
+        + stocksContribution
+        + ppfContribution
+        + employeeRetirementContributionsToDeductFromCash
+        + monthlyOtherRecurringCommitments,
+      );
+      const monthlySurplusOrDeficit = roundCurrency(monthlyIncome - totalMonthlyCashOutflow);
+
       // Event execution is deferred in this phase. We persist drawdown policy and explicit zero drawdown placeholders.
       const eventDrawdownCash = 0;
       const eventDrawdownMutualFunds = 0;
       const eventDrawdownPpf = 0;
       const eventDrawdownEpf = 0;
 
-      const cashContribution = roundCurrency(salaryPoint.gross_salary - monthlyExpense - monthlyEmi - monthlyInsurancePremium);
-      const cashGrowth = roundCurrency(cashOpen * cashRate);
+      const cashContribution = monthlySurplusOrDeficit;
+      const cashGrowth = 0;
       const cashWithdrawal = roundCurrency(eventDrawdownCash);
-      const cashClose = roundCurrency(nonNegative(cashOpen + cashContribution + cashGrowth - cashWithdrawal));
+      const cashClose = roundCurrency(nonNegative(cashOpen + cashContribution - cashWithdrawal));
 
       const mutualFundsGrowth = roundCurrency(mutualFundsOpen * mutualFundsRate);
       const mutualFundsWithdrawal = roundCurrency(eventDrawdownMutualFunds);
       const mutualFundsClose = roundCurrency(nonNegative(mutualFundsOpen + mutualFundsContribution + mutualFundsGrowth - mutualFundsWithdrawal));
 
-      const stocksContribution = 0;
       const stocksGrowth = roundCurrency(stocksOpen * stocksRate);
       const stocksWithdrawal = 0;
       const stocksClose = roundCurrency(nonNegative(stocksOpen + stocksContribution + stocksGrowth - stocksWithdrawal));
@@ -603,8 +634,25 @@ export class FixedProjectionService {
           withdrawal: cashWithdrawal,
           closing_value: cashClose,
           metadata: {
-            salaryIncomeFromCommonCurve: salaryPoint.gross_salary,
-            expenseApplied: monthlyExpense,
+            salaryIncomeFromCommonCurve: monthlyIncome,
+            salaryIncomeSource: "Compensation net take-home (projected from gross curve using currentNetSalary/currentGrossSalary ratio)",
+            salaryGrossFromCommonCurve: salaryPoint.gross_salary,
+            salaryNetToGrossRatioApplied: monthlyNetToGrossRatio,
+            expenseApplied: totalMonthlyCashOutflow,
+            monthlyTotalCashOutflow: totalMonthlyCashOutflow,
+            livingExpenseApplied: monthlyExpense,
+            monthlyEmiApplied: monthlyEmi,
+            monthlyInsurancePremiumApplied: monthlyInsurancePremium,
+            mutualFundsSipApplied: mutualFundsContribution,
+            stocksSipApplied: stocksContribution,
+            ppfContributionApplied: ppfContribution,
+            npsEmployeeContributionApplied: npsEmployeeContribution,
+            epfEmployeeContributionApplied: epfEmployeeContribution,
+            monthlyOtherRecurringCommitmentsApplied: monthlyOtherRecurringCommitments,
+            employeeRetirementContributionsDeductedFromCash: employeeRetirementContributionsToDeductFromCash,
+            netSalaryIncludesEmployeeDeductions,
+            monthlySurplusOrDeficit,
+            cashGrowthApplied: cashGrowth,
             expenseInflationAppliedPercent: annualExpenseInflationPercent,
             expenseReductionPercentAfterRetirement: postRetirementExpenseReductionPercent,
             retired,
@@ -647,6 +695,8 @@ export class FixedProjectionService {
             basicSalaryFromCommonCurve: salaryPoint.basic_salary,
             employeeRatePercent: assumptions.contributions.epfEmployeeContributionRate,
             employerRatePercent: assumptions.contributions.epfEmployerContributionRate,
+            employeeContributionAmount: epfEmployeeContribution,
+            employerContributionAmount: epfEmployerContribution,
             annualizedReturnPercent: assumptions.returns.epfAnnualReturnPercent,
             eventDrawdownPlaceholder: true,
           },
@@ -679,6 +729,7 @@ export class FixedProjectionService {
           metadata: {
             basicSalaryFromCommonCurve: salaryPoint.basic_salary,
             contributionRatePercent: assumptions.contributions.npsContributionRate,
+            employeeContributionAmount: npsEmployeeContribution,
             splitPolicy: npsSplitPolicy,
             annuityIncomeTodo: "Model annuity income stream from NPS annuity allocation.",
           },

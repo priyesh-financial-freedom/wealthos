@@ -476,6 +476,17 @@ export class FixedProjectionInputBuilder {
         freezeBlocker: "Salary current values are required before freezing Fixed Projection.",
         report: { fieldName: "currentGrossSalary", source: "CompensationService -> financial_events compensation profile", status: "missing" },
       };
+    const currentNetSalary: BuiltField<number> = compensationSummary
+      ? {
+        value: Number(compensationSummary.netMonthlySalary),
+        report: { fieldName: "currentNetSalary", source: "CompensationService -> compensation summary netMonthlySalary", status: "derived" },
+      }
+      : {
+        value: null,
+        previewBlocker: "Current net salary is missing.",
+        freezeBlocker: "Net salary is required before freezing Fixed Projection.",
+        report: { fieldName: "currentNetSalary", source: "CompensationService -> compensation summary", status: "missing" },
+      };
     const currentBasicSalary: BuiltField<number> = compensationSummary
       ? {
         value: Number(compensationSummary.basicSalary),
@@ -594,24 +605,49 @@ export class FixedProjectionInputBuilder {
       };
     })();
 
-    const monthlyStockContribution = (() => {
+    const stocksMonthlySip: BuiltField<number> = (() => {
       if (!loadedData) {
-        return 0;
+        return {
+          value: 0,
+          report: { fieldName: "stocksMonthlySip", source: "investment_holdings / investments.sip_amount for active Stocks", status: "missing" },
+          warning: "Stocks SIP contribution could not be loaded; defaulting to 0 for preview assembly.",
+          defaultUsed: "stocksMonthlySip defaulted to 0 because investments could not be loaded.",
+        };
       }
 
-      return loadedData.investments
+      const value = loadedData.investments
         .filter((investment) => investment.status === "active" && investment.category === "Stocks")
         .reduce((sum, investment) => sum + Number(investment.sip_amount ?? 0), 0);
+
+      return {
+        value,
+        report: { fieldName: "stocksMonthlySip", source: "investment_holdings / investments.sip_amount for active Stocks", status: "real" },
+      };
     })();
-    sourceReport.push({
-      fieldName: "monthlyStockContribution",
-      source: "No supported FixedProjectionService input field; active stock SIPs are not modeled in V1",
-      status: monthlyStockContribution > 0 ? "hardcoded" : "default",
-    });
-    warnings.push("Monthly stock contributions are unsupported in Fixed Projection V1 and are set to 0.");
-    if (monthlyStockContribution > 0) {
-      defaultsUsed.push(`monthlyStockContribution omitted from CreateFixedProjectionV1Input; ${monthlyStockContribution.toFixed(2)} is currently unsupported.`);
-    }
+
+    const monthlyOtherRecurringCommitments: BuiltField<number> = (() => {
+      if (!cashFlowSnapshot) {
+        return {
+          value: 0,
+          report: { fieldName: "monthlyOtherRecurringCommitments", source: "CashFlowManagementService automatic commitments not handled as EMI/SIP/PPF/NPS/EPF/Premium", status: "missing" },
+          defaultUsed: "monthlyOtherRecurringCommitments defaulted to 0 because cash flow snapshot is unavailable.",
+        };
+      }
+
+      const knownHandledCommitmentTypes = new Set(["EMI", "SIP", "PPF", "NPS", "EPF", "Premium"]);
+      const value = cashFlowSnapshot.automaticCommitments
+        .filter((entry) => !knownHandledCommitmentTypes.has(entry.type))
+        .reduce((sum, entry) => sum + Number(entry.monthlyAmount ?? 0), 0);
+
+      return {
+        value,
+        report: {
+          fieldName: "monthlyOtherRecurringCommitments",
+          source: "CashFlowManagementService automatic commitments excluding EMI, SIP, PPF, NPS, EPF, and Premium",
+          status: value > 0 ? "derived" : "default",
+        },
+      };
+    })();
 
     const epfAccounts = loadedData?.retirementAccounts.filter((account) => account.account_type === "EPF") ?? [];
     const ppfAccounts = loadedData?.retirementAccounts.filter((account) => account.account_type === "PPF") ?? [];
@@ -1038,12 +1074,15 @@ export class FixedProjectionInputBuilder {
       horizonEndMonth,
       retirementMonth,
       currentGrossSalary,
+      currentNetSalary,
       currentBasicSalary,
       annualIncrementPercent,
       preRetirementMonthlyExpense,
       monthlyEmi,
       monthlyInsurancePremium,
       mutualFundsMonthlySip,
+      stocksMonthlySip,
+      monthlyOtherRecurringCommitments,
       epfEmployeeContributionRate,
       epfEmployerContributionRate,
       npsContributionRate,
@@ -1116,6 +1155,7 @@ export class FixedProjectionInputBuilder {
         assumptions: {
           salary: {
             currentGrossSalary: currentGrossSalary.value ?? 0,
+            currentNetSalary: currentNetSalary.value ?? 0,
             currentBasicSalary: currentBasicSalary.value ?? 0,
             annualIncrementPercent: annualIncrementPercent.value ?? 0,
             incrementMonth: compensationSummary?.profile.incrementMonth ?? null,
@@ -1123,6 +1163,7 @@ export class FixedProjectionInputBuilder {
           },
           contributions: {
             mutualFundsMonthlySip: mutualFundsMonthlySip.value ?? 0,
+            stocksMonthlySip: stocksMonthlySip.value ?? 0,
             epfEmployeeContributionRate: epfEmployeeContributionRate.value ?? 0,
             epfEmployerContributionRate: epfEmployerContributionRate.value ?? 0,
             npsContributionRate: npsContributionRate.value ?? 0,
@@ -1146,7 +1187,9 @@ export class FixedProjectionInputBuilder {
             postRetirementExpenseReductionPercent: postRetirementExpenseReductionPercent.value ?? 0,
             monthlyEmi: monthlyEmi.value ?? 0,
             monthlyInsurancePremium: monthlyInsurancePremium.value ?? 0,
+            monthlyOtherRecurringCommitments: monthlyOtherRecurringCommitments.value ?? 0,
           },
+          netSalaryIncludesEmployeeDeductions: true,
           npsSplitPolicy: { ...DEFAULT_NPS_SPLIT_POLICY },
           liabilitiesMonthlyRepayment: monthlyEmi.value ?? 0,
           eventDrawdownOrder: [...DEFAULT_EVENT_DRAWDOWN_ORDER],

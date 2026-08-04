@@ -183,8 +183,10 @@ export function groupMonthlyPositionSnapshots(rows: ProjectionPositionRow[]): Pr
     const closingValue = toNumberOrNull(row.closing_value);
 
     if (bucket === "cash") {
-      current.monthlyIncome = toMetadataNumber(row.metadata, "salaryIncomeFromCommonCurve");
-      current.monthlyExpense = toMetadataNumber(row.metadata, "expenseApplied");
+      current.monthlyIncome = toMetadataNumber(row.metadata, "salaryIncomeFromCommonCurve")
+        ?? toMetadataNumber(row.metadata, "salaryGrossFromCommonCurve");
+      current.monthlyExpense = toMetadataNumber(row.metadata, "monthlyTotalCashOutflow")
+        ?? toMetadataNumber(row.metadata, "expenseApplied");
     }
 
     if (bucket === "cash") {
@@ -216,7 +218,7 @@ export function groupMonthlyPositionSnapshots(rows: ProjectionPositionRow[]): Pr
       const retirementCorpus = sumNullableValues([snapshot.epf, snapshot.ppf, snapshot.nps]);
       const corpusDrawdown = snapshot.monthlyIncome === null || snapshot.monthlyExpense === null
         ? null
-        : Math.max(0, snapshot.monthlyExpense - snapshot.monthlyIncome);
+        : snapshot.monthlyIncome - snapshot.monthlyExpense;
 
       return {
         month: snapshot.month,

@@ -172,6 +172,7 @@ function buildInput(overrides?: Partial<CreateFixedProjectionV1Input>): CreateFi
     assumptions: {
       salary: {
         currentGrossSalary: 100000,
+        currentNetSalary: 90000,
         currentBasicSalary: 40000,
         annualIncrementPercent: 10,
         incrementMonth: 7,
@@ -179,6 +180,7 @@ function buildInput(overrides?: Partial<CreateFixedProjectionV1Input>): CreateFi
       },
       contributions: {
         mutualFundsMonthlySip: 20000,
+        stocksMonthlySip: 7000,
         epfEmployeeContributionRate: 12,
         epfEmployerContributionRate: 12,
         npsContributionRate: 10,
@@ -202,11 +204,13 @@ function buildInput(overrides?: Partial<CreateFixedProjectionV1Input>): CreateFi
         postRetirementExpenseReductionPercent: 20,
         monthlyEmi: 15000,
         monthlyInsurancePremium: 5000,
+        monthlyOtherRecurringCommitments: 0,
       },
       npsSplitPolicy: {
         lumpsumPercent: 50,
         annuityPercent: 50,
       },
+      netSalaryIncludesEmployeeDeductions: true,
       liabilitiesMonthlyRepayment: 10000,
       eventDrawdownOrder: ["cash", "mutual_funds", "ppf", "epf"],
     },
@@ -364,9 +368,9 @@ describe("FixedProjectionService", () => {
     const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
     const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
 
-    expect(julyCash.metadata.expenseApplied).toBe(40000);
-    expect(augustCash.metadata.expenseApplied).toBe(40000);
-    expect(septemberCash.metadata.expenseApplied).toBe(32000);
+    expect(julyCash.metadata.livingExpenseApplied).toBe(40000);
+    expect(augustCash.metadata.livingExpenseApplied).toBe(40000);
+    expect(septemberCash.metadata.livingExpenseApplied).toBe(32000);
     expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(20);
   });
 
@@ -389,7 +393,7 @@ describe("FixedProjectionService", () => {
     }));
 
     const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
-    expect(septemberCash.metadata.expenseApplied).toBe(30000);
+    expect(septemberCash.metadata.livingExpenseApplied).toBe(30000);
     expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(25);
   });
 
@@ -416,9 +420,9 @@ describe("FixedProjectionService", () => {
     const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
     const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
 
-    expect(julyCash.metadata.expenseApplied).toBe(40000);
-    expect(augustCash.metadata.expenseApplied).toBe(40400);
-    expect(septemberCash.metadata.expenseApplied).toBe(32643.2);
+    expect(julyCash.metadata.livingExpenseApplied).toBe(40000);
+    expect(augustCash.metadata.livingExpenseApplied).toBe(40400);
+    expect(septemberCash.metadata.livingExpenseApplied).toBe(32643.2);
   });
 
   it("uses planning baseline inflation default when annual expense inflation is omitted", async () => {
@@ -463,7 +467,7 @@ describe("FixedProjectionService", () => {
     }));
 
     const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
-    expect(septemberCash.metadata.expenseApplied).toBe(40000);
+    expect(septemberCash.metadata.livingExpenseApplied).toBe(40000);
   });
 
   it("treats 100 percent reduction as zero post-retirement expense", async () => {
@@ -485,7 +489,7 @@ describe("FixedProjectionService", () => {
     }));
 
     const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
-    expect(septemberCash.metadata.expenseApplied).toBe(0);
+    expect(septemberCash.metadata.livingExpenseApplied).toBe(0);
   });
 
   it("keeps salary, EPF, and NPS contributions active through retirement month and stops them from the next month", async () => {
@@ -537,6 +541,235 @@ describe("FixedProjectionService", () => {
     expect(julyNps.contribution).toBeGreaterThan(0);
     expect(augustNps.contribution).toBe(0);
     expect(septemberNps.contribution).toBe(0);
+  });
+
+  it("computes monthly surplus as net income minus total monthly cash outflow", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const preview = service.createFixedProjectionPreview(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 100000,
+          currentNetSalary: 80000,
+          currentBasicSalary: 40000,
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 5000,
+          stocksMonthlySip: 2000,
+          npsContributionRate: 10,
+          ppfMonthlyContributionPriyesh: 1000,
+          ppfAnnualContributionShobhana: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 40000,
+          monthlyEmi: 10000,
+          monthlyInsurancePremium: 5000,
+          monthlyOtherRecurringCommitments: 3000,
+          annualExpenseInflationPercent: 0,
+        },
+        netSalaryIncludesEmployeeDeductions: true,
+      },
+    }));
+
+    const julyCash = preview.monthlyPositionRows.find((row) => row.month_key === "2026-07" && row.bucket_key === "cash");
+    if (!julyCash) {
+      throw new Error("Expected 2026-07 cash row.");
+    }
+
+    expect(julyCash.metadata.monthlyTotalCashOutflow).toBe(66000);
+    expect(julyCash.metadata.salaryIncomeFromCommonCurve).toBe(80000);
+    expect(julyCash.metadata.monthlySurplusOrDeficit).toBe(14000);
+    expect(julyCash.contribution).toBe(14000);
+  });
+
+  it("sets cash closing balance using opening cash plus monthly surplus and cash growth", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 100000,
+          currentNetSalary: 80000,
+          currentBasicSalary: 40000,
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 5000,
+          stocksMonthlySip: 2000,
+          npsContributionRate: 10,
+          ppfMonthlyContributionPriyesh: 1000,
+          ppfAnnualContributionShobhana: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 40000,
+          monthlyEmi: 10000,
+          monthlyInsurancePremium: 5000,
+          monthlyOtherRecurringCommitments: 3000,
+          annualExpenseInflationPercent: 0,
+        },
+        netSalaryIncludesEmployeeDeductions: true,
+      },
+    }));
+
+    const julyCash = findPosition(result.monthlyPositions, "2026-07", "cash");
+    expect(julyCash.opening_value).toBe(100000);
+    expect(julyCash.growth).toBe(0);
+    expect(julyCash.contribution).toBe(14000);
+    expect(julyCash.closing_value).toBe(114000);
+  });
+
+  it("includes EMI, insurance, MF SIP, stock SIP, PPF, NPS/EPF employee deductions, and recurring commitments in monthly outflow when net salary excludes them", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 100000,
+          currentNetSalary: 80000,
+          currentBasicSalary: 40000,
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 5000,
+          stocksMonthlySip: 2000,
+          npsContributionRate: 10,
+          epfEmployeeContributionRate: 12,
+          ppfMonthlyContributionPriyesh: 1000,
+          ppfAnnualContributionShobhana: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 40000,
+          monthlyEmi: 10000,
+          monthlyInsurancePremium: 5000,
+          monthlyOtherRecurringCommitments: 3000,
+          annualExpenseInflationPercent: 0,
+        },
+        netSalaryIncludesEmployeeDeductions: false,
+      },
+    }));
+
+    const julyCash = findPosition(result.monthlyPositions, "2026-07", "cash");
+    expect(julyCash.metadata.employeeRetirementContributionsDeductedFromCash).toBe(8800);
+    expect(julyCash.metadata.monthlyTotalCashOutflow).toBe(74800);
+    expect(julyCash.metadata.monthlySurplusOrDeficit).toBe(5200);
+  });
+
+  it("keeps surplus metadata non-zero when monthly income and expense differ", () => {
+    const service = new FixedProjectionService(new InMemoryProjectionVersioningService() as never, new SalaryProjectionService());
+
+    const preview = service.createFixedProjectionPreview(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 100000,
+          currentNetSalary: 80000,
+          currentBasicSalary: 40000,
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 5000,
+          stocksMonthlySip: 0,
+          ppfMonthlyContributionPriyesh: 1000,
+          ppfAnnualContributionShobhana: 0,
+          npsContributionRate: 10,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 40000,
+          monthlyEmi: 10000,
+          monthlyInsurancePremium: 5000,
+          monthlyOtherRecurringCommitments: 3000,
+          annualExpenseInflationPercent: 0,
+        },
+        netSalaryIncludesEmployeeDeductions: true,
+      },
+    }));
+
+    const snapshot = preview.monthSnapshots[0];
+    expect(snapshot?.monthly_income).toBe(80000);
+    expect(snapshot?.monthly_expense).toBe(64000);
+    expect(snapshot?.corpus_drawdown).toBe(16000);
+    expect(snapshot?.corpus_drawdown).not.toBe(0);
+  });
+
+  it("does not double count employee EPF/NPS from cash when take-home salary already excludes them", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const baseAssumptions = {
+      ...buildInput().assumptions,
+      salary: {
+        ...buildInput().assumptions.salary,
+        currentGrossSalary: 100000,
+        currentNetSalary: 80000,
+        currentBasicSalary: 40000,
+      },
+      contributions: {
+        ...buildInput().assumptions.contributions,
+        mutualFundsMonthlySip: 5000,
+        stocksMonthlySip: 2000,
+        epfEmployeeContributionRate: 12,
+        npsContributionRate: 10,
+        ppfMonthlyContributionPriyesh: 1000,
+        ppfAnnualContributionShobhana: 0,
+      },
+      expenses: {
+        ...buildInput().assumptions.expenses,
+        preRetirementMonthlyExpense: 40000,
+        monthlyEmi: 10000,
+        monthlyInsurancePremium: 5000,
+        monthlyOtherRecurringCommitments: 3000,
+        annualExpenseInflationPercent: 0,
+      },
+    };
+
+    const withNetDeductions = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      assumptions: {
+        ...baseAssumptions,
+        netSalaryIncludesEmployeeDeductions: true,
+      },
+    }));
+
+    const withoutNetDeductions = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      assumptions: {
+        ...baseAssumptions,
+        netSalaryIncludesEmployeeDeductions: false,
+      },
+    }));
+
+    const julyCashWithNetDeductions = findPosition(withNetDeductions.monthlyPositions, "2026-07", "cash");
+    const julyCashWithoutNetDeductions = findPosition(withoutNetDeductions.monthlyPositions, "2026-07", "cash");
+
+    expect(julyCashWithNetDeductions.metadata.employeeRetirementContributionsDeductedFromCash).toBe(0);
+    expect(julyCashWithoutNetDeductions.metadata.employeeRetirementContributionsDeductedFromCash).toBe(8800);
+    expect(julyCashWithNetDeductions.contribution).toBe(14000);
+    expect(julyCashWithoutNetDeductions.contribution).toBe(5200);
   });
 
   it("rejects invalid post-retirement expense reduction below 0 or above 100", async () => {

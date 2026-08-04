@@ -55,6 +55,6 @@ describe("groupMonthlyPositionRows", () => {
     expect(snapshots[0]?.retirement_corpus).toBe(400000);
     expect(snapshots[0]?.property_value).toBe(300000);
     expect(snapshots[0]?.total_debt).toBe(120000);
-    expect(snapshots[0]?.corpus_drawdown).toBe(0);
+    expect(snapshots[0]?.corpus_drawdown).toBe(20000);
   });
 });

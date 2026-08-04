@@ -705,12 +705,14 @@ describe("FixedProjectionInputBuilder", () => {
     expect(result.input?.openingBalances.gold).toBe(100000);
     expect(result.input?.openingBalances.otherNonFinancialAssets).toBe(50000);
     expect(result.input?.openingBalances.liabilities).toBe(900000);
+    expect(result.input?.assumptions.salary.currentNetSalary).toBe(92200);
     expect(result.input?.assumptions.expenses.preRetirementMonthlyExpense).toBe(40000);
     expect(result.input?.assumptions.expenses.monthlyInsurancePremium).toBe(5000);
+    expect(result.input?.assumptions.contributions.stocksMonthlySip).toBe(7000);
+    expect(result.input?.assumptions.expenses.monthlyOtherRecurringCommitments).toBe(0);
     expect(result.input?.assumptions.returns.stocksAnnualReturnPercent).toBe(13);
     expect(result.input?.assumptions.returns.npsAnnualReturnPercent).toBe(10);
     expect(result.input?.assumptions.returns.nonFinancialAnnualReturnPercent).toBeCloseTo(5.91, 2);
-    expect(result.validation.warnings).toContain("Monthly stock contributions are unsupported in Fixed Projection V1 and are set to 0.");
     expect(result.validation.defaultsUsed).toContain("versionNo is hardcoded to 1 for the initial Fixed Projection workflow.");
   });
 
@@ -829,14 +831,14 @@ describe("FixedProjectionInputBuilder", () => {
     expect(result.validation.blockers).toContain("Monthly expenses are missing.");
   });
 
-  it("reports warning for unsupported stock contribution", async () => {
+  it("maps active stock SIPs into fixed projection contributions", async () => {
     const builder = new FixedProjectionInputBuilder(buildDependencies());
 
     const result = await builder.buildFixedProjectionInput();
 
-    expect(result.validation.warnings).toContain("Monthly stock contributions are unsupported in Fixed Projection V1 and are set to 0.");
+    expect(result.input?.assumptions.contributions.stocksMonthlySip).toBe(7000);
     expect(result.sourceReport).toEqual(expect.arrayContaining([
-      expect.objectContaining({ fieldName: "monthlyStockContribution" }),
+      expect.objectContaining({ fieldName: "stocksMonthlySip", status: "real" }),
     ]));
   });
 
@@ -895,12 +897,15 @@ describe("FixedProjectionInputBuilder", () => {
       "otherNonFinancialAssets",
       "liabilities",
       "currentGrossSalary",
+      "currentNetSalary",
       "currentBasicSalary",
       "annualIncrementPercent",
       "preRetirementMonthlyExpense",
       "monthlyEmi",
       "monthlyInsurancePremium",
+      "monthlyOtherRecurringCommitments",
       "mutualFundsMonthlySip",
+      "stocksMonthlySip",
       "cashAnnualReturnPercent",
       "mutualFundsAnnualReturnPercent",
       "stocksAnnualReturnPercent",
