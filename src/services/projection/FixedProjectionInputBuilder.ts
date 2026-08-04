@@ -11,11 +11,13 @@ import {
 } from "@/services/planning/assumptions";
 import type { FixedDeposit } from "@/types/fixedDeposit";
 import type { GoldHolding } from "@/types/goldHolding";
+import type { InsurancePolicy } from "@/types/insurancePolicy";
 import type { Investment } from "@/types/investment";
 import type { Liability } from "@/types/liability";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
 import type { SilverHolding } from "@/types/silverHolding";
+import { toMonthlyPremiumEquivalent } from "@/services/insurancePolicies";
 
 import {
   DEFAULT_PROJECTION_SCENARIO_KEY,
@@ -64,6 +66,7 @@ interface FixedProjectionInputBuilderDependencies {
   getFamilyProfile: () => Promise<PlanningFamilyProfile>;
   getCompensationSummary: () => Promise<CompensationSummary | null>;
   getCashFlowSnapshot: () => Promise<CashFlowSnapshot>;
+  getInsurancePolicies: () => Promise<InsurancePolicy[]>;
 }
 
 type BuiltField<T> = {
@@ -135,6 +138,10 @@ function buildDefaultDependencies(): FixedProjectionInputBuilderDependencies {
     getCashFlowSnapshot: async () => {
       const { cashFlowManagementService } = await import("@/services/cashFlowManagement");
       return cashFlowManagementService.getCashFlowSnapshot(DEFAULT_PROJECTION_SCENARIO_KEY);
+    },
+    getInsurancePolicies: async () => {
+      const { getInsurancePolicies } = await import("@/services/insurancePolicies");
+      return getInsurancePolicies();
     },
   };
 }
@@ -247,13 +254,22 @@ export class FixedProjectionInputBuilder {
     const defaultsUsed: string[] = [];
     const sourceReport: FixedProjectionInputSourceReportItem[] = [];
 
-    const [loadedDataResult, effectiveAssumptionsResult, compensatedBundleResult, familyProfileResult, compensationSummaryResult, cashFlowSnapshotResult] = await Promise.allSettled([
+    const [
+      loadedDataResult,
+      effectiveAssumptionsResult,
+      compensatedBundleResult,
+      familyProfileResult,
+      compensationSummaryResult,
+      cashFlowSnapshotResult,
+      insurancePoliciesResult,
+    ] = await Promise.allSettled([
       this.dependencies.loadProjectionData(),
       this.dependencies.getEffectiveAssumptions(),
       this.dependencies.getCompensatedAssumptionsBundle(),
       this.dependencies.getFamilyProfile(),
       this.dependencies.getCompensationSummary(),
       this.dependencies.getCashFlowSnapshot(),
+      this.dependencies.getInsurancePolicies(),
     ]);
 
     const loadedData = loadedDataResult.status === "fulfilled" ? loadedDataResult.value : null;
@@ -262,6 +278,7 @@ export class FixedProjectionInputBuilder {
     const familyProfile = familyProfileResult.status === "fulfilled" ? familyProfileResult.value : null;
     const compensationSummary = compensationSummaryResult.status === "fulfilled" ? compensationSummaryResult.value : null;
     const cashFlowSnapshot = cashFlowSnapshotResult.status === "fulfilled" ? cashFlowSnapshotResult.value : null;
+    const insurancePolicies = insurancePoliciesResult.status === "fulfilled" ? insurancePoliciesResult.value : [];
 
     const projectionState = loadedData ? planningEntityAggregator.aggregateFromLiveData(loadedData) : null;
     const projectionEntities = projectionState?.projectionEntities ?? [];
@@ -483,8 +500,6 @@ export class FixedProjectionInputBuilder {
       };
 
     const nonInsuranceManualExpenses = cashFlowSnapshot?.manualExpenseEntries.filter((entry) => entry.status === "Active" && entry.category !== "Insurance") ?? [];
-    const insuranceManualExpenses = cashFlowSnapshot?.manualExpenseEntries.filter((entry) => entry.status === "Active" && entry.category === "Insurance") ?? [];
-    const premiumCommitments = cashFlowSnapshot?.automaticCommitments.filter((entry) => entry.type === "Premium") ?? [];
     const preRetirementMonthlyExpense: BuiltField<number> = (() => {
       if (!cashFlowSnapshot) {
         return {
@@ -529,32 +544,32 @@ export class FixedProjectionInputBuilder {
     })();
 
     const monthlyInsurancePremium: BuiltField<number> = (() => {
-      if (!cashFlowSnapshot || !loadedData) {
+      if (!loadedData) {
         return {
           value: 0,
           freezeBlocker: "Insurance premium is required before freezing Fixed Projection unless explicitly confirmed zero.",
-          report: { fieldName: "monthlyInsurancePremium", source: "CashFlowManagementService insurance expenses / premium commitments", status: "missing" },
+          report: { fieldName: "monthlyInsurancePremium", source: "InsurancePolicyService active policies include_in_cash_flow monthly equivalent", status: "missing" },
           warning: "Insurance premium source is not configured.",
           defaultUsed: "monthlyInsurancePremium is set to 0 for preview calculations only until an insurance source is configured or zero is explicitly confirmed.",
         };
       }
 
-      const manualInsurance = insuranceManualExpenses.reduce((sum, entry) => sum + Number(entry.monthlyAmount ?? 0), 0);
-      const automaticPremiums = premiumCommitments.reduce((sum, entry) => sum + Number(entry.monthlyAmount ?? 0), 0);
-      const totalInsurance = manualInsurance + automaticPremiums;
+      const totalInsurance = insurancePolicies
+        .filter((policy) => policy.status === "Active" && policy.include_in_cash_flow)
+        .reduce((sum, policy) => sum + toMonthlyPremiumEquivalent(policy.premium_amount, policy.premium_frequency), 0);
 
       if (totalInsurance > 0) {
         return {
           value: totalInsurance,
-          report: { fieldName: "monthlyInsurancePremium", source: "CashFlowManagementService Insurance manual expenses + Premium automatic commitments", status: "derived" },
+          report: { fieldName: "monthlyInsurancePremium", source: "InsurancePolicyService active policies include_in_cash_flow monthly equivalent", status: "derived" },
         };
       }
 
       return {
         value: 0,
         freezeBlocker: "Insurance premium is required before freezing Fixed Projection unless explicitly confirmed zero.",
-        report: { fieldName: "monthlyInsurancePremium", source: "CashFlowManagementService Insurance manual expenses + Premium automatic commitments", status: "missing" },
-        warning: "Insurance premium source is not configured.",
+        report: { fieldName: "monthlyInsurancePremium", source: "InsurancePolicyService active policies include_in_cash_flow monthly equivalent", status: "missing" },
+        warning: "No active insurance policy premiums are configured for cash flow.",
         defaultUsed: "monthlyInsurancePremium is set to 0 for preview calculations only until an insurance source is configured or zero is explicitly confirmed.",
       };
     })();

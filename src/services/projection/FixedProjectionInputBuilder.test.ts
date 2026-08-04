@@ -10,6 +10,7 @@ import type { EffectivePlanningAssumptions, PlanningFamilyProfile } from "@/serv
 import type { FixedDeposit } from "@/types/fixedDeposit";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment } from "@/types/investment";
+import type { InsurancePolicy } from "@/types/insurancePolicy";
 import type { Liability } from "@/types/liability";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
@@ -627,6 +628,37 @@ function buildLoadedData(overrides?: Partial<LoadedProjectionData>): LoadedProje
   };
 }
 
+function buildInsurancePolicies(overrides?: InsurancePolicy[]): InsurancePolicy[] {
+  if (overrides) {
+    return overrides;
+  }
+
+  return [
+    {
+      id: "policy-1",
+      user_id: "user-1",
+      policy_name: "Family Health Plan",
+      policy_type: "Health",
+      insurer: "Star Health",
+      policy_number: "HLT12345",
+      owner: "Priyesh",
+      covered_person: "Family Floater",
+      nominee: "Shobhana",
+      cover_amount: 1500000,
+      premium_amount: 5000,
+      premium_frequency: "Monthly",
+      start_date: "2026-04-01",
+      renewal_date: "2027-04-01",
+      maturity_date: null,
+      status: "Active",
+      include_in_cash_flow: true,
+      notes: null,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+    },
+  ];
+}
+
 function buildDependencies(overrides?: {
   loadedData?: LoadedProjectionData;
   effectiveAssumptions?: EffectivePlanningAssumptions;
@@ -634,6 +666,7 @@ function buildDependencies(overrides?: {
   familyProfile?: PlanningFamilyProfile;
   compensationSummary?: CompensationSummary | null;
   cashFlowSnapshot?: CashFlowSnapshot;
+  insurancePolicies?: InsurancePolicy[];
 }) {
   return {
     loadProjectionData: vi.fn(async () => overrides?.loadedData ?? buildLoadedData()),
@@ -642,6 +675,7 @@ function buildDependencies(overrides?: {
     getFamilyProfile: vi.fn(async () => overrides?.familyProfile ?? buildFamilyProfile()),
     getCompensationSummary: vi.fn(async () => overrides?.compensationSummary ?? buildCompensationSummary()),
     getCashFlowSnapshot: vi.fn(async () => overrides?.cashFlowSnapshot ?? buildCashFlowSnapshot()),
+    getInsurancePolicies: vi.fn(async () => overrides?.insurancePolicies ?? buildInsurancePolicies()),
   };
 }
 
@@ -753,23 +787,9 @@ describe("FixedProjectionInputBuilder", () => {
     ]));
   });
 
-  it("keeps insurance premium as freeze blocker when no source is configured while allowing preview", async () => {
+  it("keeps insurance premium as freeze blocker when no active policies are configured for cash flow while allowing preview", async () => {
     const builder = new FixedProjectionInputBuilder(buildDependencies({
-      cashFlowSnapshot: buildCashFlowSnapshot({
-        manualExpenseEntries: [
-          {
-            id: "expense-1",
-            name: "Household",
-            category: "Household",
-            monthlyAmount: 40000,
-            annualInflation: 6,
-            startDate: "2026-07-01",
-            status: "Active",
-            notes: null,
-          },
-        ],
-        automaticCommitments: [],
-      }),
+      insurancePolicies: [],
     }));
 
     const result = await builder.buildFixedProjectionInput();
@@ -778,7 +798,7 @@ describe("FixedProjectionInputBuilder", () => {
     expect(result.validation.canPreview).toBe(true);
     expect(result.validation.canFreeze).toBe(false);
     expect(result.validation.blockers).toContain("Insurance premium is required before freezing Fixed Projection unless explicitly confirmed zero.");
-    expect(result.validation.warnings).toContain("Insurance premium source is not configured.");
+    expect(result.validation.warnings).toContain("No active insurance policy premiums are configured for cash flow.");
     expect(result.input?.assumptions.expenses.monthlyInsurancePremium).toBe(0);
     expect(result.sourceReport).toEqual(expect.arrayContaining([
       expect.objectContaining({ fieldName: "monthlyInsurancePremium", status: "missing" }),

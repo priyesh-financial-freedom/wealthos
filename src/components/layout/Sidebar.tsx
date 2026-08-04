@@ -13,8 +13,8 @@ import {
   House,
   Landmark,
   PiggyBank,
-  LayoutDashboard,
   ReceiptText,
+  Shield,
   SlidersHorizontal,
   Settings,
   TrendingUp,
@@ -77,8 +77,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
     expandedGroup === "planning" ||
     activeHref === "/planning" ||
     activeHref.startsWith("/planning/") ||
-    activeHref === "/retirement" ||
-    activeHref === "/goals" ||
     activeHref === "/cash-flow" ||
     activeHref === "/income" ||
     activeHref === "/expenses";
@@ -95,12 +93,9 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
     setExpandedGroup((current) => (current === group ? null : group));
   }
 
-  const dashboardActive = activeHref === "/dashboard";
   const planningActive =
     activeHref === "/planning" ||
     activeHref.startsWith("/planning/") ||
-    activeHref === "/retirement" ||
-    activeHref === "/goals" ||
     activeHref === "/cash-flow" ||
     activeHref === "/income" ||
     activeHref === "/expenses";
@@ -114,7 +109,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const whatIfActive = activeHref === "/planning/scenarios";
   const fixedProjectionActive = activeHref === "/planning/fixed-projection";
   const rollingProjectionActive = activeHref === "/planning/rolling-projection";
-  const monthlyReviewActive = activeHref === "/monthly-review";
   const assetsActive = activeHref === "/assets";
   const bankAccountsActive = activeHref === "/bank-accounts";
   const investmentsActive = activeHref === "/investments";
@@ -127,6 +121,8 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
   const liabilitiesActive = liabilitiesRootActive || homeLoansActive || carLoansActive || creditCardsActive;
 
   const compensationActive = activeHref === "/compensation";
+  const insuranceActive = activeHref === "/insurance";
+  const monthlyReviewActive = activeHref === "/monthly-review";
   const reportsActive = ["/reports", "/history", "/documents"].includes(activeHref) || activeHref.startsWith("/reports/balance-sheet");
   const settingsHomeActive = activeHref === "/settings";
   const settingsFamilyActive = activeHref === "/settings/family" || activeHref === "/settings/household";
@@ -146,13 +142,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-2">
-          <div className={rowWrapClass(1)}>
-            <Link href="/dashboard" className={rowLinkClass({ active: dashboardActive, level: 1, collapsed })}>
-              <LayoutDashboard className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Dashboard</span> : null}
-            </Link>
-          </div>
-
           <div className="space-y-1">
             <div className={rowWrapClass(1)}>
               <div className="flex items-center gap-2">
@@ -195,20 +184,6 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
                 </div>
 
                 <div className={rowWrapClass(2)}>
-                  <Link href="/planning/retirement" className={rowLinkClass({ active: retirementActive, level: 2, collapsed })}>
-                    <PiggyBank className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Retirement</span> : null}
-                  </Link>
-                </div>
-
-                <div className={rowWrapClass(2)}>
-                  <Link href="/planning/goals" className={rowLinkClass({ active: goalsActive, level: 2, collapsed })}>
-                    <Target className="h-4 w-4 shrink-0" />
-                    {!collapsed ? <span className="truncate">Goals</span> : null}
-                  </Link>
-                </div>
-
-                <div className={rowWrapClass(2)}>
                   <Link href="/planning/scenarios" className={rowLinkClass({ active: whatIfActive, level: 2, collapsed })}>
                     <BookOpen className="h-4 w-4 shrink-0" />
                     {!collapsed ? <span className="truncate">What If?</span> : null}
@@ -219,9 +194,9 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
           </div>
 
           <div className={rowWrapClass(1)}>
-            <Link href="/monthly-review" className={rowLinkClass({ active: monthlyReviewActive, level: 1, collapsed })}>
-              <ClipboardCheck className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Monthly Review</span> : null}
+            <Link href="/compensation" className={rowLinkClass({ active: compensationActive, level: 1, collapsed })}>
+              <Banknote className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Compensation</span> : null}
             </Link>
           </div>
 
@@ -313,9 +288,38 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
           </div>
 
           <div className={rowWrapClass(1)}>
-            <Link href="/compensation" className={rowLinkClass({ active: compensationActive, level: 1, collapsed })}>
-              <Banknote className="h-4 w-4 shrink-0" />
-              {!collapsed ? <span className="truncate">Compensation</span> : null}
+            <Link
+              href="/insurance"
+              className={cn(
+                rowLinkClass({ active: insuranceActive, level: 1, collapsed }),
+                insuranceActive
+                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-[0_10px_24px_-16px_rgba(99,102,241,0.95)]"
+                  : "text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900",
+              )}
+            >
+              <Shield className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Insurance</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/planning/retirement" className={rowLinkClass({ active: retirementActive, level: 1, collapsed })}>
+              <PiggyBank className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Retirement</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/planning/goals" className={rowLinkClass({ active: goalsActive, level: 1, collapsed })}>
+              <Target className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Goals</span> : null}
+            </Link>
+          </div>
+
+          <div className={rowWrapClass(1)}>
+            <Link href="/monthly-review" className={rowLinkClass({ active: monthlyReviewActive, level: 1, collapsed })}>
+              <ClipboardCheck className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Monthly Review</span> : null}
             </Link>
           </div>
 
