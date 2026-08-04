@@ -8,6 +8,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
@@ -15,6 +16,7 @@ import {
   calculateMonthEndCloseVarianceSummary,
   closeMonthEndClose,
   getMonthEndCloseWorkspace,
+  reopenMonth,
   saveMonthEndCloseDraft,
 } from "@/services/monthEndClose";
 import type { MonthEndCloseEditorItem, MonthEndCloseWorkspace } from "@/types/monthEndClose";
@@ -120,11 +122,13 @@ function MonthEndCloseTable({
   items,
   actualValues,
   onActualValueChange,
+  disabled,
 }: {
   title: string;
   items: MonthEndCloseEditorItem[];
   actualValues: Record<string, string>;
   onActualValueChange: (rowKey: string, value: string) => void;
+  disabled: boolean;
 }) {
   return (
     <DashboardCard className="overflow-hidden p-0">
@@ -160,6 +164,7 @@ function MonthEndCloseTable({
                     className="ml-auto w-36 text-right"
                     value={actualValues[item.rowKey] ?? String(item.actualValue)}
                     onChange={(event) => onActualValueChange(item.rowKey, event.target.value)}
+                    disabled={disabled}
                   />
                 </td>
                 <td className={`px-4 py-3 text-right font-medium ${numberTone(item.absoluteVariance)}`}>{formatCurrency(item.absoluteVariance, { maximumFractionDigits: 0 })}</td>
@@ -179,9 +184,15 @@ export default function MonthEndClosePage() {
   const [loading, setLoading] = useState(true);
   const [savingDraft, setSavingDraft] = useState(false);
   const [closingMonth, setClosingMonth] = useState(false);
+  const [reopeningMonth, setReopeningMonth] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showLiabilities, setShowLiabilities] = useState(true);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+
+  const IMMUTABLE_CLOSE_MESSAGE = "Closed month-end closes are immutable. Create a new version instead.";
+  const IMMUTABLE_CLOSE_GUIDANCE = "This month is already closed. Use Reopen Month to make corrections.";
 
   useEffect(() => {
     let isMounted = true;
@@ -252,6 +263,29 @@ export default function MonthEndClosePage() {
 
   const assetItems = useMemo(() => items.filter((item) => item.itemType === "asset"), [items]);
   const liabilityItems = useMemo(() => items.filter((item) => item.itemType === "liability"), [items]);
+  const isClosedWorkspace = workspace?.status === "closed";
+  const isLatestClosedWorkspace = isClosedWorkspace && workspace?.close?.id != null && workspace?.latestClose?.id === workspace?.close?.id;
+  const isOlderClosedWorkspace = isClosedWorkspace && !isLatestClosedWorkspace;
+  const canEditValues = !isClosedWorkspace;
+
+  function applyWorkspace(nextWorkspace: MonthEndCloseWorkspace) {
+    setWorkspace(nextWorkspace);
+    setActualValues(
+      nextWorkspace.items.reduce<Record<string, string>>((acc, item) => {
+        acc[item.rowKey] = String(item.actualValue);
+        return acc;
+      }, {}),
+    );
+  }
+
+  function normalizePersistErrorMessage(err: unknown) {
+    const message = err instanceof Error ? err.message : null;
+    if (message === IMMUTABLE_CLOSE_MESSAGE) {
+      return IMMUTABLE_CLOSE_GUIDANCE;
+    }
+
+    return message;
+  }
 
   function handleActualValueChange(rowKey: string, value: string) {
     setActualValues((current) => ({ ...current, [rowKey]: value }));
@@ -282,17 +316,11 @@ export default function MonthEndClosePage() {
           actualValue: item.actualValue,
         })),
       });
-      setWorkspace(nextWorkspace);
-      setActualValues(
-        nextWorkspace.items.reduce<Record<string, string>>((acc, item) => {
-          acc[item.rowKey] = String(item.actualValue);
-          return acc;
-        }, {}),
-      );
+      applyWorkspace(nextWorkspace);
       setNotice(`Draft saved for ${workspace.month.label}.`);
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save draft");
+      setError(normalizePersistErrorMessage(err) ?? "Unable to save draft");
     } finally {
       setSavingDraft(false);
     }
@@ -324,19 +352,43 @@ export default function MonthEndClosePage() {
           actualValue: item.actualValue,
         })),
       });
-      setWorkspace(nextWorkspace);
-      setActualValues(
-        nextWorkspace.items.reduce<Record<string, string>>((acc, item) => {
-          acc[item.rowKey] = String(item.actualValue);
-          return acc;
-        }, {}),
-      );
+      applyWorkspace(nextWorkspace);
       setNotice(`Month closed for ${closedLabel}.`);
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to close month");
+      setError(normalizePersistErrorMessage(err) ?? "Unable to close month");
     } finally {
       setClosingMonth(false);
+    }
+  }
+
+  async function handleReopenMonth() {
+    if (!workspace?.latestClose?.id) {
+      return;
+    }
+
+    const trimmedReason = reopenReason.trim();
+    if (!trimmedReason) {
+      setError("A reason is required to reopen the month.");
+      return;
+    }
+
+    try {
+      setReopeningMonth(true);
+      setError(null);
+
+      await reopenMonth({ closeId: workspace.latestClose.id, reason: trimmedReason });
+
+      const refreshedWorkspace = await getMonthEndCloseWorkspace();
+      applyWorkspace(refreshedWorkspace);
+      setReopenDialogOpen(false);
+      setReopenReason("");
+      setNotice("Month reopened. You can now edit and re-close it.");
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reopen month");
+    } finally {
+      setReopeningMonth(false);
     }
   }
 
@@ -349,16 +401,44 @@ export default function MonthEndClosePage() {
             description="Capture immutable actual month-end values, compare them against the projection universe, and seed future forecasts from closed actuals."
           />
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="outline" onClick={() => void handleSaveDraft()} disabled={loading || savingDraft || closingMonth || !workspace}>
-              <Save className="h-4 w-4" />
-              {savingDraft ? "Saving Draft..." : "Save Draft"}
-            </Button>
-            <Button type="button" onClick={() => void handleCloseMonth()} disabled={loading || savingDraft || closingMonth || !workspace}>
-              <CheckCircle2 className="h-4 w-4" />
-              {closingMonth ? "Closing Month..." : "Close Month"}
-            </Button>
+            {!isClosedWorkspace ? (
+              <>
+                <Button type="button" variant="outline" onClick={() => void handleSaveDraft()} disabled={loading || savingDraft || closingMonth || !workspace}>
+                  <Save className="h-4 w-4" />
+                  {savingDraft ? "Saving Draft..." : "Save Draft"}
+                </Button>
+                <Button type="button" onClick={() => void handleCloseMonth()} disabled={loading || savingDraft || closingMonth || !workspace}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  {closingMonth ? "Closing Month..." : "Close Month"}
+                </Button>
+              </>
+            ) : null}
+            {isLatestClosedWorkspace ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setReopenReason("");
+                  setReopenDialogOpen(true);
+                }}
+                disabled={loading || reopeningMonth || !workspace}
+              >
+                {reopeningMonth ? "Reopening..." : "Reopen Month"}
+              </Button>
+            ) : null}
           </div>
         </div>
+
+        {isLatestClosedWorkspace ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            This month is closed. Reopen it to make corrections.
+          </div>
+        ) : null}
+        {isOlderClosedWorkspace ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            Older closed months are locked. Only the latest closed month can be reopened.
+          </div>
+        ) : null}
 
         {error ? (
           <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -382,7 +462,7 @@ export default function MonthEndClosePage() {
           <div className="space-y-6">
             <SummaryCards workspace={workspace} items={items} />
 
-            <MonthEndCloseTable title="Assets" items={assetItems} actualValues={actualValues} onActualValueChange={handleActualValueChange} />
+            <MonthEndCloseTable title="Assets" items={assetItems} actualValues={actualValues} onActualValueChange={handleActualValueChange} disabled={!canEditValues} />
 
             <DashboardCard className="p-0">
               <button
@@ -398,13 +478,40 @@ export default function MonthEndClosePage() {
               </button>
               {showLiabilities ? (
                 <div className="border-t border-slate-200 p-0">
-                  <MonthEndCloseTable title="Liabilities" items={liabilityItems} actualValues={actualValues} onActualValueChange={handleActualValueChange} />
+                  <MonthEndCloseTable title="Liabilities" items={liabilityItems} actualValues={actualValues} onActualValueChange={handleActualValueChange} disabled={!canEditValues} />
                 </div>
               ) : null}
             </DashboardCard>
           </div>
         ) : null}
       </PageContainer>
+
+      <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reopen Month</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Reason for reopening</label>
+              <Input
+                value={reopenReason}
+                onChange={(event) => setReopenReason(event.target.value)}
+                placeholder="Enter reason"
+                disabled={reopeningMonth}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setReopenDialogOpen(false)} disabled={reopeningMonth}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void handleReopenMonth()} disabled={reopeningMonth}>
+                {reopeningMonth ? "Reopening..." : "Reopen"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
