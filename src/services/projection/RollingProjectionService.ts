@@ -225,7 +225,7 @@ function readAssumptionsFromSnapshot(snapshot: ProjectionAssumptionSnapshotRecor
 
 function openingBalancesFromCloseItems(items: RollingProjectionCloseItem[]): FixedProjectionOpeningBalances {
   const keyed = items.reduce<Record<string, number>>((acc, item) => {
-    acc[item.item_key] = asNumber(item.actual_value);
+    acc[item.item_key] = asNumber(acc[item.item_key]) + asNumber(item.actual_value);
     return acc;
   }, {});
 

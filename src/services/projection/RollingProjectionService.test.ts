@@ -471,6 +471,57 @@ describe("RollingProjectionService", () => {
     expect(firstLiabilities?.opening_value).toBe(700000);
   });
 
+  it("sums repeated month-end item keys when computing rolling opening balances", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const salary = new SalaryProjectionService();
+    const fixedService = new FixedProjectionService(versioning as never, salary);
+    const fixed = await fixedService.createFixedProjectionV1(buildFixedInput());
+
+    const source = new InMemoryRollingProjectionSource(
+      fixed.planVersion,
+      fixed.assumptionSnapshot,
+      {
+        id: "close-2026-07",
+        close_month: 7,
+        close_year: 2026,
+      },
+      [
+        { item_key: "bank_accounts", actual_value: 100000 },
+        { item_key: "bank_accounts", actual_value: 55555 },
+        { item_key: "mutual_funds", actual_value: 400000 },
+        { item_key: "mutual_funds", actual_value: 97285 },
+        { item_key: "stocks", actual_value: 300000 },
+        { item_key: "stocks", actual_value: 35600 },
+        { item_key: "ppf", actual_value: 900000 },
+        { item_key: "ppf", actual_value: 161689 },
+        { item_key: "epf", actual_value: 18800000 },
+        { item_key: "nps", actual_value: 455000 },
+        { item_key: "real_estate", actual_value: 32000000 },
+        { item_key: "gold", actual_value: 700000 },
+        { item_key: "silver", actual_value: 100000 },
+        { item_key: "other_assets", actual_value: 50000 },
+        { item_key: "home_loans", actual_value: 9000000 },
+        { item_key: "car_loans", actual_value: 250000 },
+        { item_key: "other_liabilities", actual_value: 127700 },
+      ],
+    );
+
+    const rollingService = new RollingProjectionService(versioning as never, salary, fixedService, source);
+    const preview = await rollingService.createRollingProjectionPreview({});
+
+    const firstCash = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "cash");
+    const firstMutualFunds = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "mutual_funds");
+    const firstStocks = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "stocks");
+    const firstPpf = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "ppf");
+    const firstLiabilities = preview.monthlyPositionRows.find((row) => row.month_key === "2026-08" && row.bucket_key === "liabilities");
+
+    expect(firstCash?.opening_value).toBe(155555);
+    expect(firstMutualFunds?.opening_value).toBe(497285);
+    expect(firstStocks?.opening_value).toBe(335600);
+    expect(firstPpf?.opening_value).toBe(1061689);
+    expect(firstLiabilities?.opening_value).toBe(9377700);
+  });
+
   it("carries one-time outflows from goals and events into preview assumptions", async () => {
     const versioning = new InMemoryProjectionVersioningService();
     const salary = new SalaryProjectionService();
