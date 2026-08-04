@@ -544,6 +544,9 @@ export class FixedProjectionService {
         DEFAULT_EPF_TRANSFER_TO_CASH_AFTER_RETIREMENT_YEARS * 12 + 1,
       )
       : null;
+    const npsSplitMonth = assumptions.salary.retirementMonth
+      ? addMonthsToMonthKey(assumptions.salary.retirementMonth, 1)
+      : null;
     const eligibleDrawdownOrder = eventDrawdownOrder.filter((bucketKey): bucketKey is "cash" | "mutual_funds" | "ppf" | "epf" => (
       bucketKey === "cash"
       || bucketKey === "mutual_funds"
@@ -566,6 +569,8 @@ export class FixedProjectionService {
     let npsOpen = roundCurrency(openingBalances.nps);
     let nonFinancialOpen = roundCurrency(openingBalances.property + openingBalances.gold + openingBalances.otherNonFinancialAssets);
     let liabilitiesOpen = roundCurrency(openingBalances.liabilities);
+    let npsSplitExecuted = false;
+    let trackedNpsAnnuityCorpus = 0;
 
     const mutualFundsRate = annualPercentToMonthlyRate(assumptions.returns.mutualFundsAnnualReturnPercent);
     const stocksRate = annualPercentToMonthlyRate(assumptions.returns.stocksAnnualReturnPercent);
@@ -596,9 +601,11 @@ export class FixedProjectionService {
       const epfEmployeeContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.epfEmployeeContributionRate / 100));
       const epfEmployerContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.epfEmployerContributionRate / 100));
       const epfContribution = roundCurrency(epfEmployeeContribution + epfEmployerContribution);
-      const npsEmployeeContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.npsContributionRate / 100));
-      const npsContribution = npsEmployeeContribution;
       const salaryLinkedSipActive = salaryPoint.is_salary_active;
+      const npsEmployeeContribution = salaryLinkedSipActive
+        ? roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.npsContributionRate / 100))
+        : 0;
+      const npsContribution = npsEmployeeContribution;
       const mutualFundsContribution = salaryLinkedSipActive ? roundCurrency(assumptions.contributions.mutualFundsMonthlySip) : 0;
       const stocksContribution = salaryLinkedSipActive ? roundCurrency(assumptions.contributions.stocksMonthlySip ?? 0) : 0;
 
@@ -638,7 +645,47 @@ export class FixedProjectionService {
       const epfTransferredToCash = epfTransferMonth === monthKey && epfOpen > 0;
       const epfTransferAmount = epfTransferredToCash ? epfOpen : 0;
 
-      const cashContribution = roundCurrency(monthlySurplusOrDeficit + epfTransferAmount);
+      const npsSplitEligible = Boolean(
+        npsSplitMonth
+        && retired
+        && !npsSplitExecuted
+        && isMonthBeforeOrEqual(npsSplitMonth, monthKey),
+      );
+
+      let npsGrowth = 0;
+      let npsWithdrawal = 0;
+      let npsLumpSumAmount = 0;
+      let npsAnnuityCorpus = trackedNpsAnnuityCorpus;
+      let npsSplitApplied = false;
+
+      if (npsSplitEligible) {
+        const splitCorpus = roundCurrency(nonNegative(npsOpen + npsContribution));
+        npsLumpSumAmount = roundCurrency(splitCorpus * (npsSplitPolicy.lumpsumPercent / 100));
+        npsAnnuityCorpus = roundCurrency(splitCorpus - npsLumpSumAmount);
+        npsWithdrawal = npsLumpSumAmount;
+        npsSplitApplied = true;
+        npsSplitExecuted = true;
+        trackedNpsAnnuityCorpus = npsAnnuityCorpus;
+      } else if (!npsSplitExecuted) {
+        npsGrowth = roundCurrency(npsOpen * npsRate);
+      }
+
+      const npsClose = npsSplitExecuted
+        ? roundCurrency(nonNegative(npsAnnuityCorpus))
+        : roundCurrency(nonNegative(npsOpen + npsContribution + npsGrowth - npsWithdrawal));
+
+      const npsSplitMetadata = {
+        npsSplitApplied,
+        npsSplitMonth,
+        npsLumpSumPercent: npsSplitPolicy.lumpsumPercent,
+        npsAnnuityPercent: npsSplitPolicy.annuityPercent,
+        npsLumpSumAmount,
+        npsAnnuityCorpus,
+        npsLumpSumTransferredToCash: npsLumpSumAmount > 0,
+        npsAnnuityIncomeDeferred: npsSplitExecuted,
+      };
+
+      const cashContribution = roundCurrency(monthlySurplusOrDeficit + epfTransferAmount + npsLumpSumAmount);
       const cashGrowth = 0;
       const cashWithdrawal = roundCurrency(eventDrawdownCash);
       const cashClose = roundCurrency(nonNegative(cashOpen + cashContribution - cashWithdrawal));
@@ -658,10 +705,6 @@ export class FixedProjectionService {
       const ppfGrowth = roundCurrency(ppfOpen * ppfRate);
       const ppfWithdrawal = roundCurrency(eventDrawdownPpf);
       const ppfClose = roundCurrency(nonNegative(ppfOpen + ppfContribution + ppfGrowth - ppfWithdrawal));
-
-      const npsGrowth = roundCurrency(npsOpen * npsRate);
-      const npsWithdrawal = 0;
-      const npsClose = roundCurrency(nonNegative(npsOpen + npsContribution + npsGrowth - npsWithdrawal));
 
       const monthOutflows = oneTimeOutflowsByMonth.get(monthKey) ?? [];
       const oneTimeOutflowAmount = roundCurrency(monthOutflows.reduce((sum, outflow) => sum + outflow.amount, 0));
@@ -796,6 +839,7 @@ export class FixedProjectionService {
             epfTransferAmount,
             epfTransferMonth,
             salaryLinkedSipActive,
+            ...npsSplitMetadata,
             ...outflowMetadata,
             expenseInflationAppliedPercent: annualExpenseInflationPercent,
             expenseReductionPercentAfterRetirement: postRetirementExpenseReductionPercent,
@@ -889,6 +933,7 @@ export class FixedProjectionService {
             contributionRatePercent: assumptions.contributions.npsContributionRate,
             employeeContributionAmount: npsEmployeeContribution,
             splitPolicy: npsSplitPolicy,
+            ...npsSplitMetadata,
             ...outflowMetadata,
             annuityIncomeTodo: "Model annuity income stream from NPS annuity allocation.",
           },

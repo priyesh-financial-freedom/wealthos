@@ -541,6 +541,202 @@ describe("FixedProjectionService", () => {
     expect(julyNps.contribution).toBeGreaterThan(0);
     expect(augustNps.contribution).toBe(0);
     expect(septemberNps.contribution).toBe(0);
+
+    expect(julyNps.metadata.npsSplitApplied).toBe(false);
+    expect(augustNps.metadata.npsSplitApplied).toBe(true);
+    expect(septemberNps.metadata.npsSplitApplied).toBe(false);
+    expect(augustNps.metadata.npsSplitMonth).toBe("2032-08");
+    expect(augustNps.metadata.npsLumpSumPercent).toBe(50);
+    expect(augustNps.metadata.npsAnnuityPercent).toBe(50);
+    expect(augustNps.metadata.npsLumpSumAmount).toBeGreaterThan(0);
+    expect(augustNps.metadata.npsAnnuityCorpus).toBeGreaterThan(0);
+    expect(augustNps.metadata.npsLumpSumTransferredToCash).toBe(true);
+    expect(augustNps.metadata.npsAnnuityIncomeDeferred).toBe(true);
+    expect(augustNps.withdrawal).toBe(augustNps.metadata.npsLumpSumAmount);
+    expect(augustNps.closing_value).toBe(augustNps.metadata.npsAnnuityCorpus);
+    expect(septemberNps.opening_value).toBe(augustNps.closing_value);
+    expect(septemberNps.growth).toBe(0);
+    expect(septemberNps.closing_value).toBe(augustNps.closing_value);
+
+    expect(augustCash.metadata.npsSplitApplied).toBe(true);
+    expect(augustCash.metadata.npsSplitMonth).toBe("2032-08");
+    expect(augustCash.metadata.npsLumpSumPercent).toBe(50);
+    expect(augustCash.metadata.npsAnnuityPercent).toBe(50);
+    expect(augustCash.metadata.npsLumpSumAmount).toBe(augustNps.metadata.npsLumpSumAmount);
+    expect(augustCash.metadata.npsAnnuityCorpus).toBe(augustNps.metadata.npsAnnuityCorpus);
+    expect(augustCash.metadata.npsLumpSumTransferredToCash).toBe(true);
+    expect(augustCash.metadata.npsAnnuityIncomeDeferred).toBe(true);
+
+    const expectedAugCashContribution =
+      Number(augustCash.metadata.monthlySurplusOrDeficit)
+      + Number(augustCash.metadata.epfTransferAmount)
+      + Number(augustCash.metadata.npsLumpSumAmount);
+    expect(augustCash.contribution).toBeCloseTo(expectedAugCashContribution, 2);
+  });
+
+  it("keeps net worth unchanged by NPS split because lump sum and annuity corpus are asset reclassification only", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2032-07",
+      horizonEndMonth: "2032-09",
+      openingBalances: {
+        cash: 100000,
+        mutualFunds: 0,
+        stocks: 0,
+        epf: 0,
+        ppf: 0,
+        nps: 200000,
+        property: 0,
+        gold: 0,
+        otherNonFinancialAssets: 0,
+        liabilities: 0,
+      },
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 0,
+          currentNetSalary: 0,
+          currentBasicSalary: 0,
+          retirementMonth: "2032-07",
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 0,
+          stocksMonthlySip: 0,
+          epfEmployeeContributionRate: 0,
+          epfEmployerContributionRate: 0,
+          npsContributionRate: 0,
+          ppfMonthlyContributionPriyesh: 0,
+          ppfAnnualContributionShobhana: 0,
+        },
+        returns: {
+          ...buildInput().assumptions.returns,
+          cashAnnualReturnPercent: 0,
+          mutualFundsAnnualReturnPercent: 0,
+          stocksAnnualReturnPercent: 0,
+          epfAnnualReturnPercent: 0,
+          ppfAnnualReturnPercent: 0,
+          npsAnnualReturnPercent: 0,
+          nonFinancialAnnualReturnPercent: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 0,
+          monthlyEmi: 0,
+          monthlyInsurancePremium: 0,
+          monthlyOtherRecurringCommitments: 0,
+          annualExpenseInflationPercent: 0,
+          postRetirementExpenseReductionPercent: 0,
+        },
+        liabilitiesMonthlyRepayment: 0,
+      },
+    }));
+
+    const julyNps = findPosition(result.monthlyPositions, "2032-07", "nps");
+    const augustNps = findPosition(result.monthlyPositions, "2032-08", "nps");
+    const septemberNps = findPosition(result.monthlyPositions, "2032-09", "nps");
+    const julyCash = findPosition(result.monthlyPositions, "2032-07", "cash");
+    const augustCash = findPosition(result.monthlyPositions, "2032-08", "cash");
+    const julyNetWorth = findPosition(result.monthlyPositions, "2032-07", "net_worth");
+    const augustNetWorth = findPosition(result.monthlyPositions, "2032-08", "net_worth");
+    const septemberNetWorth = findPosition(result.monthlyPositions, "2032-09", "net_worth");
+
+    expect(julyNps.closing_value).toBe(200000);
+    expect(augustNps.metadata.npsSplitApplied).toBe(true);
+    expect(augustNps.withdrawal).toBe(100000);
+    expect(augustNps.closing_value).toBe(100000);
+    expect(septemberNps.opening_value).toBe(100000);
+    expect(septemberNps.closing_value).toBe(100000);
+    expect(septemberNps.growth).toBe(0);
+
+    expect(julyCash.closing_value).toBe(100000);
+    expect(augustCash.closing_value).toBe(200000);
+    expect(augustCash.metadata.npsLumpSumAmount).toBe(100000);
+
+    expect(julyNetWorth.closing_value).toBe(300000);
+    expect(augustNetWorth.closing_value).toBe(300000);
+    expect(septemberNetWorth.closing_value).toBe(300000);
+  });
+
+  it("applies custom NPS split policy percentages in the first post-retirement month", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2032-07",
+      horizonEndMonth: "2032-08",
+      openingBalances: {
+        cash: 0,
+        mutualFunds: 0,
+        stocks: 0,
+        epf: 0,
+        ppf: 0,
+        nps: 200000,
+        property: 0,
+        gold: 0,
+        otherNonFinancialAssets: 0,
+        liabilities: 0,
+      },
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 0,
+          currentNetSalary: 0,
+          currentBasicSalary: 0,
+          retirementMonth: "2032-07",
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 0,
+          stocksMonthlySip: 0,
+          epfEmployeeContributionRate: 0,
+          epfEmployerContributionRate: 0,
+          npsContributionRate: 0,
+          ppfMonthlyContributionPriyesh: 0,
+          ppfAnnualContributionShobhana: 0,
+        },
+        returns: {
+          ...buildInput().assumptions.returns,
+          cashAnnualReturnPercent: 0,
+          mutualFundsAnnualReturnPercent: 0,
+          stocksAnnualReturnPercent: 0,
+          epfAnnualReturnPercent: 0,
+          ppfAnnualReturnPercent: 0,
+          npsAnnualReturnPercent: 0,
+          nonFinancialAnnualReturnPercent: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 0,
+          monthlyEmi: 0,
+          monthlyInsurancePremium: 0,
+          monthlyOtherRecurringCommitments: 0,
+          annualExpenseInflationPercent: 0,
+          postRetirementExpenseReductionPercent: 0,
+        },
+        liabilitiesMonthlyRepayment: 0,
+        npsSplitPolicy: {
+          lumpsumPercent: 60,
+          annuityPercent: 40,
+        },
+      },
+    }));
+
+    const augustNps = findPosition(result.monthlyPositions, "2032-08", "nps");
+    const augustCash = findPosition(result.monthlyPositions, "2032-08", "cash");
+
+    expect(augustNps.metadata.npsSplitApplied).toBe(true);
+    expect(augustNps.metadata.npsLumpSumPercent).toBe(60);
+    expect(augustNps.metadata.npsAnnuityPercent).toBe(40);
+    expect(augustNps.metadata.npsLumpSumAmount).toBe(120000);
+    expect(augustNps.metadata.npsAnnuityCorpus).toBe(80000);
+    expect(augustNps.closing_value).toBe(80000);
+    expect(augustCash.metadata.npsLumpSumAmount).toBe(120000);
+    expect(augustCash.closing_value).toBe(120000);
   });
 
   it("stops MF and stock SIP from the month after retirement and excludes them from cash outflow", async () => {
