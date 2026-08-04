@@ -127,6 +127,21 @@ function ensureNpsSplitIsValid(policy: FixedProjectionNpsSplitPolicy): void {
   }
 }
 
+function normalizeToMonthKey(value: string, fieldName: string): string {
+  const trimmed = value.trim();
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(trimmed);
+  if (monthMatch) {
+    return `${monthMatch[1]}-${monthMatch[2]}`;
+  }
+
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!dateMatch) {
+    throw new Error(`Invalid ${fieldName} value: ${value}`);
+  }
+
+  return `${dateMatch[1]}-${dateMatch[2]}`;
+}
+
 function asNumber(value: number | string | null | undefined): number {
   const parsed = Number(value ?? 0);
   if (!Number.isFinite(parsed)) {
@@ -242,7 +257,16 @@ class SupabaseRollingProjectionSource implements RollingProjectionSource {
       throw new Error(error.message);
     }
 
-    return (data?.[0] as ProjectionPlanVersionRecord | undefined) ?? null;
+    const row = (data?.[0] as ProjectionPlanVersionRecord | undefined) ?? null;
+    if (!row) {
+      return null;
+    }
+
+    return {
+      ...row,
+      start_month: normalizeToMonthKey(row.start_month, "start_month"),
+      horizon_end_month: normalizeToMonthKey(row.horizon_end_month, "horizon_end_month"),
+    };
   }
 
   async getAssumptionSnapshotByPlanVersionId(planVersionId: string): Promise<ProjectionAssumptionSnapshotRecord | null> {

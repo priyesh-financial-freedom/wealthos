@@ -57,6 +57,21 @@ interface CloseRow {
   close_month: number;
 }
 
+function normalizeToMonthKey(value: string, fieldName: string): string {
+  const trimmed = value.trim();
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(trimmed);
+  if (monthMatch) {
+    return `${monthMatch[1]}-${monthMatch[2]}`;
+  }
+
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!dateMatch) {
+    throw new Error(`Invalid ${fieldName} value: ${value}`);
+  }
+
+  return `${dateMatch[1]}-${dateMatch[2]}`;
+}
+
 function monthFromClose(close: CloseRow): string {
   return `${close.close_year}-${String(close.close_month).padStart(2, "0")}`;
 }
@@ -129,7 +144,16 @@ export class ProjectionReadService {
       throw new Error(error.message);
     }
 
-    return (data?.[0] as ProjectionPlanRow | undefined) ?? null;
+    const row = (data?.[0] as ProjectionPlanRow | undefined) ?? null;
+    if (!row) {
+      return null;
+    }
+
+    return {
+      ...row,
+      start_month: normalizeToMonthKey(row.start_month, "start_month"),
+      horizon_end_month: normalizeToMonthKey(row.horizon_end_month, "horizon_end_month"),
+    };
   }
 
   private async getMonthlyPositionRows(client: any, planVersionId: string): Promise<ProjectionPositionRow[]> {
@@ -144,7 +168,10 @@ export class ProjectionReadService {
       throw new Error(error.message);
     }
 
-    return (data ?? []) as ProjectionPositionRow[];
+    return ((data ?? []) as ProjectionPositionRow[]).map((row) => ({
+      ...row,
+      month_key: normalizeToMonthKey(row.month_key, "month_key"),
+    }));
   }
 
   private async getPlanVersionNoById(client: any, userId: string, planId: string): Promise<number | null> {

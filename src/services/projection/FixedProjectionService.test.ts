@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { SalaryProjectionService } from "./SalaryProjectionService";
 import { FixedProjectionService, type CreateFixedProjectionV1Input, type FixedProjectionBucketKey } from "./FixedProjectionService";
+import { ProjectionVersioningService, monthKeyToDate } from "./versioning/ProjectionVersioningService";
 import type {
+  CreateProjectionAssumptionSnapshotInput,
+  CreateProjectionPlanVersionInput,
+  CreateProjectionRebaseJournalInput,
   ProjectionAssumptionSnapshotRecord,
   ProjectionMonthlyPositionRecord,
   ProjectionPlanVersionRecord,
+  ProjectionRebaseJournalRecord,
   ProjectionSalaryCurveRecord,
   UpsertProjectionMonthlyPositionInput,
   UpsertProjectionSalaryCurveInput,
@@ -149,6 +154,124 @@ class InMemoryProjectionVersioningService {
     if (plan.plan_kind === "FIXED" && plan.status === "LOCKED") {
       throw new Error("LOCKED FIXED projection plans are immutable.");
     }
+  }
+}
+
+class CapturingProjectionVersioningRepository {
+  private idCounter = 1;
+
+  planInput: CreateProjectionPlanVersionInput | null = null;
+
+  salaryRowsInput: UpsertProjectionSalaryCurveInput[] = [];
+
+  monthlyRowsInput: UpsertProjectionMonthlyPositionInput[] = [];
+
+  private plans = new Map<string, ProjectionPlanVersionRecord>();
+
+  async createPlanVersion(input: CreateProjectionPlanVersionInput): Promise<ProjectionPlanVersionRecord> {
+    this.planInput = input;
+    const id = `plan-${this.idCounter++}`;
+    const now = new Date().toISOString();
+    const record: ProjectionPlanVersionRecord = {
+      id,
+      user_id: "user-1",
+      household_id: input.household_id ?? null,
+      plan_kind: input.plan_kind,
+      version_no: input.version_no,
+      status: input.status ?? "DRAFT",
+      start_month: input.start_month,
+      horizon_end_month: input.horizon_end_month,
+      base_close_id: input.base_close_id ?? null,
+      parent_fixed_version_id: input.parent_fixed_version_id ?? null,
+      locked_at: input.locked_at ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
+    this.plans.set(id, record);
+    return record;
+  }
+
+  async getPlanVersionById(id: string): Promise<ProjectionPlanVersionRecord | null> {
+    return this.plans.get(id) ?? null;
+  }
+
+  async updatePlanStatus(
+    id: string,
+    status: ProjectionPlanVersionRecord["status"],
+    lockedAt?: string | null,
+  ): Promise<ProjectionPlanVersionRecord> {
+    const existing = this.plans.get(id);
+    if (!existing) {
+      throw new Error("Projection plan version not found.");
+    }
+
+    const updated = {
+      ...existing,
+      status,
+      locked_at: lockedAt ?? null,
+      updated_at: new Date().toISOString(),
+    };
+    this.plans.set(id, updated);
+    return updated;
+  }
+
+  async upsertAssumptionSnapshot(input: CreateProjectionAssumptionSnapshotInput): Promise<ProjectionAssumptionSnapshotRecord> {
+    return {
+      id: `snapshot-${this.idCounter++}`,
+      projection_plan_version_id: input.projection_plan_version_id,
+      assumption_payload: input.assumption_payload,
+      salary_policy_payload: input.salary_policy_payload,
+      retirement_policy_payload: input.retirement_policy_payload,
+      drawdown_policy_payload: input.drawdown_policy_payload,
+      checksum: input.checksum ?? null,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  async upsertSalaryCurve(rows: UpsertProjectionSalaryCurveInput[]): Promise<ProjectionSalaryCurveRecord[]> {
+    this.salaryRowsInput = rows;
+
+    return rows.map((row) => ({
+      id: `curve-${this.idCounter++}`,
+      projection_plan_version_id: row.projection_plan_version_id,
+      month_key: row.month_key,
+      gross_salary: row.gross_salary,
+      basic_salary: row.basic_salary,
+      salary_growth_rate_used: row.salary_growth_rate_used,
+      source: row.source,
+      created_at: new Date().toISOString(),
+    }));
+  }
+
+  async upsertMonthlyPositions(rows: UpsertProjectionMonthlyPositionInput[]): Promise<ProjectionMonthlyPositionRecord[]> {
+    this.monthlyRowsInput = rows;
+
+    return rows.map((row) => ({
+      id: `position-${this.idCounter++}`,
+      projection_plan_version_id: row.projection_plan_version_id,
+      month_key: row.month_key,
+      bucket_key: row.bucket_key,
+      opening_value: row.opening_value,
+      contribution: row.contribution,
+      growth: row.growth,
+      withdrawal: row.withdrawal,
+      closing_value: row.closing_value,
+      metadata: row.metadata ?? {},
+      created_at: new Date().toISOString(),
+    }));
+  }
+
+  async appendRebaseJournal(input: CreateProjectionRebaseJournalInput): Promise<ProjectionRebaseJournalRecord> {
+    return {
+      id: `rebase-${this.idCounter++}`,
+      rolling_version_id: input.rolling_version_id,
+      parent_fixed_version_id: input.parent_fixed_version_id,
+      rebased_from_close_id: input.rebased_from_close_id,
+      rebased_month: input.rebased_month,
+      prior_rolling_version_id: input.prior_rolling_version_id ?? null,
+      created_at: new Date().toISOString(),
+    };
   }
 }
 
@@ -1385,6 +1508,49 @@ describe("FixedProjectionService", () => {
         },
       },
     }))).rejects.toThrow("NPS split policy is invalid");
+  });
+
+  it("keeps preview month keys as YYYY-MM", () => {
+    const service = new FixedProjectionService(new InMemoryProjectionVersioningService() as never, new SalaryProjectionService());
+
+    const preview = service.createFixedProjectionPreview(buildInput({
+      startMonth: "2056-10",
+      horizonEndMonth: "2056-12",
+    }));
+
+    expect(preview.startMonth).toBe("2056-10");
+    expect(preview.horizonEndMonth).toBe("2056-12");
+    expect(preview.salaryCurveRows.every((row) => /^\d{4}-\d{2}$/.test(row.month_key))).toBe(true);
+    expect(preview.monthlyPositionRows.every((row) => /^\d{4}-\d{2}$/.test(row.month_key))).toBe(true);
+  });
+
+  it("converts YYYY-MM to YYYY-MM-01 only during freeze persistence and succeeds", async () => {
+    const repository = new CapturingProjectionVersioningRepository();
+    const versioningService = new ProjectionVersioningService(repository as never);
+    const service = new FixedProjectionService(versioningService as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2056-10",
+      horizonEndMonth: "2056-12",
+    }));
+
+    expect(repository.planInput?.start_month).toBe("2056-10-01");
+    expect(repository.planInput?.horizon_end_month).toBe("2056-12-01");
+    expect(repository.salaryRowsInput.length).toBeGreaterThan(0);
+    expect(repository.salaryRowsInput.every((row) => /^\d{4}-\d{2}-01$/.test(row.month_key))).toBe(true);
+    expect(repository.monthlyRowsInput.length).toBeGreaterThan(0);
+    expect(repository.monthlyRowsInput.every((row) => /^\d{4}-\d{2}-01$/.test(row.month_key))).toBe(true);
+
+    expect(result.planVersion.status).toBe("LOCKED");
+    expect(result.planVersion.start_month).toBe("2056-10");
+    expect(result.planVersion.horizon_end_month).toBe("2056-12");
+    expect(result.salaryCurve.every((row) => /^\d{4}-\d{2}$/.test(row.month_key))).toBe(true);
+    expect(result.monthlyPositions.every((row) => /^\d{4}-\d{2}$/.test(row.month_key))).toBe(true);
+  });
+
+  it("throws a helpful error for invalid month keys in persistence conversion", () => {
+    expect(() => monthKeyToDate("2056-13")).toThrow("Invalid month key \"2056-13\". Expected YYYY-MM.");
+    expect(() => monthKeyToDate("2056/12")).toThrow("Invalid month key \"2056/12\". Expected YYYY-MM.");
   });
 
   it("prevents mutation of locked fixed plans through service-layer immutability", async () => {
