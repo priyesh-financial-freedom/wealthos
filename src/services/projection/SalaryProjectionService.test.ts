@@ -47,7 +47,7 @@ describe("SalaryProjectionService", () => {
     expect(yearTwo?.basic_salary).toBe(48400);
   });
 
-  it("stops salary at and after retirement month", () => {
+  it("keeps salary active through retirement month and stops after retirement month", () => {
     const curve = service.buildMonthlyCurve({
       startMonth: "2026-07",
       endMonth: "2027-03",
@@ -61,14 +61,19 @@ describe("SalaryProjectionService", () => {
 
     const dec = curve.find((row) => row.month_key === "2026-12");
     const jan = curve.find((row) => row.month_key === "2027-01");
+    const feb = curve.find((row) => row.month_key === "2027-02");
     const mar = curve.find((row) => row.month_key === "2027-03");
 
     expect(dec?.is_salary_active).toBe(true);
     expect(dec?.gross_salary).toBeGreaterThan(0);
 
-    expect(jan?.is_salary_active).toBe(false);
-    expect(jan?.gross_salary).toBe(0);
-    expect(jan?.basic_salary).toBe(0);
+    expect(jan?.is_salary_active).toBe(true);
+    expect(jan?.gross_salary).toBeGreaterThan(0);
+    expect(jan?.basic_salary).toBeGreaterThan(0);
+
+    expect(feb?.is_salary_active).toBe(false);
+    expect(feb?.gross_salary).toBe(0);
+    expect(feb?.basic_salary).toBe(0);
 
     expect(mar?.is_salary_active).toBe(false);
     expect(mar?.gross_salary).toBe(0);

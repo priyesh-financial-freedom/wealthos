@@ -362,9 +362,11 @@ describe("FixedProjectionService", () => {
 
     const julyCash = findPosition(result.monthlyPositions, "2026-07", "cash");
     const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
+    const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
 
     expect(julyCash.metadata.expenseApplied).toBe(40000);
-    expect(augustCash.metadata.expenseApplied).toBe(32000);
+    expect(augustCash.metadata.expenseApplied).toBe(40000);
+    expect(septemberCash.metadata.expenseApplied).toBe(32000);
     expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(20);
   });
 
@@ -386,8 +388,8 @@ describe("FixedProjectionService", () => {
       },
     }));
 
-    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
-    expect(augustCash.metadata.expenseApplied).toBe(30000);
+    const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
+    expect(septemberCash.metadata.expenseApplied).toBe(30000);
     expect(result.assumptionSnapshot.retirement_policy_payload.postRetirementExpenseReductionPercent).toBe(25);
   });
 
@@ -415,7 +417,7 @@ describe("FixedProjectionService", () => {
     const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
 
     expect(julyCash.metadata.expenseApplied).toBe(40000);
-    expect(augustCash.metadata.expenseApplied).toBe(32320);
+    expect(augustCash.metadata.expenseApplied).toBe(40400);
     expect(septemberCash.metadata.expenseApplied).toBe(32643.2);
   });
 
@@ -460,8 +462,8 @@ describe("FixedProjectionService", () => {
       },
     }));
 
-    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
-    expect(augustCash.metadata.expenseApplied).toBe(40000);
+    const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
+    expect(septemberCash.metadata.expenseApplied).toBe(40000);
   });
 
   it("treats 100 percent reduction as zero post-retirement expense", async () => {
@@ -482,8 +484,59 @@ describe("FixedProjectionService", () => {
       },
     }));
 
-    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
-    expect(augustCash.metadata.expenseApplied).toBe(0);
+    const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
+    expect(septemberCash.metadata.expenseApplied).toBe(0);
+  });
+
+  it("keeps salary, EPF, and NPS contributions active through retirement month and stops them from the next month", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2032-06",
+      horizonEndMonth: "2032-09",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2032-07",
+        },
+      },
+    }));
+
+    const juneCash = findPosition(result.monthlyPositions, "2032-06", "cash");
+    const julyCash = findPosition(result.monthlyPositions, "2032-07", "cash");
+    const augustCash = findPosition(result.monthlyPositions, "2032-08", "cash");
+    const septemberCash = findPosition(result.monthlyPositions, "2032-09", "cash");
+
+    expect((juneCash.metadata.salaryIncomeFromCommonCurve as number) > 0).toBe(true);
+    expect((julyCash.metadata.salaryIncomeFromCommonCurve as number) > 0).toBe(true);
+    expect(juneCash.metadata.retired).toBe(false);
+    expect(julyCash.metadata.retired).toBe(false);
+    expect((augustCash.metadata.salaryIncomeFromCommonCurve as number) === 0).toBe(true);
+    expect((septemberCash.metadata.salaryIncomeFromCommonCurve as number) === 0).toBe(true);
+    expect(augustCash.metadata.retired).toBe(true);
+    expect(septemberCash.metadata.retired).toBe(true);
+
+    const juneEpf = findPosition(result.monthlyPositions, "2032-06", "epf");
+    const julyEpf = findPosition(result.monthlyPositions, "2032-07", "epf");
+    const augustEpf = findPosition(result.monthlyPositions, "2032-08", "epf");
+    const septemberEpf = findPosition(result.monthlyPositions, "2032-09", "epf");
+
+    expect(juneEpf.contribution).toBeGreaterThan(0);
+    expect(julyEpf.contribution).toBeGreaterThan(0);
+    expect(augustEpf.contribution).toBe(0);
+    expect(septemberEpf.contribution).toBe(0);
+
+    const juneNps = findPosition(result.monthlyPositions, "2032-06", "nps");
+    const julyNps = findPosition(result.monthlyPositions, "2032-07", "nps");
+    const augustNps = findPosition(result.monthlyPositions, "2032-08", "nps");
+    const septemberNps = findPosition(result.monthlyPositions, "2032-09", "nps");
+
+    expect(juneNps.contribution).toBeGreaterThan(0);
+    expect(julyNps.contribution).toBeGreaterThan(0);
+    expect(augustNps.contribution).toBe(0);
+    expect(septemberNps.contribution).toBe(0);
   });
 
   it("rejects invalid post-retirement expense reduction below 0 or above 100", async () => {

@@ -95,7 +95,7 @@ function isRetired(cursor: MonthStamp, retirement: MonthStamp | null): boolean {
     return false;
   }
 
-  return compareMonth(cursor, retirement) >= 0;
+  return compareMonth(cursor, retirement) > 0;
 }
 
 function assertValidInput(input: SalaryProjectionInput): void {
