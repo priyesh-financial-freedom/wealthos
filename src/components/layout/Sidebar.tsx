@@ -11,6 +11,7 @@ import {
   CreditCard,
   Target,
   House,
+  LayoutDashboard,
   Landmark,
   PiggyBank,
   ReceiptText,
@@ -93,6 +94,7 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
     setExpandedGroup((current) => (current === group ? null : group));
   }
 
+  const dashboardActive = activeHref === "/dashboard";
   const planningActive =
     activeHref === "/planning" ||
     activeHref.startsWith("/planning/") ||
@@ -142,6 +144,13 @@ export function Sidebar({ activeHref, collapsed }: SidebarProps) {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-2">
+          <div className={rowWrapClass(1)}>
+            <Link href="/dashboard" className={rowLinkClass({ active: dashboardActive, level: 1, collapsed })}>
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="truncate">Dashboard</span> : null}
+            </Link>
+          </div>
+
           <div className="space-y-1">
             <div className={rowWrapClass(1)}>
               <div className="flex items-center gap-2">
