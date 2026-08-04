@@ -94,6 +94,16 @@ export interface FixedProjectionNpsSplitPolicy {
   postRetirementExpenseReductionPercent?: number;
 }
 
+export interface FixedProjectionOneTimeOutflow {
+  id?: string;
+  name: string;
+  month: string;
+  amount: number;
+  category?: string;
+  beneficiary?: string;
+  source?: string;
+}
+
 export interface FixedProjectionAssumptions {
   salary: FixedProjectionSalaryAssumptions;
   contributions: FixedProjectionContributionAssumptions;
@@ -112,6 +122,7 @@ export interface CreateFixedProjectionV1Input {
   horizonEndMonth?: string;
   openingBalances: FixedProjectionOpeningBalances;
   assumptions: FixedProjectionAssumptions;
+  oneTimeOutflows?: FixedProjectionOneTimeOutflow[];
 }
 
 export interface CreateFixedProjectionV1Result {
@@ -288,6 +299,7 @@ export class FixedProjectionService {
     );
 
     const eventDrawdownOrder = input.assumptions.eventDrawdownOrder ?? DEFAULT_EVENT_DRAWDOWN_ORDER;
+    const oneTimeOutflows = input.oneTimeOutflows ?? [];
 
     const assumptionSnapshotInput: Omit<CreateProjectionAssumptionSnapshotInput, "projection_plan_version_id"> = {
       assumption_payload: {
@@ -305,6 +317,7 @@ export class FixedProjectionService {
           annualExpenseInflationPercent,
           postRetirementExpenseReductionPercent,
         },
+        oneTimeOutflows,
       },
       salary_policy_payload: {
         source: "COMMON_SALARY_CURVE",
@@ -356,6 +369,7 @@ export class FixedProjectionService {
       salaryCurve: salaryCurveRows,
       openingBalances: input.openingBalances,
       assumptions: input.assumptions,
+      oneTimeOutflows,
       postRetirementExpenseReductionPercent,
       annualExpenseInflationPercent,
       eventDrawdownOrder,
@@ -478,6 +492,14 @@ export class FixedProjectionService {
       [expenses.monthlyOtherRecurringCommitments ?? 0, "expenses.monthlyOtherRecurringCommitments"],
     ];
 
+    for (const [index, outflow] of (input.oneTimeOutflows ?? []).entries()) {
+      toFiniteNumber(outflow.amount, `oneTimeOutflows[${index}].amount`);
+      if (!outflow.name.trim()) {
+        throw new Error(`oneTimeOutflows[${index}].name is required.`);
+      }
+      parseMonthKey(outflow.month);
+    }
+
     for (const [value, fieldName] of checks) {
       toFiniteNumber(value, fieldName);
     }
@@ -490,6 +512,7 @@ export class FixedProjectionService {
     salaryCurve: SalaryProjectionPoint[];
     openingBalances: FixedProjectionOpeningBalances;
     assumptions: FixedProjectionAssumptions;
+    oneTimeOutflows: FixedProjectionOneTimeOutflow[];
     postRetirementExpenseReductionPercent: number;
     eventDrawdownOrder: FixedProjectionBucketKey[];
     npsSplitPolicy: FixedProjectionNpsSplitPolicy;
@@ -502,6 +525,7 @@ export class FixedProjectionService {
       salaryCurve,
       openingBalances,
       assumptions,
+      oneTimeOutflows,
       postRetirementExpenseReductionPercent,
       eventDrawdownOrder,
       npsSplitPolicy,
@@ -520,6 +544,19 @@ export class FixedProjectionService {
         DEFAULT_EPF_TRANSFER_TO_CASH_AFTER_RETIREMENT_YEARS * 12 + 1,
       )
       : null;
+    const eligibleDrawdownOrder = eventDrawdownOrder.filter((bucketKey): bucketKey is "cash" | "mutual_funds" | "ppf" | "epf" => (
+      bucketKey === "cash"
+      || bucketKey === "mutual_funds"
+      || bucketKey === "ppf"
+      || bucketKey === "epf"
+    ));
+    const oneTimeOutflowRows = oneTimeOutflows ?? [];
+    const oneTimeOutflowsByMonth = new Map<string, FixedProjectionOneTimeOutflow[]>();
+    for (const outflow of oneTimeOutflowRows) {
+      const monthOutflows = oneTimeOutflowsByMonth.get(outflow.month) ?? [];
+      monthOutflows.push(outflow);
+      oneTimeOutflowsByMonth.set(outflow.month, monthOutflows);
+    }
 
     let cashOpen = roundCurrency(openingBalances.cash);
     let mutualFundsOpen = roundCurrency(openingBalances.mutualFunds);
@@ -561,8 +598,9 @@ export class FixedProjectionService {
       const epfContribution = roundCurrency(epfEmployeeContribution + epfEmployerContribution);
       const npsEmployeeContribution = roundCurrency(salaryPoint.basic_salary * (assumptions.contributions.npsContributionRate / 100));
       const npsContribution = npsEmployeeContribution;
-      const mutualFundsContribution = roundCurrency(assumptions.contributions.mutualFundsMonthlySip);
-      const stocksContribution = roundCurrency(assumptions.contributions.stocksMonthlySip ?? 0);
+      const salaryLinkedSipActive = salaryPoint.is_salary_active;
+      const mutualFundsContribution = salaryLinkedSipActive ? roundCurrency(assumptions.contributions.mutualFundsMonthlySip) : 0;
+      const stocksContribution = salaryLinkedSipActive ? roundCurrency(assumptions.contributions.stocksMonthlySip ?? 0) : 0;
 
       const ppfMonthlyContribution = roundCurrency(assumptions.contributions.ppfMonthlyContributionPriyesh);
       const annualContributionMonth = assumptions.contributions.ppfAnnualContributionMonth ?? DEFAULT_PPF_ANNUAL_CONTRIBUTION_MONTH;
@@ -625,11 +663,80 @@ export class FixedProjectionService {
       const npsWithdrawal = 0;
       const npsClose = roundCurrency(nonNegative(npsOpen + npsContribution + npsGrowth - npsWithdrawal));
 
+      const monthOutflows = oneTimeOutflowsByMonth.get(monthKey) ?? [];
+      const oneTimeOutflowAmount = roundCurrency(monthOutflows.reduce((sum, outflow) => sum + outflow.amount, 0));
+      const oneTimeOutflowNames = monthOutflows.map((outflow) => outflow.name);
+
+      let cashCloseAfterEvents = cashClose;
+      let mutualFundsCloseAfterEvents = mutualFundsClose;
+      let ppfCloseAfterEvents = ppfClose;
+      let epfCloseAfterEvents = epfClose;
+      let cashEventWithdrawal = 0;
+      let mutualFundsEventWithdrawal = 0;
+      let ppfEventWithdrawal = 0;
+      let epfEventWithdrawal = 0;
+      let remainingOutflowToFund = oneTimeOutflowAmount;
+      const drawdownSources: Array<{ bucketKey: "cash" | "mutual_funds" | "ppf" | "epf"; amount: number }> = [];
+
+      for (const bucketKey of eligibleDrawdownOrder) {
+        if (remainingOutflowToFund <= 0) {
+          break;
+        }
+
+        if (bucketKey === "cash") {
+          const fundedAmount = roundCurrency(Math.min(remainingOutflowToFund, cashCloseAfterEvents));
+          cashCloseAfterEvents = roundCurrency(cashCloseAfterEvents - fundedAmount);
+          cashEventWithdrawal = roundCurrency(cashEventWithdrawal + fundedAmount);
+          remainingOutflowToFund = roundCurrency(remainingOutflowToFund - fundedAmount);
+          if (fundedAmount > 0) {
+            drawdownSources.push({ bucketKey, amount: fundedAmount });
+          }
+          continue;
+        }
+
+        if (bucketKey === "mutual_funds") {
+          const fundedAmount = roundCurrency(Math.min(remainingOutflowToFund, mutualFundsCloseAfterEvents));
+          mutualFundsCloseAfterEvents = roundCurrency(mutualFundsCloseAfterEvents - fundedAmount);
+          mutualFundsEventWithdrawal = roundCurrency(mutualFundsEventWithdrawal + fundedAmount);
+          remainingOutflowToFund = roundCurrency(remainingOutflowToFund - fundedAmount);
+          if (fundedAmount > 0) {
+            drawdownSources.push({ bucketKey, amount: fundedAmount });
+          }
+          continue;
+        }
+
+        if (bucketKey === "ppf") {
+          const fundedAmount = roundCurrency(Math.min(remainingOutflowToFund, ppfCloseAfterEvents));
+          ppfCloseAfterEvents = roundCurrency(ppfCloseAfterEvents - fundedAmount);
+          ppfEventWithdrawal = roundCurrency(ppfEventWithdrawal + fundedAmount);
+          remainingOutflowToFund = roundCurrency(remainingOutflowToFund - fundedAmount);
+          if (fundedAmount > 0) {
+            drawdownSources.push({ bucketKey, amount: fundedAmount });
+          }
+          continue;
+        }
+
+        const fundedAmount = roundCurrency(Math.min(remainingOutflowToFund, epfCloseAfterEvents));
+        epfCloseAfterEvents = roundCurrency(epfCloseAfterEvents - fundedAmount);
+        epfEventWithdrawal = roundCurrency(epfEventWithdrawal + fundedAmount);
+        remainingOutflowToFund = roundCurrency(remainingOutflowToFund - fundedAmount);
+        if (fundedAmount > 0) {
+          drawdownSources.push({ bucketKey, amount: fundedAmount });
+        }
+      }
+
+      const drawdownApplied = roundCurrency(oneTimeOutflowAmount - remainingOutflowToFund);
+      const unfundedOutflowAmount = roundCurrency(remainingOutflowToFund);
+      const totalCashWithdrawal = roundCurrency(cashWithdrawal + cashEventWithdrawal);
+      const totalMutualFundsWithdrawal = roundCurrency(mutualFundsWithdrawal + mutualFundsEventWithdrawal);
+      const totalPpfWithdrawal = roundCurrency(ppfWithdrawal + ppfEventWithdrawal);
+      const totalEpfWithdrawal = roundCurrency(epfWithdrawal + epfEventWithdrawal);
+
       const financialOpen = roundCurrency(cashOpen + mutualFundsOpen + stocksOpen + epfOpen + ppfOpen + npsOpen);
       const financialContribution = roundCurrency(monthlySurplusOrDeficit + mutualFundsContribution + stocksContribution + epfContribution + ppfContribution + npsContribution);
       const financialGrowth = roundCurrency(cashGrowth + mutualFundsGrowth + stocksGrowth + epfGrowth + ppfGrowth + npsGrowth);
-      const financialWithdrawal = roundCurrency(cashWithdrawal + mutualFundsWithdrawal + stocksWithdrawal + eventDrawdownEpf + ppfWithdrawal + npsWithdrawal);
-      const financialClose = roundCurrency(cashClose + mutualFundsClose + stocksClose + epfClose + ppfClose + npsClose);
+      const financialWithdrawal = roundCurrency(cashEventWithdrawal + mutualFundsEventWithdrawal + stocksWithdrawal + epfEventWithdrawal + ppfEventWithdrawal + npsWithdrawal);
+      const financialClose = roundCurrency(cashCloseAfterEvents + mutualFundsCloseAfterEvents + stocksClose + epfCloseAfterEvents + ppfCloseAfterEvents + npsClose);
 
       const nonFinancialContribution = 0;
       const nonFinancialGrowth = roundCurrency(nonFinancialOpen * nonFinancialRate);
@@ -647,6 +754,14 @@ export class FixedProjectionService {
       const netWorthWithdrawal = roundCurrency(financialWithdrawal + nonFinancialWithdrawal - liabilitiesWithdrawal);
       const netWorthClose = roundCurrency(financialClose + nonFinancialClose - liabilitiesClose);
 
+      const outflowMetadata = {
+        oneTimeOutflowAmount,
+        oneTimeOutflowNames,
+        drawdownApplied,
+        drawdownSources,
+        unfundedOutflowAmount,
+      };
+
       monthlyRows.push(
         {
           projection_plan_version_id: projectionPlanVersionId,
@@ -655,8 +770,8 @@ export class FixedProjectionService {
           opening_value: cashOpen,
           contribution: cashContribution,
           growth: cashGrowth,
-          withdrawal: cashWithdrawal,
-          closing_value: cashClose,
+          withdrawal: totalCashWithdrawal,
+          closing_value: cashCloseAfterEvents,
           metadata: {
             salaryIncomeFromCommonCurve: monthlyIncome,
             salaryIncomeSource: "Compensation net take-home (projected from gross curve using currentNetSalary/currentGrossSalary ratio)",
@@ -680,6 +795,8 @@ export class FixedProjectionService {
             epfTransferredToCash,
             epfTransferAmount,
             epfTransferMonth,
+            salaryLinkedSipActive,
+            ...outflowMetadata,
             expenseInflationAppliedPercent: annualExpenseInflationPercent,
             expenseReductionPercentAfterRetirement: postRetirementExpenseReductionPercent,
             retired,
@@ -692,9 +809,11 @@ export class FixedProjectionService {
           opening_value: mutualFundsOpen,
           contribution: mutualFundsContribution,
           growth: mutualFundsGrowth,
-          withdrawal: mutualFundsWithdrawal,
-          closing_value: mutualFundsClose,
+          withdrawal: totalMutualFundsWithdrawal,
+          closing_value: mutualFundsCloseAfterEvents,
           metadata: {
+            salaryLinkedSipActive,
+            ...outflowMetadata,
             eventDrawdownPlaceholder: true,
           },
         },
@@ -707,7 +826,10 @@ export class FixedProjectionService {
           growth: stocksGrowth,
           withdrawal: stocksWithdrawal,
           closing_value: stocksClose,
-          metadata: {},
+          metadata: {
+            salaryLinkedSipActive,
+            ...outflowMetadata,
+          },
         },
         {
           projection_plan_version_id: projectionPlanVersionId,
@@ -716,8 +838,8 @@ export class FixedProjectionService {
           opening_value: epfOpen,
           contribution: epfContribution,
           growth: epfGrowth,
-          withdrawal: epfWithdrawal,
-          closing_value: epfClose,
+          withdrawal: totalEpfWithdrawal,
+          closing_value: epfCloseAfterEvents,
           metadata: {
             basicSalaryFromCommonCurve: salaryPoint.basic_salary,
             employeeRatePercent: assumptions.contributions.epfEmployeeContributionRate,
@@ -731,6 +853,8 @@ export class FixedProjectionService {
             epfTransferRule: epfTransferMonth
               ? `Transfer at the start of ${epfTransferMonth} after 36 full post-retirement months.`
               : null,
+            salaryLinkedSipActive,
+            ...outflowMetadata,
             eventDrawdownPlaceholder: true,
           },
         },
@@ -741,12 +865,13 @@ export class FixedProjectionService {
           opening_value: ppfOpen,
           contribution: ppfContribution,
           growth: ppfGrowth,
-          withdrawal: ppfWithdrawal,
-          closing_value: ppfClose,
+          withdrawal: totalPpfWithdrawal,
+          closing_value: ppfCloseAfterEvents,
           metadata: {
             priyeshMonthlyContribution: ppfMonthlyContribution,
             shobhanaAnnualContribution: ppfAnnualContribution,
             annualizedReturnPercent: assumptions.returns.ppfAnnualReturnPercent,
+            ...outflowMetadata,
             eventDrawdownPlaceholder: true,
           },
         },
@@ -764,6 +889,7 @@ export class FixedProjectionService {
             contributionRatePercent: assumptions.contributions.npsContributionRate,
             employeeContributionAmount: npsEmployeeContribution,
             splitPolicy: npsSplitPolicy,
+            ...outflowMetadata,
             annuityIncomeTodo: "Model annuity income stream from NPS annuity allocation.",
           },
         },
@@ -780,6 +906,7 @@ export class FixedProjectionService {
             components: ["cash", "mutual_funds", "stocks", "epf", "ppf", "nps"],
             internalTransfersExcludedFromContributionAndWithdrawal: epfTransferAmount > 0,
             epfTransferAmount,
+            ...outflowMetadata,
           },
         },
         {
@@ -796,6 +923,7 @@ export class FixedProjectionService {
             includesGold: true,
             drawdownEligible: false,
             propertyLiquidationAllowed: false,
+            ...outflowMetadata,
           },
         },
         {
@@ -809,6 +937,7 @@ export class FixedProjectionService {
           closing_value: liabilitiesClose,
           metadata: {
             monthlyRepayment: liabilitiesWithdrawal,
+            ...outflowMetadata,
           },
         },
         {
@@ -823,15 +952,16 @@ export class FixedProjectionService {
           metadata: {
             formula: "financial_assets_total + non_financial_assets_total - liabilities",
             drawdownOrder: eventDrawdownOrder,
+            ...outflowMetadata,
           },
         },
       );
 
-      cashOpen = cashClose;
-      mutualFundsOpen = mutualFundsClose;
+      cashOpen = cashCloseAfterEvents;
+      mutualFundsOpen = mutualFundsCloseAfterEvents;
       stocksOpen = stocksClose;
-      epfOpen = epfClose;
-      ppfOpen = ppfClose;
+      epfOpen = epfCloseAfterEvents;
+      ppfOpen = ppfCloseAfterEvents;
       npsOpen = npsClose;
       nonFinancialOpen = nonFinancialClose;
       liabilitiesOpen = liabilitiesClose;

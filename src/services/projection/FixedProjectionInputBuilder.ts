@@ -10,10 +10,12 @@ import {
   type PlanningFamilyProfile,
 } from "@/services/planning/assumptions";
 import type { FixedDeposit } from "@/types/fixedDeposit";
+import type { FinancialGoalWithProgress } from "@/types/financialGoal";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { InsurancePolicy } from "@/types/insurancePolicy";
 import type { Investment } from "@/types/investment";
 import type { Liability } from "@/types/liability";
+import type { FinancialEvent } from "@/types/projection";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
 import type { SilverHolding } from "@/types/silverHolding";
@@ -67,6 +69,8 @@ interface FixedProjectionInputBuilderDependencies {
   getCompensationSummary: () => Promise<CompensationSummary | null>;
   getCashFlowSnapshot: () => Promise<CashFlowSnapshot>;
   getInsurancePolicies: () => Promise<InsurancePolicy[]>;
+  getGoals: () => Promise<FinancialGoalWithProgress[]>;
+  getProjectionEvents: () => Promise<FinancialEvent[]>;
 }
 
 type BuiltField<T> = {
@@ -142,6 +146,14 @@ function buildDefaultDependencies(): FixedProjectionInputBuilderDependencies {
     getInsurancePolicies: async () => {
       const { getInsurancePolicies } = await import("@/services/insurancePolicies");
       return getInsurancePolicies();
+    },
+    getGoals: async () => {
+      const { goalService } = await import("@/services/planning/goals/GoalService");
+      return goalService.listGoals({ includeProgress: false });
+    },
+    getProjectionEvents: async () => {
+      const { projectionEventsService, DEFAULT_PROJECTION_SCENARIO_KEY } = await import("@/services/projection/events");
+      return projectionEventsService.listEvents(DEFAULT_PROJECTION_SCENARIO_KEY);
     },
   };
 }
@@ -227,6 +239,15 @@ function uniqueMessages(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
+function toMonthKeyFromDateString(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const monthKey = value.slice(0, 7);
+  return parseMonthKey(monthKey) ? monthKey : null;
+}
+
 function readOptionalNumericField(record: unknown, keys: string[]): number | null {
   if (!record || typeof record !== "object") {
     return null;
@@ -262,6 +283,8 @@ export class FixedProjectionInputBuilder {
       compensationSummaryResult,
       cashFlowSnapshotResult,
       insurancePoliciesResult,
+      goalsResult,
+      projectionEventsResult,
     ] = await Promise.allSettled([
       this.dependencies.loadProjectionData(),
       this.dependencies.getEffectiveAssumptions(),
@@ -270,6 +293,8 @@ export class FixedProjectionInputBuilder {
       this.dependencies.getCompensationSummary(),
       this.dependencies.getCashFlowSnapshot(),
       this.dependencies.getInsurancePolicies(),
+      this.dependencies.getGoals(),
+      this.dependencies.getProjectionEvents(),
     ]);
 
     const loadedData = loadedDataResult.status === "fulfilled" ? loadedDataResult.value : null;
@@ -279,6 +304,8 @@ export class FixedProjectionInputBuilder {
     const compensationSummary = compensationSummaryResult.status === "fulfilled" ? compensationSummaryResult.value : null;
     const cashFlowSnapshot = cashFlowSnapshotResult.status === "fulfilled" ? cashFlowSnapshotResult.value : null;
     const insurancePolicies = insurancePoliciesResult.status === "fulfilled" ? insurancePoliciesResult.value : [];
+    const goals = goalsResult.status === "fulfilled" ? goalsResult.value : [];
+    const projectionEvents = projectionEventsResult.status === "fulfilled" ? projectionEventsResult.value : [];
 
     const projectionState = loadedData ? planningEntityAggregator.aggregateFromLiveData(loadedData) : null;
     const projectionEntities = projectionState?.projectionEntities ?? [];
@@ -1044,6 +1071,70 @@ export class FixedProjectionInputBuilder {
         defaultUsed: "postRetirementExpenseReductionPercent defaulted from the system retirement expense ratio.",
       };
 
+    const oneTimeOutflows = (() => {
+      const fromGoals = goals
+        .filter((goal) => !goal.is_completed && goal.status !== "COMPLETED" && Number(goal.target_amount ?? 0) > 0)
+        .map((goal) => {
+          const month = toMonthKeyFromDateString(goal.target_date);
+          if (!month) {
+            return null;
+          }
+
+          return {
+            id: goal.id,
+            name: goal.name,
+            month,
+            amount: Number(goal.target_amount ?? 0),
+            category: goal.goal_type,
+            beneficiary: goal.beneficiary ?? undefined,
+            source: goal.funding_source ?? "Goal",
+          };
+        })
+        .filter((outflow): outflow is NonNullable<typeof outflow> => outflow !== null);
+
+      const fromProjectionEvents = projectionEvents
+        .filter((event) => event.isEnabled && Number(event.amount ?? 0) > 0 && (!event.frequency || event.frequency === "one-time"))
+        .map((event) => {
+          const month = toMonthKeyFromDateString(event.date);
+          if (!month) {
+            return null;
+          }
+
+          const metadata = event.metadata ?? {};
+          const beneficiary = typeof metadata.beneficiary === "string" ? metadata.beneficiary : undefined;
+          const source = typeof metadata.source === "string" ? metadata.source : "Financial Event";
+
+          return {
+            id: event.id,
+            name: event.name,
+            month,
+            amount: Number(event.amount ?? 0),
+            category: `${event.module}:${event.type}`,
+            beneficiary,
+            source,
+          };
+        })
+        .filter((outflow): outflow is NonNullable<typeof outflow> => outflow !== null);
+
+      return [...fromGoals, ...fromProjectionEvents].sort((left, right) => {
+        if (left.month === right.month) {
+          return left.name.localeCompare(right.name);
+        }
+
+        return left.month.localeCompare(right.month);
+      });
+    })();
+
+    sourceReport.push({
+      fieldName: "oneTimeOutflows",
+      source: "GoalService active goals + ProjectionEventsService enabled one-time events",
+      status: oneTimeOutflows.length > 0 ? "real" : "missing",
+    });
+
+    if (oneTimeOutflows.length === 0) {
+      warnings.push("No active one-time goals/events available for Fixed Projection.");
+    }
+
     sourceReport.push(
       { fieldName: "versionNo", source: "Initial Fixed Projection workflow version", status: "hardcoded" },
       { fieldName: "householdId", source: "No household lookup is wired in the current builder", status: "missing" },
@@ -1194,6 +1285,7 @@ export class FixedProjectionInputBuilder {
           liabilitiesMonthlyRepayment: monthlyEmi.value ?? 0,
           eventDrawdownOrder: [...DEFAULT_EVENT_DRAWDOWN_ORDER],
         },
+        oneTimeOutflows,
       },
       validation: {
         canPreview,

@@ -406,8 +406,9 @@ export class RollingProjectionService {
       salaryCurve: salaryCurveRows,
       openingBalances,
       assumptions,
+      oneTimeOutflows: [],
       postRetirementExpenseReductionPercent,
-        annualExpenseInflationPercent,
+      annualExpenseInflationPercent,
       eventDrawdownOrder,
       npsSplitPolicy,
     });

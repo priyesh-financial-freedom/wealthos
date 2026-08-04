@@ -447,6 +447,36 @@ export function FixedProjectionWorkflow({
           />
 
           <ContentCard>
+            <h2 className="text-lg font-semibold text-slate-900">Planned One-Time Outflows</h2>
+            {(previewResult.input.oneTimeOutflows ?? []).length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">No one-time goals/events found for this preview.</p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-[720px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-2">Event Month</th>
+                      <th className="px-3 py-2">Event Name</th>
+                      <th className="px-3 py-2">Amount</th>
+                      <th className="px-3 py-2">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(previewResult.input.oneTimeOutflows ?? []).map((outflow) => (
+                      <tr key={`${outflow.id ?? outflow.name}-${outflow.month}-${outflow.amount}`} className="border-b border-slate-100">
+                        <td className="px-3 py-2 font-medium text-slate-900">{outflow.month}</td>
+                        <td className="px-3 py-2 text-slate-700">{outflow.name}</td>
+                        <td className="px-3 py-2 text-slate-700">{formatCurrency(outflow.amount, { maximumFractionDigits: 0 })}</td>
+                        <td className="px-3 py-2 text-slate-700">{outflow.source ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </ContentCard>
+
+          <ContentCard>
             <div className="overflow-x-auto">
               <table className="min-w-[1200px] border-collapse text-sm">
                 <thead>

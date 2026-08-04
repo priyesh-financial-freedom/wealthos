@@ -543,6 +543,64 @@ describe("FixedProjectionService", () => {
     expect(septemberNps.contribution).toBe(0);
   });
 
+  it("stops MF and stock SIP from the month after retirement and excludes them from cash outflow", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2032-06",
+      horizonEndMonth: "2032-09",
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          retirementMonth: "2032-07",
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          annualExpenseInflationPercent: 0,
+          postRetirementExpenseReductionPercent: 0,
+        },
+      },
+    }));
+
+    const juneMutualFunds = findPosition(result.monthlyPositions, "2032-06", "mutual_funds");
+    const julyMutualFunds = findPosition(result.monthlyPositions, "2032-07", "mutual_funds");
+    const augustMutualFunds = findPosition(result.monthlyPositions, "2032-08", "mutual_funds");
+    const septemberMutualFunds = findPosition(result.monthlyPositions, "2032-09", "mutual_funds");
+
+    expect(juneMutualFunds.contribution).toBeGreaterThan(0);
+    expect(julyMutualFunds.contribution).toBeGreaterThan(0);
+    expect(augustMutualFunds.contribution).toBe(0);
+    expect(septemberMutualFunds.contribution).toBe(0);
+
+    const juneStocks = findPosition(result.monthlyPositions, "2032-06", "stocks");
+    const julyStocks = findPosition(result.monthlyPositions, "2032-07", "stocks");
+    const augustStocks = findPosition(result.monthlyPositions, "2032-08", "stocks");
+    const septemberStocks = findPosition(result.monthlyPositions, "2032-09", "stocks");
+
+    expect(juneStocks.contribution).toBeGreaterThan(0);
+    expect(julyStocks.contribution).toBeGreaterThan(0);
+    expect(augustStocks.contribution).toBe(0);
+    expect(septemberStocks.contribution).toBe(0);
+
+    const juneCash = findPosition(result.monthlyPositions, "2032-06", "cash");
+    const julyCash = findPosition(result.monthlyPositions, "2032-07", "cash");
+    const augustCash = findPosition(result.monthlyPositions, "2032-08", "cash");
+    const septemberCash = findPosition(result.monthlyPositions, "2032-09", "cash");
+
+    expect(juneCash.metadata.mutualFundsSipApplied).toBe(20000);
+    expect(juneCash.metadata.stocksSipApplied).toBe(7000);
+    expect(julyCash.metadata.mutualFundsSipApplied).toBe(20000);
+    expect(julyCash.metadata.stocksSipApplied).toBe(7000);
+    expect(augustCash.metadata.mutualFundsSipApplied).toBe(0);
+    expect(augustCash.metadata.stocksSipApplied).toBe(0);
+    expect(septemberCash.metadata.mutualFundsSipApplied).toBe(0);
+    expect(septemberCash.metadata.stocksSipApplied).toBe(0);
+
+    expect(Number(julyCash.metadata.monthlyTotalCashOutflow) - Number(augustCash.metadata.monthlyTotalCashOutflow)).toBe(27000);
+  });
+
   it("transfers EPF to cash in 2035-08, the first month after 36 full post-retirement months from retirement month 2032-07", async () => {
     const versioning = new InMemoryProjectionVersioningService();
     const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
@@ -663,6 +721,205 @@ describe("FixedProjectionService", () => {
     expect(augustEpf.closing_value).toBe(0);
     expect(julyNetWorth.closing_value).toBe(400000);
     expect(augustNetWorth.closing_value).toBe(400000);
+  });
+
+  it("applies one-time outflow drawdown in order cash -> mutual funds -> ppf -> epf with metadata and no repeat", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-09",
+      openingBalances: {
+        cash: 8000,
+        mutualFunds: 10000,
+        stocks: 0,
+        epf: 6000,
+        ppf: 4000,
+        nps: 0,
+        property: 100000,
+        gold: 0,
+        otherNonFinancialAssets: 0,
+        liabilities: 0,
+      },
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 0,
+          currentNetSalary: 0,
+          currentBasicSalary: 0,
+          retirementMonth: "2026-06",
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 0,
+          stocksMonthlySip: 0,
+          epfEmployeeContributionRate: 0,
+          epfEmployerContributionRate: 0,
+          npsContributionRate: 0,
+          ppfMonthlyContributionPriyesh: 0,
+          ppfAnnualContributionShobhana: 0,
+        },
+        returns: {
+          ...buildInput().assumptions.returns,
+          cashAnnualReturnPercent: 0,
+          mutualFundsAnnualReturnPercent: 0,
+          stocksAnnualReturnPercent: 0,
+          epfAnnualReturnPercent: 0,
+          ppfAnnualReturnPercent: 0,
+          npsAnnualReturnPercent: 0,
+          nonFinancialAnnualReturnPercent: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 0,
+          monthlyEmi: 0,
+          monthlyInsurancePremium: 0,
+          monthlyOtherRecurringCommitments: 0,
+          annualExpenseInflationPercent: 0,
+          postRetirementExpenseReductionPercent: 0,
+        },
+        liabilitiesMonthlyRepayment: 0,
+      },
+      oneTimeOutflows: [
+        {
+          id: "goal-1",
+          name: "Home renovation",
+          month: "2026-08",
+          amount: 25000,
+          source: "Goal",
+        },
+      ],
+    }));
+
+    const julyNetWorth = findPosition(result.monthlyPositions, "2026-07", "net_worth");
+    const augustNetWorth = findPosition(result.monthlyPositions, "2026-08", "net_worth");
+    expect(julyNetWorth.closing_value - augustNetWorth.closing_value).toBe(25000);
+
+    const augustCash = findPosition(result.monthlyPositions, "2026-08", "cash");
+    const augustMutualFunds = findPosition(result.monthlyPositions, "2026-08", "mutual_funds");
+    const augustPpf = findPosition(result.monthlyPositions, "2026-08", "ppf");
+    const augustEpf = findPosition(result.monthlyPositions, "2026-08", "epf");
+    const augustNonFinancial = findPosition(result.monthlyPositions, "2026-08", "non_financial_assets_total");
+
+    expect(augustCash.withdrawal).toBe(8000);
+    expect(augustMutualFunds.withdrawal).toBe(10000);
+    expect(augustPpf.withdrawal).toBe(4000);
+    expect(augustEpf.withdrawal).toBe(3000);
+    expect(augustNonFinancial.closing_value).toBe(100000);
+
+    expect(augustCash.metadata.oneTimeOutflowAmount).toBe(25000);
+    expect(augustCash.metadata.oneTimeOutflowNames).toEqual(["Home renovation"]);
+    expect(augustCash.metadata.drawdownApplied).toBe(25000);
+    expect(augustCash.metadata.unfundedOutflowAmount).toBe(0);
+    expect(augustCash.metadata.drawdownSources).toEqual([
+      { bucketKey: "cash", amount: 8000 },
+      { bucketKey: "mutual_funds", amount: 10000 },
+      { bucketKey: "ppf", amount: 4000 },
+      { bucketKey: "epf", amount: 3000 },
+    ]);
+
+    const septemberCash = findPosition(result.monthlyPositions, "2026-09", "cash");
+    const septemberMutualFunds = findPosition(result.monthlyPositions, "2026-09", "mutual_funds");
+    expect(septemberCash.metadata.oneTimeOutflowAmount).toBe(0);
+    expect(septemberCash.withdrawal).toBe(0);
+    expect(septemberMutualFunds.withdrawal).toBe(0);
+  });
+
+  it("reports unfunded one-time outflow amount when cash, mutual funds, ppf, and epf are insufficient", async () => {
+    const versioning = new InMemoryProjectionVersioningService();
+    const service = new FixedProjectionService(versioning as never, new SalaryProjectionService());
+
+    const result = await service.createFixedProjectionV1(buildInput({
+      startMonth: "2026-07",
+      horizonEndMonth: "2026-07",
+      openingBalances: {
+        cash: 1000,
+        mutualFunds: 1000,
+        stocks: 0,
+        epf: 1000,
+        ppf: 1000,
+        nps: 0,
+        property: 50000,
+        gold: 0,
+        otherNonFinancialAssets: 0,
+        liabilities: 0,
+      },
+      assumptions: {
+        ...buildInput().assumptions,
+        salary: {
+          ...buildInput().assumptions.salary,
+          currentGrossSalary: 0,
+          currentNetSalary: 0,
+          currentBasicSalary: 0,
+          retirementMonth: "2026-06",
+        },
+        contributions: {
+          ...buildInput().assumptions.contributions,
+          mutualFundsMonthlySip: 0,
+          stocksMonthlySip: 0,
+          epfEmployeeContributionRate: 0,
+          epfEmployerContributionRate: 0,
+          npsContributionRate: 0,
+          ppfMonthlyContributionPriyesh: 0,
+          ppfAnnualContributionShobhana: 0,
+        },
+        returns: {
+          ...buildInput().assumptions.returns,
+          cashAnnualReturnPercent: 0,
+          mutualFundsAnnualReturnPercent: 0,
+          stocksAnnualReturnPercent: 0,
+          epfAnnualReturnPercent: 0,
+          ppfAnnualReturnPercent: 0,
+          npsAnnualReturnPercent: 0,
+          nonFinancialAnnualReturnPercent: 0,
+        },
+        expenses: {
+          ...buildInput().assumptions.expenses,
+          preRetirementMonthlyExpense: 0,
+          monthlyEmi: 0,
+          monthlyInsurancePremium: 0,
+          monthlyOtherRecurringCommitments: 0,
+          annualExpenseInflationPercent: 0,
+          postRetirementExpenseReductionPercent: 0,
+        },
+        liabilitiesMonthlyRepayment: 0,
+      },
+      oneTimeOutflows: [
+        {
+          id: "event-1",
+          name: "Education payment",
+          month: "2026-07",
+          amount: 10000,
+          source: "Financial Event",
+        },
+      ],
+    }));
+
+    const julyCash = findPosition(result.monthlyPositions, "2026-07", "cash");
+    const julyMutualFunds = findPosition(result.monthlyPositions, "2026-07", "mutual_funds");
+    const julyPpf = findPosition(result.monthlyPositions, "2026-07", "ppf");
+    const julyEpf = findPosition(result.monthlyPositions, "2026-07", "epf");
+    const julyNonFinancial = findPosition(result.monthlyPositions, "2026-07", "non_financial_assets_total");
+    const julyNetWorth = findPosition(result.monthlyPositions, "2026-07", "net_worth");
+
+    expect(julyCash.withdrawal).toBe(1000);
+    expect(julyMutualFunds.withdrawal).toBe(1000);
+    expect(julyPpf.withdrawal).toBe(1000);
+    expect(julyEpf.withdrawal).toBe(1000);
+    expect(julyNonFinancial.closing_value).toBe(50000);
+
+    expect(julyCash.metadata.oneTimeOutflowAmount).toBe(10000);
+    expect(julyCash.metadata.drawdownApplied).toBe(4000);
+    expect(julyCash.metadata.unfundedOutflowAmount).toBe(6000);
+    expect(julyCash.metadata.drawdownSources).toEqual([
+      { bucketKey: "cash", amount: 1000 },
+      { bucketKey: "mutual_funds", amount: 1000 },
+      { bucketKey: "ppf", amount: 1000 },
+      { bucketKey: "epf", amount: 1000 },
+    ]);
+    expect(julyNetWorth.closing_value).toBe(50000);
   });
 
   it("computes monthly surplus as net income minus total monthly cash outflow", async () => {

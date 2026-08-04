@@ -73,6 +73,15 @@ function buildInput(): CreateFixedProjectionV1Input {
       },
       liabilitiesMonthlyRepayment: 10000,
     },
+    oneTimeOutflows: [
+      {
+        id: "event-1",
+        name: "Vehicle purchase",
+        month: "2029-12",
+        amount: 800000,
+        source: "Financial Event",
+      },
+    ],
   };
 }
 
@@ -212,6 +221,9 @@ describe("Planning Fixed Projection Page", () => {
     expect(screen.getByText("Stocks Return %")).toBeTruthy();
     expect(screen.getByText("12%")).toBeTruthy();
     expect(screen.getByText("14%")).toBeTruthy();
+    expect(screen.getByText("Planned One-Time Outflows")).toBeTruthy();
+    expect(screen.getByText("Vehicle purchase")).toBeTruthy();
+    expect(screen.getByText("2029-12")).toBeTruthy();
   });
 
   it("hides freeze when blockers prevent preview and supports discard back to empty state", async () => {

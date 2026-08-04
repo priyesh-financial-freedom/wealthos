@@ -8,6 +8,7 @@ import type { CashFlowSnapshot } from "@/services/cashFlowManagement";
 import type { CompensationSummary } from "@/services/compensation";
 import type { EffectivePlanningAssumptions, PlanningFamilyProfile } from "@/services/planning/assumptions";
 import type { FixedDeposit } from "@/types/fixedDeposit";
+import type { FinancialGoalWithProgress } from "@/types/financialGoal";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment } from "@/types/investment";
 import type { InsurancePolicy } from "@/types/insurancePolicy";
@@ -15,6 +16,7 @@ import type { Liability } from "@/types/liability";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
 import type { SilverHolding } from "@/types/silverHolding";
+import type { FinancialEvent } from "@/types/projection";
 
 import { FixedProjectionInputBuilder } from "./FixedProjectionInputBuilder";
 import { FixedProjectionService } from "./FixedProjectionService";
@@ -667,6 +669,8 @@ function buildDependencies(overrides?: {
   compensationSummary?: CompensationSummary | null;
   cashFlowSnapshot?: CashFlowSnapshot;
   insurancePolicies?: InsurancePolicy[];
+  goals?: FinancialGoalWithProgress[];
+  projectionEvents?: FinancialEvent[];
 }) {
   return {
     loadProjectionData: vi.fn(async () => overrides?.loadedData ?? buildLoadedData()),
@@ -676,6 +680,8 @@ function buildDependencies(overrides?: {
     getCompensationSummary: vi.fn(async () => overrides?.compensationSummary ?? buildCompensationSummary()),
     getCashFlowSnapshot: vi.fn(async () => overrides?.cashFlowSnapshot ?? buildCashFlowSnapshot()),
     getInsurancePolicies: vi.fn(async () => overrides?.insurancePolicies ?? buildInsurancePolicies()),
+    getGoals: vi.fn(async () => overrides?.goals ?? []),
+    getProjectionEvents: vi.fn(async () => overrides?.projectionEvents ?? []),
   };
 }
 
@@ -919,6 +925,130 @@ describe("FixedProjectionInputBuilder", () => {
       "npsSplitPolicy.annuityPercent",
       "epfTransferToCashAfterRetirementYears",
       "propertyLiquidationAllowed",
+      "oneTimeOutflows",
+    ]));
+  });
+
+  it("includes one-time outflows from active goals and enabled one-time projection events", async () => {
+    const builder = new FixedProjectionInputBuilder(buildDependencies({
+      goals: [
+        {
+          id: "goal-1",
+          user_id: "user-1",
+          name: "Priyena marriage",
+          goal_type: "CUSTOM",
+          custom_goal_type: "Marriage",
+          target_amount: 1200000,
+          target_date: "2030-05-10",
+          beneficiary: "Priyena Lal",
+          priority: "HIGH",
+          status: "ON_TRACK",
+          funding_source: "Cash + MF",
+          linked_scenario_id: null,
+          notes: null,
+          is_completed: false,
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          progress: null,
+          linked_scenario_name: null,
+        },
+      ],
+      projectionEvents: [
+        {
+          id: "event-1",
+          module: "cash-flow",
+          type: "one-time-event",
+          name: "Vehicle purchase",
+          amount: 800000,
+          date: "2029-12-15",
+          frequency: "one-time",
+          repeatEveryMonths: null,
+          startsOn: null,
+          endsOn: null,
+          isEnabled: true,
+          metadata: { source: "Financial Events", beneficiary: "Household" },
+        },
+      ],
+    }));
+
+    const result = await builder.buildFixedProjectionInput();
+
+    expect(result.input).not.toBeNull();
+    expect(result.input?.oneTimeOutflows).toEqual([
+      {
+        id: "event-1",
+        name: "Vehicle purchase",
+        month: "2029-12",
+        amount: 800000,
+        category: "cash-flow:one-time-event",
+        beneficiary: "Household",
+        source: "Financial Events",
+      },
+      {
+        id: "goal-1",
+        name: "Priyena marriage",
+        month: "2030-05",
+        amount: 1200000,
+        category: "CUSTOM",
+        beneficiary: "Priyena Lal",
+        source: "Cash + MF",
+      },
+    ]);
+    expect(result.validation.warnings).not.toContain("No active one-time goals/events available for Fixed Projection.");
+    expect(result.sourceReport).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldName: "oneTimeOutflows", status: "real" }),
+    ]));
+  });
+
+  it("warns when no active one-time goals or events are available", async () => {
+    const builder = new FixedProjectionInputBuilder(buildDependencies({
+      goals: [
+        {
+          id: "goal-archived",
+          user_id: "user-1",
+          name: "Completed goal",
+          goal_type: "CUSTOM",
+          custom_goal_type: null,
+          target_amount: 500000,
+          target_date: "2029-01-01",
+          beneficiary: null,
+          priority: "LOW",
+          status: "COMPLETED",
+          funding_source: null,
+          linked_scenario_id: null,
+          notes: null,
+          is_completed: true,
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          progress: null,
+          linked_scenario_name: null,
+        },
+      ],
+      projectionEvents: [
+        {
+          id: "event-recurring",
+          module: "cash-flow",
+          type: "cash-flow",
+          name: "Recurring commitment",
+          amount: 10000,
+          date: "2027-01-01",
+          frequency: "monthly",
+          repeatEveryMonths: null,
+          startsOn: null,
+          endsOn: null,
+          isEnabled: true,
+          metadata: {},
+        },
+      ],
+    }));
+
+    const result = await builder.buildFixedProjectionInput();
+
+    expect(result.input).not.toBeNull();
+    expect(result.input?.oneTimeOutflows).toEqual([]);
+    expect(result.validation.warnings).toContain("No active one-time goals/events available for Fixed Projection.");
+    expect(result.sourceReport).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldName: "oneTimeOutflows", status: "missing" }),
     ]));
   });
 });
