@@ -124,6 +124,68 @@ class InMemoryMonthEndCloseRepository implements MonthEndCloseDomainRepository {
     return cloneClose(updated);
   }
 
+  async reopenLatestClosedMonth(input: {
+    id: string;
+    userId: string;
+    reason: string;
+  }): Promise<{
+    close: MonthEndCloseAggregate;
+    audit: {
+      id: string;
+      closeId: string;
+      userId: string;
+      fromStatus: FinancialPeriodStatus;
+      toStatus: FinancialPeriodStatus;
+      reason: string | null;
+      transitionedAt: string;
+      createdAt: string;
+    };
+  }> {
+    const normalizedReason = input.reason.trim();
+    if (!normalizedReason) {
+      throw new Error("A reason is required to reopen a closed financial period.");
+    }
+
+    const latestClosed = await this.getLatestClosed(input.userId);
+    if (!latestClosed || latestClosed.id !== input.id) {
+      throw new Error("Only the latest closed month can be reopened.");
+    }
+
+    const index = this.closes.findIndex((item) => item.id === input.id && item.userId === input.userId);
+    if (index < 0) {
+      throw new Error("Month-end close record not found.");
+    }
+
+    const transitionedAt = new Date().toISOString();
+
+    this.closes[index] = {
+      ...this.closes[index],
+      status: "draft",
+      closedAt: null,
+      reopenReason: normalizedReason,
+      reopenedAt: transitionedAt,
+      updatedAt: transitionedAt,
+    };
+
+    this.auditCounter += 1;
+    const audit = {
+      id: `audit-${this.auditCounter}`,
+      closeId: input.id,
+      userId: input.userId,
+      fromStatus: FinancialPeriodStatus.CLOSED,
+      toStatus: FinancialPeriodStatus.OPEN,
+      reason: normalizedReason,
+      transitionedAt,
+      createdAt: transitionedAt,
+    };
+    this.transitionAudit.push(audit);
+
+    return {
+      close: cloneClose(this.closes[index]),
+      audit,
+    };
+  }
+
   async saveReopenFields(id: string, userId: string, reopenReason: string, reopenedAt: string): Promise<void> {
     const index = this.closes.findIndex((item) => item.id === id && item.userId === userId);
     if (index >= 0) {
@@ -136,6 +198,11 @@ class InMemoryMonthEndCloseRepository implements MonthEndCloseDomainRepository {
   }
 
   async replaceItems(closeId: string, userId: string, items: MonthEndCloseLineItemInput[]): Promise<void> {
+    const close = this.closes.find((item) => item.id === closeId && item.userId === userId) ?? null;
+    if (close?.status === "closed") {
+      throw new Error("Closed month-end items are immutable. Create a new version instead.");
+    }
+
     const rows: MonthEndCloseLineItem[] = items.map((item) => {
       this.itemCounter += 1;
       const actualBalance =
@@ -571,5 +638,138 @@ describe("MonthEndCloseDomainService", () => {
 
     expect(reclosed.close.status).toBe("closed");
     expect(typeof reclosed.close.closedAt).toBe("string");
+  });
+
+  it("keeps closed month-end items immutable until reopen succeeds", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const closed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 8,
+      closeYear: 2027,
+      items: [
+        {
+          entityId: "entity-immutable",
+          entityType: "bank-account",
+          entityName: "Primary",
+          itemKey: "bank_accounts",
+          itemLabel: "Primary",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 100,
+        },
+      ],
+    });
+
+    await expect(
+      repository.replaceItems(closed.close.id, "user-1", [
+        {
+          entityId: "entity-immutable",
+          entityType: "bank-account",
+          entityName: "Primary",
+          itemKey: "bank_accounts",
+          itemLabel: "Primary",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 150,
+        },
+      ]),
+    ).rejects.toThrow("Closed month-end items are immutable. Create a new version instead.");
+  });
+
+  it("allows draft edits after latest closed month is reopened", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const closed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 9,
+      closeYear: 2027,
+      items: [
+        {
+          entityId: "entity-after-reopen",
+          entityType: "bank-account",
+          entityName: "Primary",
+          itemKey: "bank_accounts",
+          itemLabel: "Primary",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 100,
+        },
+      ],
+    });
+
+    await service.reopenMonth("user-1", closed.close.id, "Correcting posted balance");
+
+    const saved = await service.saveDraft({
+      userId: "user-1",
+      closeId: closed.close.id,
+      closeMonth: 9,
+      closeYear: 2027,
+      items: [
+        {
+          entityId: "entity-after-reopen",
+          entityType: "bank-account",
+          entityName: "Primary",
+          itemKey: "bank_accounts",
+          itemLabel: "Primary",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 155,
+        },
+      ],
+    });
+
+    expect(saved.close.status).toBe("draft");
+    expect(saved.items[0].actualValue).toBe(155);
+  });
+
+  it("does not surface closed immutable error for valid latest reopen", async () => {
+    class StrictClosedMutationRepository extends InMemoryMonthEndCloseRepository {
+      override async updateCloseStatus(input: {
+        id: string;
+        userId: string;
+        status: "draft" | "closed";
+        closedAt: string | null;
+      }): Promise<MonthEndCloseAggregate> {
+        const existing = await this.getCloseById(input.userId, input.id);
+        if (existing?.status === "closed") {
+          throw new Error("Closed month-end records are immutable. Create a new version instead.");
+        }
+
+        return super.updateCloseStatus(input);
+      }
+    }
+
+    const repository = new StrictClosedMutationRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const closed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 10,
+      closeYear: 2027,
+      items: [],
+    });
+
+    await expect(
+      service.reopenMonth("user-1", closed.close.id, "Correcting post-close entries"),
+    ).resolves.toMatchObject({
+      close: {
+        status: "draft",
+      },
+      audit: {
+        fromStatus: FinancialPeriodStatus.CLOSED,
+        toStatus: FinancialPeriodStatus.OPEN,
+      },
+    });
   });
 });

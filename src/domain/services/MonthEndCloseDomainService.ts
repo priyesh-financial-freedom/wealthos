@@ -282,6 +282,14 @@ export class MonthEndCloseDomainService {
     close: MonthEndCloseAggregate;
     audit: FinancialPeriodTransitionAuditEntry;
   }> {
+    const normalizedReason = normalizeReason(reason);
+    if (!normalizedReason) {
+      throw new FinancialPeriodDomainError({
+        code: FinancialPeriodDomainErrorCode.REOPEN_REASON_REQUIRED,
+        message: "A reason is required to reopen a closed financial period.",
+      });
+    }
+
     const latestClosed = await this.repository.getLatestClosed(userId);
     if (!latestClosed || latestClosed.id !== closeId) {
       throw new FinancialPeriodDomainError({
@@ -290,15 +298,10 @@ export class MonthEndCloseDomainService {
       });
     }
 
-    const result = await this.transitionPeriodStatus({
+    return this.repository.reopenLatestClosedMonth({
+      id: closeId,
       userId,
-      closeId,
-      toStatus: FinancialPeriodStatus.OPEN,
-      reason,
+      reason: normalizedReason,
     });
-
-    await this.repository.saveReopenFields(closeId, userId, result.audit.reason ?? reason.trim(), result.audit.transitionedAt);
-
-    return result;
   }
 }

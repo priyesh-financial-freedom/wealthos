@@ -32,6 +32,14 @@ export interface MonthEndCloseDomainRepository {
     status: MonthEndCloseStatus;
     closedAt: string | null;
   }): Promise<MonthEndCloseAggregate>;
+  reopenLatestClosedMonth(input: {
+    id: string;
+    userId: string;
+    reason: string;
+  }): Promise<{
+    close: MonthEndCloseAggregate;
+    audit: FinancialPeriodTransitionAuditEntry;
+  }>;
   saveReopenFields(id: string, userId: string, reopenReason: string, reopenedAt: string): Promise<void>;
   replaceItems(closeId: string, userId: string, items: MonthEndCloseLineItemInput[]): Promise<void>;
   listItems(closeId: string): Promise<MonthEndCloseLineItem[]>;
@@ -369,6 +377,41 @@ export class SupabaseMonthEndCloseDomainRepository implements MonthEndCloseDomai
     if (error) {
       throw new Error(extractSupabaseMessage(error));
     }
+  }
+
+  async reopenLatestClosedMonth(input: {
+    id: string;
+    userId: string;
+    reason: string;
+  }): Promise<{
+    close: MonthEndCloseAggregate;
+    audit: FinancialPeriodTransitionAuditEntry;
+  }> {
+    const client = await this.getClient();
+
+    const { error: reopenError } = await client.rpc("reopen_latest_month_end_close", {
+      p_close_id: input.id,
+      p_reason: input.reason,
+    });
+
+    if (reopenError) {
+      throw new Error(extractSupabaseMessage(reopenError));
+    }
+
+    const close = await this.getCloseById(input.userId, input.id);
+    if (!close) {
+      throw new Error("Month-end close record not found after reopen.");
+    }
+
+    const audit = (await this.listTransitionAudit(input.id)).at(-1);
+    if (!audit) {
+      throw new Error("Failed to persist transition audit entry.");
+    }
+
+    return {
+      close,
+      audit,
+    };
   }
 
   async replaceItems(closeId: string, userId: string, items: MonthEndCloseLineItemInput[]): Promise<void> {
