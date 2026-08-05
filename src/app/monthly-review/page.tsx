@@ -214,12 +214,65 @@ function formatMonthKeyFromClose(year: number, month: number) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+function formatCloseMonthLabel(close: { close_month: number; close_year: number } | null | undefined) {
+  if (!close) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(close.close_year, close.close_month - 1, 1));
+}
+
 function formatValueOrDataRequired(value: number | null) {
   if (value == null) {
     return "Data required";
   }
 
   return formatCurrency(value, { maximumFractionDigits: 0 });
+}
+
+type MonthlyReviewAuditAction = "save-investments" | "save-assets" | "save-loans" | "save-living-expenses";
+
+function logMonthlyReviewSaveAudit(params: {
+  action: MonthlyReviewAuditAction;
+  workspace: MonthEndCloseWorkspace | null;
+  saveTarget: {
+    path: string;
+    closeId: string | null;
+    status: string;
+    closeYear: number | null;
+    closeMonth: number | null;
+    meta?: Record<string, unknown>;
+  };
+}) {
+  const workspaceClose = params.workspace?.close ?? null;
+  const latestClosed = params.workspace?.latestClose ?? null;
+
+  console.groupCollapsed(`[MonthlyReviewAudit] ${params.action}`);
+  console.table({
+    workspace_id: workspaceClose?.id ?? null,
+    workspace_status: params.workspace?.status ?? null,
+    workspace_close_year: params.workspace?.month.year ?? null,
+    workspace_close_month: params.workspace?.month.month ?? null,
+    save_close_id: params.saveTarget.closeId,
+    save_status: params.saveTarget.status,
+    save_close_year: params.saveTarget.closeYear,
+    save_close_month: params.saveTarget.closeMonth,
+    latest_closed_close_id: latestClosed?.id ?? null,
+    latest_closed_status: latestClosed?.status ?? null,
+    latest_closed_close_year: latestClosed?.close_year ?? null,
+    latest_closed_close_month: latestClosed?.close_month ?? null,
+    latest_closed_version: latestClosed?.version_number ?? null,
+  });
+
+  if (params.saveTarget.meta) {
+    console.info("[MonthlyReviewAudit] save_target_meta", params.saveTarget.meta);
+  }
+
+  console.info("[MonthlyReviewAudit] save_target_path", params.saveTarget.path);
+  console.groupEnd();
 }
 
 function buildHealthScoreModel(params: {
@@ -530,6 +583,8 @@ export default function MonthlyReviewPage() {
     };
   }, [compensationSummary, livingExpenseAmount]);
 
+  const latestClosedMonthLabel = useMemo(() => formatCloseMonthLabel(workspace?.latestClose), [workspace?.latestClose]);
+
   const healthModel = useMemo(() => {
     if (!workspace || !summary) {
       return null;
@@ -617,6 +672,22 @@ export default function MonthlyReviewPage() {
         };
       });
 
+      logMonthlyReviewSaveAudit({
+        action: "save-investments",
+        workspace,
+        saveTarget: {
+          path: "monthEndCloseService.saveDraft",
+          closeId: workspace.close?.id ?? null,
+          status: "draft",
+          closeYear: workspace.month.year,
+          closeMonth: workspace.month.month,
+          meta: {
+            itemCount: updatedItems.length,
+            investmentItemCount: updatedItems.filter((item) => item.entityType === "investment").length,
+          },
+        },
+      });
+
       await saveMonthEndCloseDraft({
         closeId: workspace.close?.id ?? null,
         closeMonth: workspace.month.month,
@@ -662,6 +733,22 @@ export default function MonthlyReviewPage() {
         })
         .filter((item) => item.changed);
 
+      logMonthlyReviewSaveAudit({
+        action: "save-assets",
+        workspace,
+        saveTarget: {
+          path: "assets.updateAsset",
+          closeId: null,
+          status: "n/a",
+          closeYear: null,
+          closeMonth: null,
+          meta: {
+            updateCount: updates.length,
+            assetIds: updates.map((item) => item.id),
+          },
+        },
+      });
+
       await Promise.all(updates.map((item) => updateAsset({ id: item.id, current_value: item.nextValue })));
 
       markStepComplete("assets");
@@ -691,6 +778,22 @@ export default function MonthlyReviewPage() {
         })
         .filter((item) => item.changed);
 
+      logMonthlyReviewSaveAudit({
+        action: "save-loans",
+        workspace,
+        saveTarget: {
+          path: "liabilities.updateLiability",
+          closeId: null,
+          status: "n/a",
+          closeYear: null,
+          closeMonth: null,
+          meta: {
+            updateCount: updates.length,
+            liabilityIds: updates.map((item) => item.id),
+          },
+        },
+      });
+
       await Promise.all(updates.map((item) => updateLiability({ id: item.id, outstanding_amount: item.nextValue })));
 
       markStepComplete("loans");
@@ -708,6 +811,21 @@ export default function MonthlyReviewPage() {
     try {
       setSavingStep("expenses");
       setError(null);
+
+      logMonthlyReviewSaveAudit({
+        action: "save-living-expenses",
+        workspace,
+        saveTarget: {
+          path: "cashFlowManagementService.upsertLivingExpense",
+          closeId: null,
+          status: "n/a",
+          closeYear: null,
+          closeMonth: null,
+          meta: {
+            monthlyAmount: Math.max(0, toNumber(livingExpenseAmount)),
+          },
+        },
+      });
 
       await cashFlowManagementService.upsertLivingExpense({
         monthlyAmount: Math.max(0, toNumber(livingExpenseAmount)),
@@ -743,7 +861,7 @@ export default function MonthlyReviewPage() {
       await reopenMonth({ closeId: workspace.latestClose.id, reason: trimmedReason });
       setReopenDialogOpen(false);
       setReopenReason("");
-      setNotice("Month reopened. You can now edit and re-close it.");
+      setNotice(`${latestClosedMonthLabel ?? "Latest closed month"} has been reopened for corrections.`);
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (reopenError) {
@@ -850,6 +968,25 @@ export default function MonthlyReviewPage() {
             <p className="mt-2 text-xs text-slate-500">{completionPercent}% complete</p>
           </DashboardCard>
         </div>
+
+        {!loading && workspace?.latestClose?.id && latestClosedMonthLabel ? (
+          <DashboardCard className="border-amber-200 bg-amber-50/70">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium text-amber-900">Latest closed month: {latestClosedMonthLabel}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setReopenReason("");
+                  setReopenDialogOpen(true);
+                }}
+                disabled={reopeningMonth}
+              >
+                Reopen {latestClosedMonthLabel}
+              </Button>
+            </div>
+          </DashboardCard>
+        ) : null}
 
         {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
         {mappingWarning ? <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{mappingWarning}</div> : null}
@@ -1211,14 +1348,14 @@ export default function MonthlyReviewPage() {
                   <h3 className="text-base font-semibold text-slate-900">7. Month Close Confirmation</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  {workspace.latestClose?.id ? (
+                  {workspace.latestClose?.id && latestClosedMonthLabel ? (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => { setReopenReason(""); setReopenDialogOpen(true); }}
                       disabled={reopeningMonth}
                     >
-                      Reopen Month
+                      Reopen {latestClosedMonthLabel}
                     </Button>
                   ) : null}
                   <Button type="button" onClick={() => void handleCloseMonth()} disabled={closingMonth || workspace.status === "closed"}>
@@ -1258,7 +1395,7 @@ export default function MonthlyReviewPage() {
       <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reopen Month</DialogTitle>
+            <DialogTitle>Reopen {latestClosedMonthLabel ?? "Latest Closed Month"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>

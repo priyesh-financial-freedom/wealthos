@@ -37,6 +37,17 @@ function displayVariance(value: number | null) {
   return value === null ? "—" : formatPercent(value, { digits: 1, multiply: false });
 }
 
+function formatCloseMonthLabel(close: { close_month: number; close_year: number } | null | undefined) {
+  if (!close) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(close.close_year, close.close_month - 1, 1));
+}
+
 function VarianceBadge({ item }: { item: MonthEndCloseEditorItem | null }) {
   if (!item) {
     return <p className="text-sm text-slate-500">—</p>;
@@ -266,6 +277,8 @@ export default function MonthEndClosePage() {
   const isClosedWorkspace = workspace?.status === "closed";
   const isLatestClosedWorkspace = isClosedWorkspace && workspace?.close?.id != null && workspace?.latestClose?.id === workspace?.close?.id;
   const isOlderClosedWorkspace = isClosedWorkspace && !isLatestClosedWorkspace;
+  const latestClosedMonthLabel = useMemo(() => formatCloseMonthLabel(workspace?.latestClose), [workspace?.latestClose]);
+  const canReopenLatestClosedFromPendingWorkspace = !isClosedWorkspace && workspace?.latestClose?.id != null;
   const canEditValues = !isClosedWorkspace;
 
   function applyWorkspace(nextWorkspace: MonthEndCloseWorkspace) {
@@ -383,7 +396,7 @@ export default function MonthEndClosePage() {
       applyWorkspace(refreshedWorkspace);
       setReopenDialogOpen(false);
       setReopenReason("");
-      setNotice("Month reopened. You can now edit and re-close it.");
+      setNotice(`${latestClosedMonthLabel ?? "Latest closed month"} has been reopened for corrections.`);
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to reopen month");
@@ -413,7 +426,7 @@ export default function MonthEndClosePage() {
                 </Button>
               </>
             ) : null}
-            {isLatestClosedWorkspace ? (
+            {isLatestClosedWorkspace && latestClosedMonthLabel ? (
               <Button
                 type="button"
                 variant="outline"
@@ -423,11 +436,30 @@ export default function MonthEndClosePage() {
                 }}
                 disabled={loading || reopeningMonth || !workspace}
               >
-                {reopeningMonth ? "Reopening..." : "Reopen Month"}
+                {reopeningMonth ? "Reopening..." : `Reopen ${latestClosedMonthLabel}`}
               </Button>
             ) : null}
           </div>
         </div>
+
+        {canReopenLatestClosedFromPendingWorkspace && latestClosedMonthLabel ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p>Need to correct the previous closed month?</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setReopenReason("");
+                  setReopenDialogOpen(true);
+                }}
+                disabled={loading || reopeningMonth || !workspace}
+              >
+                Reopen {latestClosedMonthLabel}
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {isLatestClosedWorkspace ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -489,7 +521,7 @@ export default function MonthEndClosePage() {
       <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reopen Month</DialogTitle>
+            <DialogTitle>Reopen {latestClosedMonthLabel ?? "Latest Closed Month"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>

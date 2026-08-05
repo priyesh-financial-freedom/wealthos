@@ -137,28 +137,28 @@ vi.mock("@/services/monthEndClose", () => ({
 function buildWorkspace(overrides?: Partial<MonthEndCloseWorkspace>): MonthEndCloseWorkspace {
   return {
     close: {
-      id: "close-1",
+      id: "open-aug-close",
       user_id: "user-1",
       close_month: 8,
       close_year: 2026,
       version_number: 1,
       status: "draft",
-      supersedes_close_id: null,
+      supersedes_close_id: "c826b7f9-e0ab-4b31-96e3-6275a09e767c",
       closed_at: null,
       created_at: "2026-08-01T00:00:00.000Z",
       updated_at: "2026-08-01T00:00:00.000Z",
     },
     latestClose: {
-      id: "close-1",
+      id: "c826b7f9-e0ab-4b31-96e3-6275a09e767c",
       user_id: "user-1",
-      close_month: 8,
+      close_month: 7,
       close_year: 2026,
-      version_number: 1,
+      version_number: 2,
       status: "closed",
       supersedes_close_id: null,
-      closed_at: "2026-08-31T00:00:00.000Z",
-      created_at: "2026-08-01T00:00:00.000Z",
-      updated_at: "2026-08-31T00:00:00.000Z",
+      closed_at: "2026-07-31T00:00:00.000Z",
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-31T00:00:00.000Z",
     },
     month: { month: 8, year: 2026, monthKey: "2026-08", label: "August 2026" },
     status: "draft",
@@ -202,18 +202,30 @@ describe("MonthEndClosePage", () => {
         status: "closed",
         close: {
           ...buildWorkspace().close,
+          id: "c826b7f9-e0ab-4b31-96e3-6275a09e767c",
+          close_month: 7,
           status: "closed",
-          closed_at: "2026-08-31T00:00:00.000Z",
+          closed_at: "2026-07-31T00:00:00.000Z",
         },
+        month: { month: 7, year: 2026, monthKey: "2026-07", label: "July 2026" },
       }),
     );
 
     render(<MonthEndClosePage />);
 
     expect(await screen.findByText("This month is closed. Reopen it to make corrections.")).toBeTruthy();
-    expect(screen.getByText("Reopen Month")).toBeTruthy();
+    expect(screen.getByText("Reopen July 2026")).toBeTruthy();
     expect(screen.queryByText("Save Draft")).toBeNull();
     expect(screen.queryByText("Close Month")).toBeNull();
+  });
+
+  it("shows pending workspace CTA to reopen latest closed month", async () => {
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace({ status: "draft" }));
+
+    render(<MonthEndClosePage />);
+
+    expect(await screen.findByText("Need to correct the previous closed month?")).toBeTruthy();
+    expect(screen.getByText("Reopen July 2026")).toBeTruthy();
   });
 
   it("shows older closed month lock message and no reopen button", async () => {
@@ -247,15 +259,18 @@ describe("MonthEndClosePage", () => {
         status: "closed",
         close: {
           ...buildWorkspace().close,
+          id: "c826b7f9-e0ab-4b31-96e3-6275a09e767c",
+          close_month: 7,
           status: "closed",
-          closed_at: "2026-08-31T00:00:00.000Z",
+          closed_at: "2026-07-31T00:00:00.000Z",
         },
+        month: { month: 7, year: 2026, monthKey: "2026-07", label: "July 2026" },
       }),
     );
 
     render(<MonthEndClosePage />);
 
-    fireEvent.click(await screen.findByText("Reopen Month"));
+    fireEvent.click(await screen.findByText("Reopen July 2026"));
     fireEvent.click(screen.getByText("Reopen"));
 
     expect((await screen.findAllByText("A reason is required to reopen the month.")).length).toBeGreaterThan(0);
@@ -266,12 +281,7 @@ describe("MonthEndClosePage", () => {
     getMonthEndCloseWorkspaceMock
       .mockResolvedValueOnce(
         buildWorkspace({
-          status: "closed",
-          close: {
-            ...buildWorkspace().close,
-            status: "closed",
-            closed_at: "2026-08-31T00:00:00.000Z",
-          },
+          status: "draft",
         }),
       )
       .mockResolvedValueOnce(buildWorkspace({ status: "draft" }));
@@ -280,7 +290,7 @@ describe("MonthEndClosePage", () => {
 
     render(<MonthEndClosePage />);
 
-    fireEvent.click(await screen.findByText("Reopen Month"));
+    fireEvent.click(await screen.findByText("Reopen July 2026"));
     fireEvent.change(screen.getByPlaceholderText("Enter reason"), {
       target: { value: "Corrected investment valuation" },
     });
@@ -288,7 +298,7 @@ describe("MonthEndClosePage", () => {
 
     await waitFor(() => {
       expect(reopenMonthMock).toHaveBeenCalledWith({
-        closeId: "close-1",
+        closeId: "c826b7f9-e0ab-4b31-96e3-6275a09e767c",
         reason: "Corrected investment valuation",
       });
     });
@@ -297,9 +307,19 @@ describe("MonthEndClosePage", () => {
       expect(getMonthEndCloseWorkspaceMock).toHaveBeenCalledTimes(2);
     });
 
-    expect(await screen.findByText("Month reopened. You can now edit and re-close it.")).toBeTruthy();
+    expect(await screen.findByText("July 2026 has been reopened for corrections.")).toBeTruthy();
     expect(screen.getByText("Save Draft")).toBeTruthy();
     expect(screen.getByText("Close Month")).toBeTruthy();
+  });
+
+  it("does not show latest closed reopen CTA when latestClose is null", async () => {
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace({ latestClose: null }));
+
+    render(<MonthEndClosePage />);
+
+    await screen.findByText("Month-End Close");
+    expect(screen.queryByText("Need to correct the previous closed month?")).toBeNull();
+    expect(screen.queryByText("Reopen July 2026")).toBeNull();
   });
 
   it("disables row inputs when workspace is closed", async () => {
