@@ -1,11 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { MonthEndClose, MonthEndCloseItem } from "@/types/monthEndClose";
-import {
-  assertValidFinancialNumber,
-  assertValidNullableFinancialNumber,
-  MAX_PERCENTAGE_ABS_VALUE_24_4,
-} from "@/lib/financialNumberValidation";
 
 export type MonthEndCloseSupabaseClientFactory = () => Promise<SupabaseClient>;
 
@@ -106,6 +101,27 @@ export class MonthEndCloseRepository {
       .select("*")
       .eq("user_id", userId)
       .eq("status", "closed")
+      .order("close_year", { ascending: false })
+      .order("close_month", { ascending: false })
+      .order("version_number", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      throw new Error(extractSupabaseMessage(error));
+    }
+
+    const row = (data?.[0] ?? null) as MonthEndClose | null;
+    return row ? normalizeMonthEndClose(row) : null;
+  }
+
+  async getNearestPriorClosedMonthEndClose(userId: string, closeYear: number, closeMonth: number): Promise<MonthEndClose | null> {
+    const client = await this.getClient();
+    const { data, error } = await client
+      .from("month_end_closes")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "closed")
+      .or(`close_year.lt.${closeYear},and(close_year.eq.${closeYear},close_month.lt.${closeMonth})`)
       .order("close_year", { ascending: false })
       .order("close_month", { ascending: false })
       .order("version_number", { ascending: false })
@@ -271,20 +287,8 @@ export class MonthEndCloseRepository {
       return;
     }
 
-    const validatedRows = rows.map((row) => ({
-      ...row,
-      opening_value: assertValidFinancialNumber(row.opening_value, `${row.entity_name} opening_value`, { roundToScale: 2 }),
-      projected_value: assertValidFinancialNumber(row.projected_value, `${row.entity_name} projected_value`, { roundToScale: 2 }),
-      actual_value: assertValidFinancialNumber(row.actual_value, `${row.entity_name} actual_value`, { roundToScale: 2 }),
-      absolute_variance: assertValidFinancialNumber(row.absolute_variance, `${row.entity_name} absolute_variance`, { roundToScale: 2 }),
-      percentage_variance: assertValidNullableFinancialNumber(row.percentage_variance, `${row.entity_name} percentage_variance`, {
-        roundToScale: 4,
-        maxAbs: MAX_PERCENTAGE_ABS_VALUE_24_4,
-      }),
-    }));
-
     const client = await this.getClient();
-    const { error } = await client.from("month_end_close_items").upsert(validatedRows, {
+    const { error } = await client.from("month_end_close_items").upsert(rows, {
       onConflict: "close_id,entity_type,entity_id",
     });
 

@@ -21,7 +21,11 @@ import {
 } from "@/services/monthEndClose";
 import type { MonthEndCloseEditorItem, MonthEndCloseWorkspace } from "@/types/monthEndClose";
 
-function numberTone(value: number) {
+function numberTone(value: number | null) {
+  if (value == null) {
+    return "text-slate-500";
+  }
+
   if (value > 0) {
     return "text-emerald-700";
   }
@@ -35,6 +39,10 @@ function numberTone(value: number) {
 
 function displayVariance(value: number | null) {
   return value === null ? "—" : formatPercent(value, { digits: 1, multiply: false });
+}
+
+function displayCurrencyOrNotAvailable(value: number | null) {
+  return value == null ? "N/A" : formatCurrency(value, { maximumFractionDigits: 0 });
 }
 
 function formatCloseMonthLabel(close: { close_month: number; close_year: number } | null | undefined) {
@@ -84,7 +92,7 @@ function SummaryCards({ workspace, items }: { workspace: MonthEndCloseWorkspace;
           <p className="text-xs uppercase tracking-wide">Net Worth</p>
         </div>
         <p className="mt-2 text-xl font-semibold text-slate-900">{formatCurrency(varianceSummary.actualKpis.netWorth, { maximumFractionDigits: 0 })}</p>
-        <p className={`mt-1 text-sm ${numberTone(dashboard.monthOverMonthChange)}`}>{formatCurrency(dashboard.monthOverMonthChange, { maximumFractionDigits: 0 })} month-over-month</p>
+        <p className={`mt-1 text-sm ${numberTone(dashboard.monthOverMonthChange)}`}>{displayCurrencyOrNotAvailable(dashboard.monthOverMonthChange)} month-over-month</p>
       </DashboardCard>
 
       <DashboardCard>

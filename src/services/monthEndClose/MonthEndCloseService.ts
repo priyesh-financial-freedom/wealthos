@@ -269,9 +269,28 @@ function buildBankAccountSeeds(bankAccounts: BankAccount[]): EntitySeed[] {
   );
 }
 
-function buildInvestmentSeeds(investments: Investment[]): EntitySeed[] {
+function buildInvestmentSeeds(
+  investments: Investment[],
+  options: {
+    hasDedicatedRetirementAccounts: boolean;
+    hasDedicatedGoldHoldings: boolean;
+    hasDedicatedSilverHoldings: boolean;
+  },
+): EntitySeed[] {
   return investments.flatMap((investment) => {
     if (investment.status !== "active") {
+      return [];
+    }
+
+    if (options.hasDedicatedRetirementAccounts && (EPF_CATEGORIES.has(investment.category) || PPF_CATEGORIES.has(investment.category) || NPS_CATEGORIES.has(investment.category))) {
+      return [];
+    }
+
+    if (options.hasDedicatedGoldHoldings && investment.category === "Gold") {
+      return [];
+    }
+
+    if (options.hasDedicatedSilverHoldings && investment.category === "Silver") {
       return [];
     }
 
@@ -370,11 +389,18 @@ function buildLiabilitySeeds(liabilities: Liability[]): EntitySeed[] {
 
 function buildCurrentEntitySeeds(balanceSheetData: Awaited<ReturnType<typeof getBalanceSheetData>>): EntitySeed[] {
   const hasDedicatedRealEstateModule = balanceSheetData.realEstateProperties.length > 0;
+  const hasDedicatedRetirementAccounts = balanceSheetData.retirementAccounts.length > 0;
+  const hasDedicatedGoldHoldings = balanceSheetData.goldHoldings.length > 0;
+  const hasDedicatedSilverHoldings = balanceSheetData.silverHoldings.length > 0;
 
   return [
     ...buildAssetSeeds(balanceSheetData.assets, hasDedicatedRealEstateModule),
     ...buildBankAccountSeeds(balanceSheetData.bankAccounts),
-    ...buildInvestmentSeeds(balanceSheetData.investments),
+    ...buildInvestmentSeeds(balanceSheetData.investments, {
+      hasDedicatedRetirementAccounts,
+      hasDedicatedGoldHoldings,
+      hasDedicatedSilverHoldings,
+    }),
     ...buildGoldSeeds(balanceSheetData.goldHoldings),
     ...buildSilverSeeds(balanceSheetData.silverHoldings),
     ...buildFixedDepositSeeds(balanceSheetData.fixedDeposits),
@@ -716,7 +742,7 @@ function buildDashboard(params: {
   latestClosedMonth: MonthReference | null;
   pendingMonth: MonthReference;
   items: MonthEndCloseEditorItem[];
-  previousNetWorth: number;
+  previousNetWorth: number | null;
 }): MonthEndCloseDashboard {
   const actualKpis = summarizeEditorItems(params.items, "actualValue");
   const projectedKpis = summarizeEditorItems(params.items, "projectedValue");
@@ -731,7 +757,7 @@ function buildDashboard(params: {
     totalAssets: actualKpis.totalAssets,
     totalLiabilities: actualKpis.totalLiabilities,
     netWorth: actualKpis.netWorth,
-    monthOverMonthChange: actualKpis.netWorth - params.previousNetWorth,
+    monthOverMonthChange: params.previousNetWorth == null ? null : actualKpis.netWorth - params.previousNetWorth,
     projectionVariance: actualKpis.netWorth - projectedKpis.netWorth,
     largestPositiveVariance,
     largestNegativeVariance,
@@ -851,24 +877,31 @@ export class MonthEndCloseService {
       this.repository.getEarliestOpenMonthEndClose(userId),
       this.repository.getLatestClosedMonthEndClose(userId),
     ]);
-    const previousMonthReference = latestClosed ? createMonthReference(latestClosed.close_year, latestClosed.close_month) : null;
     const pendingMonthReference = earliestOpen
       ? createMonthReference(earliestOpen.close_year, earliestOpen.close_month)
       : latestClosed
         ? nextMonth(latestClosed.close_month, latestClosed.close_year)
         : createMonthReference(new Date().getFullYear(), new Date().getMonth() + 1);
+    const priorClosedForPending = await this.repository.getNearestPriorClosedMonthEndClose(
+      userId,
+      pendingMonthReference.year,
+      pendingMonthReference.month,
+    );
+    const previousMonthReference = priorClosedForPending
+      ? createMonthReference(priorClosedForPending.close_year, priorClosedForPending.close_month)
+      : null;
     const draft = earliestOpen ?? await this.repository.getDraftForMonth(userId, pendingMonthReference.year, pendingMonthReference.month);
 
-    const [draftItems, latestClosedItems, balanceSheetData, projectedBucketTotals] = await Promise.all([
+    const [draftItems, priorClosedItems, balanceSheetData, projectedBucketTotals] = await Promise.all([
       draft ? this.repository.getCloseItems(draft.id) : Promise.resolve([]),
-      latestClosed ? this.repository.getCloseItems(latestClosed.id) : Promise.resolve([]),
+      priorClosedForPending ? this.repository.getCloseItems(priorClosedForPending.id) : Promise.resolve([]),
       this.loadBalanceSheetData(),
       getProjectedBucketTotals(pendingMonthReference),
     ]);
 
     const items = buildWorkspaceItems({
       currentSeeds: buildCurrentEntitySeeds(balanceSheetData),
-      latestClosedItems,
+      latestClosedItems: priorClosedItems,
       draftItems,
       projectedBucketTotals,
     });
@@ -880,7 +913,7 @@ export class MonthEndCloseService {
       reconciledItems: items,
     });
 
-    const previousNetWorth = latestClosedItems.length > 0 ? summarizePersistedItems(latestClosedItems, "actual_value").netWorth : 0;
+    const previousNetWorth = priorClosedItems.length > 0 ? summarizePersistedItems(priorClosedItems, "actual_value").netWorth : null;
     const dashboard = buildDashboard({
       latestClosedMonth: previousMonthReference,
       pendingMonth: pendingMonthReference,
@@ -940,9 +973,34 @@ export class MonthEndCloseService {
     const existingDraft = input.closeId
       ? await this.repository.getCloseById(userId, input.closeId)
       : await this.repository.getDraftForMonth(userId, input.closeYear, input.closeMonth);
+    const latestClosedForAudit = await this.repository.getLatestClosedMonthEndClose(userId);
     const latestVersionForMonth = await this.repository.getLatestVersionForMonth(userId, input.closeYear, input.closeMonth);
 
+    console.groupCollapsed(`[MonthEndClosePersistAudit] status=${status}`);
+    console.table({
+      input_close_id: input.closeId ?? null,
+      input_close_year: input.closeYear,
+      input_close_month: input.closeMonth,
+      input_status: status,
+      existing_close_id: existingDraft?.id ?? null,
+      existing_status: existingDraft?.status ?? null,
+      existing_close_year: existingDraft?.close_year ?? null,
+      existing_close_month: existingDraft?.close_month ?? null,
+      existing_version: existingDraft?.version_number ?? null,
+      latest_closed_close_id: latestClosedForAudit?.id ?? null,
+      latest_closed_status: latestClosedForAudit?.status ?? null,
+      latest_closed_close_year: latestClosedForAudit?.close_year ?? null,
+      latest_closed_close_month: latestClosedForAudit?.close_month ?? null,
+      latest_closed_version: latestClosedForAudit?.version_number ?? null,
+      latest_month_version_close_id: latestVersionForMonth?.id ?? null,
+      latest_month_version_status: latestVersionForMonth?.status ?? null,
+      latest_month_version_close_year: latestVersionForMonth?.close_year ?? null,
+      latest_month_version_close_month: latestVersionForMonth?.close_month ?? null,
+      latest_month_version_version: latestVersionForMonth?.version_number ?? null,
+    });
+
     if (existingDraft?.status === "closed") {
+      console.groupEnd();
       throw new Error("Closed month-end closes are immutable. Create a new version instead.");
     }
 
@@ -970,6 +1028,15 @@ export class MonthEndCloseService {
         closedAt: status === "closed" ? new Date().toISOString() : null,
       });
     }
+
+    console.table({
+      persisted_close_id: closeRecord.id,
+      persisted_status: closeRecord.status,
+      persisted_close_year: closeRecord.close_year,
+      persisted_close_month: closeRecord.close_month,
+      persisted_version: closeRecord.version_number,
+    });
+    console.groupEnd();
 
     const reconciledItems = await this.buildReconciledPersistItems({
       userId,

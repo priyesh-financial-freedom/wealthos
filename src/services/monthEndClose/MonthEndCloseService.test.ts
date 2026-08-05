@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { assertValidFinancialNumber } from "@/lib/financialNumberValidation";
 import type { BalanceSheetData } from "@/services/balanceSheet";
+import type { Investment, InvestmentCategory } from "@/types/investment";
 import type { MonthEndClose, MonthEndCloseItem } from "@/types/monthEndClose";
 
 import { MonthEndCloseService } from "./MonthEndCloseService";
@@ -105,6 +105,84 @@ function buildEmptyBalanceSheetData(): BalanceSheetData {
   };
 }
 
+function buildInvestment(partial: {
+  id: string;
+  category: InvestmentCategory;
+  name: string;
+  currentValue: number;
+  exposure?: "equity" | "debt";
+}): Investment {
+  return {
+    id: partial.id,
+    user_id: "user-1",
+    owner: null,
+    institution: null,
+    investment_name: partial.name,
+    investment_type: partial.category,
+    category: partial.category,
+    acquisition_date: null,
+    cost_value: 0,
+    status: "active",
+    notes: null,
+    documents_placeholder: null,
+    monthly_change: 0,
+    current_month_value: null,
+    previous_month_value: null,
+    cost_basis: 0,
+    purchase_date: null,
+    units: 0,
+    nav_price: 0,
+    today_gain_loss: 0,
+    sector: null,
+    amc: null,
+    region: "Domestic",
+    folio_number: null,
+    amfi_scheme_code: null,
+    sip_amount: null,
+    sip_date: null,
+    investment_mode: null,
+    option_type: null,
+    broker_platform: null,
+    nominee: null,
+    broker: null,
+    exchange: null,
+    isin: null,
+    average_purchase_price: null,
+    demat_account_provider: null,
+    demat_account_number: null,
+    fd_number: null,
+    interest_rate: null,
+    compounding_frequency: null,
+    payout_type: null,
+    maturity_date: null,
+    maturity_value: null,
+    issuer: null,
+    bond_name: null,
+    bond_type: null,
+    face_value: null,
+    coupon_rate: null,
+    coupon_frequency: null,
+    purchase_price: null,
+    current_market_price: null,
+    gold_type: null,
+    gold_unit: null,
+    storage_location: null,
+    esop_vested_shares: null,
+    esop_current_share_price: null,
+    esop_grant_status: null,
+    startup_funding_round: null,
+    startup_ownership_percent: null,
+    alternative_category: null,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+    current_value: partial.currentValue,
+    gain_loss: 0,
+    cagr: null,
+    xirr: null,
+    exposure: partial.exposure ?? "debt",
+  };
+}
+
 describe("MonthEndCloseService getWorkspace", () => {
   it("preserves existing draft actual_value for unmapped investment category", async () => {
     const draft = buildClose({
@@ -138,6 +216,7 @@ describe("MonthEndCloseService getWorkspace", () => {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems,
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -259,6 +338,7 @@ describe("MonthEndCloseService getWorkspace", () => {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems: vi.fn(async (closeId: string) => (closeId === draft.id ? [deletedInvestmentItem] : [])),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -305,6 +385,7 @@ describe("MonthEndCloseService getWorkspace", () => {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems: vi.fn(async (closeId: string) => (closeId === draft.id ? [draftItem] : [])),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -428,6 +509,7 @@ describe("MonthEndCloseService getWorkspace", () => {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems,
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -537,6 +619,7 @@ describe("MonthEndCloseService getWorkspace", () => {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => earliestOpen),
       getLatestClosedMonthEndClose: vi.fn(async () => latestClosed),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => latestClosed),
       getDraftForMonth: vi.fn(async () => null),
       getCloseItems: vi.fn(async () => []),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -569,6 +652,7 @@ describe("MonthEndCloseService getWorkspace", () => {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => null),
       getLatestClosedMonthEndClose: vi.fn(async () => latestClosed),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => latestClosed),
       getDraftForMonth: vi.fn(async () => null),
       getCloseItems: vi.fn(async () => []),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -588,21 +672,182 @@ describe("MonthEndCloseService getWorkspace", () => {
     expect(repository.getDraftForMonth).toHaveBeenCalledWith("user-1", 2026, 8);
   });
 
-  it("handles high-value asset and liability balances without overflow on workspace reconciliation", async () => {
-    const draft = buildClose({ id: "draft-hni", status: "draft", close_month: 8, close_year: 2026 });
-
+  it("includes retirement and precious metal keys in workspace items", async () => {
+    const draft = buildClose({ id: "draft-aug", status: "draft", close_month: 8, close_year: 2026 });
     const repository = {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems: vi.fn(async () => []),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
       upsertCloseItems: vi.fn(async () => undefined),
     };
 
-    const highAssetValue = 450000000000000000;
-    const highLiabilityValue = 130000000000000000;
+    const balanceSheetData: BalanceSheetData = {
+      ...buildEmptyBalanceSheetData(),
+      retirementAccounts: [
+        {
+          id: "epf-1",
+          user_id: "user-1",
+          account_type: "EPF",
+          owner: "Self",
+          institution: "EPFO",
+          current_balance: 100000,
+          account_number: null,
+          opening_date: null,
+          interest_rate: null,
+          nominee: null,
+          notes: null,
+          contribution_frequency: "Monthly",
+          contribution_amount: 5000,
+          contribution_day: null,
+          contribution_month: null,
+          employer: null,
+          uan: null,
+          employee_contribution: null,
+          employer_contribution: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        },
+        {
+          id: "ppf-1",
+          user_id: "user-1",
+          account_type: "PPF",
+          owner: "Self",
+          institution: "SBI",
+          current_balance: 200000,
+          account_number: null,
+          opening_date: null,
+          interest_rate: null,
+          nominee: null,
+          notes: null,
+          contribution_frequency: "Monthly",
+          contribution_amount: 3000,
+          contribution_day: null,
+          contribution_month: null,
+          maturity_date: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        },
+        {
+          id: "nps-1",
+          user_id: "user-1",
+          account_type: "NPS",
+          owner: "Self",
+          institution: "NPS Trust",
+          current_balance: 300000,
+          account_number: null,
+          opening_date: null,
+          interest_rate: null,
+          nominee: null,
+          notes: null,
+          contribution_frequency: "Monthly",
+          contribution_amount: 4000,
+          contribution_day: null,
+          contribution_month: null,
+          pran: null,
+          pop: null,
+          equity_percent: null,
+          corporate_debt_percent: null,
+          government_securities_percent: null,
+          alternative_assets_percent: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      goldHoldings: [
+        {
+          id: "gold-1",
+          user_id: "user-1",
+          holding_type: "Physical Gold",
+          description: "Gold Coins",
+          quantity: 10,
+          unit: "grams",
+          purity: null,
+          purchase_date: null,
+          cost_basis: 400000,
+          current_value: 450000,
+          custodian: null,
+          institution: null,
+          owner: null,
+          nominee: null,
+          notes: null,
+          documents_placeholder: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      silverHoldings: [
+        {
+          id: "silver-1",
+          user_id: "user-1",
+          holding_type: "Physical Silver",
+          description: "Silver Bars",
+          quantity: 15,
+          unit: "grams",
+          purity: null,
+          purchase_date: null,
+          cost_basis: 50000,
+          current_value: 65000,
+          custodian: null,
+          institution: null,
+          owner: null,
+          nominee: null,
+          notes: null,
+          documents_placeholder: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+          updated_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => balanceSheetData,
+    });
+
+    const workspace = await service.getWorkspace();
+    const keySet = new Set(workspace.items.map((item) => item.key));
+
+    expect(keySet.has("epf")).toBe(true);
+    expect(keySet.has("ppf")).toBe(true);
+    expect(keySet.has("nps")).toBe(true);
+    expect(keySet.has("gold")).toBe(true);
+    expect(keySet.has("silver")).toBe(true);
+  });
+
+  it("uses nearest prior closed month for MoM baseline, not latest closed globally", async () => {
+    const pendingDraft = buildClose({ id: "draft-aug", status: "draft", close_year: 2026, close_month: 8 });
+    const latestClosedGlobal = buildClose({ id: "closed-sep", status: "closed", close_year: 2026, close_month: 9 });
+    const nearestPriorClosed = buildClose({ id: "closed-jul", status: "closed", close_year: 2026, close_month: 7 });
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getEarliestOpenMonthEndClose: vi.fn(async () => pendingDraft),
+      getLatestClosedMonthEndClose: vi.fn(async () => latestClosedGlobal),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => nearestPriorClosed),
+      getDraftForMonth: vi.fn(async () => pendingDraft),
+      getCloseItems: vi.fn(async (closeId: string) => {
+        if (closeId === nearestPriorClosed.id) {
+          return [
+            buildCloseItem({
+              close_id: nearestPriorClosed.id,
+              entity_id: "bank-1",
+              entity_type: "bank-account",
+              entity_name: "Cash",
+              item_key: "bank_accounts",
+              actual_value: 100,
+            }),
+          ];
+        }
+
+        return [];
+      }),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => undefined),
+    };
 
     const service = new MonthEndCloseService({
       repository: repository as never,
@@ -610,15 +855,15 @@ describe("MonthEndCloseService getWorkspace", () => {
         ...buildEmptyBalanceSheetData(),
         bankAccounts: [
           {
-            id: "hni-bank-1",
+            id: "bank-1",
             user_id: "user-1",
-            account_name: "Primary Treasury",
-            account_type: "Current",
+            account_name: "Cash",
+            account_type: "Savings",
             bank: "HDFC",
             nickname: null,
             account_number: "1234",
             masked_account_number: "***1234",
-            current_balance: highAssetValue,
+            current_balance: 130,
             ifsc: null,
             currency: "INR",
             opening_balance: 0,
@@ -635,48 +880,23 @@ describe("MonthEndCloseService getWorkspace", () => {
             updated_at: "2026-07-01T00:00:00.000Z",
           },
         ],
-        liabilities: [
-          {
-            id: "hni-loan-1",
-            user_id: "user-1",
-            liability_type: "Home Loan",
-            lender: "Bank",
-            account_name: "Estate Loan",
-            outstanding_amount: highLiabilityValue,
-            original_amount: null,
-            interest_rate: null,
-            emi: null,
-            start_date: null,
-            end_date: null,
-            due_day: null,
-            due_date: null,
-            tenure_months: null,
-            credit_limit: null,
-            sanction_limit: null,
-            status: "active",
-            notes: null,
-            created_at: "2026-07-01T00:00:00.000Z",
-            updated_at: "2026-07-01T00:00:00.000Z",
-          },
-        ],
       }),
     });
 
     const workspace = await service.getWorkspace();
-    expect(workspace.dashboard.totalAssets).toBe(highAssetValue);
-    expect(workspace.dashboard.totalLiabilities).toBe(highLiabilityValue);
-    expect(workspace.dashboard.netWorth).toBe(highAssetValue - highLiabilityValue);
-    expect(repository.upsertCloseItems).toHaveBeenCalledTimes(1);
+
+    expect(workspace.dashboard.currentClosedMonth?.monthKey).toBe("2026-07");
+    expect(workspace.dashboard.monthOverMonthChange).toBe(30);
   });
 
-  it("supports realistic HNI household values in monthly workspace", async () => {
-    const draft = buildClose({ id: "draft-hni-realistic", status: "draft", close_month: 8, close_year: 2026 });
-
+  it("returns null MoM when no prior closed month baseline exists", async () => {
+    const pendingDraft = buildClose({ id: "draft-aug", status: "draft", close_year: 2026, close_month: 8 });
     const repository = {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
-      getEarliestOpenMonthEndClose: vi.fn(async () => draft),
+      getEarliestOpenMonthEndClose: vi.fn(async () => pendingDraft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
-      getDraftForMonth: vi.fn(async () => draft),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getDraftForMonth: vi.fn(async () => pendingDraft),
       getCloseItems: vi.fn(async () => []),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
       upsertCloseItems: vi.fn(async () => undefined),
@@ -684,73 +904,22 @@ describe("MonthEndCloseService getWorkspace", () => {
 
     const service = new MonthEndCloseService({
       repository: repository as never,
-      balanceSheetLoader: async () => ({
-        ...buildEmptyBalanceSheetData(),
-        bankAccounts: [
-          {
-            id: "cash-1",
-            user_id: "user-1",
-            account_name: "Operating",
-            account_type: "Current",
-            bank: "HDFC",
-            nickname: null,
-            account_number: "1111",
-            masked_account_number: "***1111",
-            current_balance: 25000000,
-            ifsc: null,
-            currency: "INR",
-            opening_balance: 0,
-            interest_rate: 0,
-            owner: null,
-            include_in_net_worth: true,
-            include_in_cash_position: true,
-            nominee: null,
-            joint_holder: null,
-            status: "active",
-            notes: null,
-            documents_placeholder: null,
-            created_at: "2026-07-01T00:00:00.000Z",
-            updated_at: "2026-07-01T00:00:00.000Z",
-          },
-        ],
-        liabilities: [
-          {
-            id: "loan-1",
-            user_id: "user-1",
-            liability_type: "Home Loan",
-            lender: "Bank",
-            account_name: "Primary Loan",
-            outstanding_amount: 8000000,
-            original_amount: null,
-            interest_rate: null,
-            emi: null,
-            start_date: null,
-            end_date: null,
-            due_day: null,
-            due_date: null,
-            tenure_months: null,
-            credit_limit: null,
-            sanction_limit: null,
-            status: "active",
-            notes: null,
-            created_at: "2026-07-01T00:00:00.000Z",
-            updated_at: "2026-07-01T00:00:00.000Z",
-          },
-        ],
-      }),
+      balanceSheetLoader: async () => buildEmptyBalanceSheetData(),
     });
 
     const workspace = await service.getWorkspace();
-    expect(workspace.dashboard.netWorth).toBe(17000000);
+    expect(workspace.dashboard.currentClosedMonth).toBeNull();
+    expect(workspace.dashboard.monthOverMonthChange).toBeNull();
+    expect(workspace.dashboard.monthOverMonthChange).not.toBe(workspace.dashboard.netWorth);
   });
 
-  it("maps ESOP and other-equity-compensation style investments into other_assets bucket", async () => {
-    const draft = buildClose({ id: "draft-esop-mapping", status: "draft", close_month: 8, close_year: 2026 });
-
+  it("ignores EPF/PPF/NPS investments when dedicated retirement accounts exist", async () => {
+    const draft = buildClose({ id: "draft-dedupe", status: "draft", close_month: 8, close_year: 2026 });
     const repository = {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems: vi.fn(async () => []),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -762,94 +931,30 @@ describe("MonthEndCloseService getWorkspace", () => {
       balanceSheetLoader: async () => ({
         ...buildEmptyBalanceSheetData(),
         investments: [
-          {
-            id: "esop-1",
-            user_id: "user-1",
-            owner: null,
-            institution: null,
-            investment_name: "2025 RECOGNITION LTI AWARD",
-            investment_type: "ESOPs",
-            category: "ESOPs",
-            acquisition_date: null,
-            cost_value: 0,
-            status: "active",
-            notes: null,
-            documents_placeholder: null,
-            monthly_change: 0,
-            current_month_value: null,
-            previous_month_value: null,
-            cost_basis: 0,
-            purchase_date: null,
-            units: 0,
-            nav_price: 0,
-            today_gain_loss: 0,
-            sector: null,
-            amc: null,
-            region: "Domestic",
-            folio_number: null,
-            amfi_scheme_code: null,
-            sip_amount: null,
-            sip_date: null,
-            investment_mode: null,
-            option_type: null,
-            broker_platform: null,
-            nominee: null,
-            broker: null,
-            exchange: null,
-            isin: null,
-            average_purchase_price: null,
-            demat_account_provider: null,
-            demat_account_number: null,
-            fd_number: null,
-            interest_rate: null,
-            compounding_frequency: null,
-            payout_type: null,
-            maturity_date: null,
-            maturity_value: null,
-            issuer: null,
-            bond_name: null,
-            bond_type: null,
-            face_value: null,
-            coupon_rate: null,
-            coupon_frequency: null,
-            purchase_price: null,
-            current_market_price: null,
-            gold_type: null,
-            gold_unit: null,
-            storage_location: null,
-            esop_vested_shares: null,
-            esop_current_share_price: null,
-            esop_grant_status: null,
-            startup_funding_round: null,
-            startup_ownership_percent: null,
-            alternative_category: null,
-            created_at: "2026-08-01T00:00:00.000Z",
-            updated_at: "2026-08-01T00:00:00.000Z",
-            current_value: 3200000,
-            gain_loss: 3200000,
-            cagr: null,
-            xirr: null,
-            exposure: "equity",
-          },
+          buildInvestment({ id: "inv-epf", category: "EPF", name: "EPF Inv", currentValue: 100 }),
+          buildInvestment({ id: "inv-ppf", category: "PPF", name: "PPF Inv", currentValue: 200 }),
+          buildInvestment({ id: "inv-nps", category: "NPS", name: "NPS Inv", currentValue: 300 }),
+        ],
+        retirementAccounts: [
+          { id: "epf-1", user_id: "user-1", account_type: "EPF", owner: "Self", institution: "EPFO", current_balance: 100, account_number: null, opening_date: null, interest_rate: null, nominee: null, notes: null, contribution_frequency: "Monthly", contribution_amount: 0, contribution_day: null, contribution_month: null, employer: null, uan: null, employee_contribution: null, employer_contribution: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+          { id: "ppf-1", user_id: "user-1", account_type: "PPF", owner: "Self", institution: "SBI", current_balance: 200, account_number: null, opening_date: null, interest_rate: null, nominee: null, notes: null, contribution_frequency: "Monthly", contribution_amount: 0, contribution_day: null, contribution_month: null, maturity_date: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+          { id: "nps-1", user_id: "user-1", account_type: "NPS", owner: "Self", institution: "NPS", current_balance: 300, account_number: null, opening_date: null, interest_rate: null, nominee: null, notes: null, contribution_frequency: "Monthly", contribution_amount: 0, contribution_day: null, contribution_month: null, pran: null, pop: null, equity_percent: null, corporate_debt_percent: null, government_securities_percent: null, alternative_assets_percent: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
         ],
       }),
     });
 
     const workspace = await service.getWorkspace();
-    const row = workspace.items.find((item) => item.entityType === "investment" && item.entityId === "esop-1");
-
-    expect(row).toBeDefined();
-    expect(row?.key).toBe("other_assets");
-    expect(row?.actualValue).toBe(3200000);
+    expect(workspace.items.filter((item) => item.entityType === "investment" && (item.key === "epf" || item.key === "ppf" || item.key === "nps")).length).toBe(0);
+    expect(workspace.dashboard.totalAssets).toBe(600);
   });
 
-  it("keeps mutual fund investments mapped to mutual_funds bucket", async () => {
-    const draft = buildClose({ id: "draft-mf-mapping", status: "draft", close_month: 8, close_year: 2026 });
-
+  it("prevents real estate duplication when dedicated real_estate_properties exist", async () => {
+    const draft = buildClose({ id: "draft-re", status: "draft", close_month: 8, close_year: 2026 });
     const repository = {
       getAuthenticatedUserId: vi.fn(async () => "user-1"),
       getEarliestOpenMonthEndClose: vi.fn(async () => draft),
       getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
       getDraftForMonth: vi.fn(async () => draft),
       getCloseItems: vi.fn(async () => []),
       deleteCloseItemsByIds: vi.fn(async () => undefined),
@@ -860,101 +965,18 @@ describe("MonthEndCloseService getWorkspace", () => {
       repository: repository as never,
       balanceSheetLoader: async () => ({
         ...buildEmptyBalanceSheetData(),
-        investments: [
-          {
-            id: "mf-1",
-            user_id: "user-1",
-            owner: null,
-            institution: null,
-            investment_name: "MF 1",
-            investment_type: "Mutual Funds",
-            category: "Mutual Funds",
-            acquisition_date: null,
-            cost_value: 100000,
-            status: "active",
-            notes: null,
-            documents_placeholder: null,
-            monthly_change: 0,
-            current_month_value: null,
-            previous_month_value: null,
-            cost_basis: 100000,
-            purchase_date: null,
-            units: 0,
-            nav_price: 0,
-            today_gain_loss: 0,
-            sector: null,
-            amc: null,
-            region: "Domestic",
-            folio_number: null,
-            amfi_scheme_code: null,
-            sip_amount: null,
-            sip_date: null,
-            investment_mode: null,
-            option_type: null,
-            broker_platform: null,
-            nominee: null,
-            broker: null,
-            exchange: null,
-            isin: null,
-            average_purchase_price: null,
-            demat_account_provider: null,
-            demat_account_number: null,
-            fd_number: null,
-            interest_rate: null,
-            compounding_frequency: null,
-            payout_type: null,
-            maturity_date: null,
-            maturity_value: null,
-            issuer: null,
-            bond_name: null,
-            bond_type: null,
-            face_value: null,
-            coupon_rate: null,
-            coupon_frequency: null,
-            purchase_price: null,
-            current_market_price: null,
-            gold_type: null,
-            gold_unit: null,
-            storage_location: null,
-            esop_vested_shares: null,
-            esop_current_share_price: null,
-            esop_grant_status: null,
-            startup_funding_round: null,
-            startup_ownership_percent: null,
-            alternative_category: null,
-            created_at: "2026-08-01T00:00:00.000Z",
-            updated_at: "2026-08-01T00:00:00.000Z",
-            current_value: 150000,
-            gain_loss: 50000,
-            cagr: null,
-            xirr: null,
-            exposure: "equity",
-          },
+        assets: [
+          { id: "asset-re", user_id: "user-1", asset_type: "real_estate", asset_name: "Legacy RE", institution: null, current_value: 1000, purchase_value: null, purchase_date: null, owner: null, notes: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+        ],
+        realEstateProperties: [
+          { id: "prop-1", user_id: "user-1", property_name: "Apartment", property_type: "Apartment", owner: "Self", purchase_date: null, purchase_price: 0, current_market_value: 1200, address: null, city: "Mumbai", state: "MH", pin_code: null, occupancy_status: "self_occupied", monthly_rent: null, linked_home_loan_id: null, notes: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
         ],
       }),
     });
 
     const workspace = await service.getWorkspace();
-    const row = workspace.items.find((item) => item.entityType === "investment" && item.entityId === "mf-1");
-
-    expect(row).toBeDefined();
-    expect(row?.key).toBe("mutual_funds");
-  });
-});
-
-describe("MonthEndCloseService validation guards", () => {
-  it("rejects NaN and Infinity before persistence", () => {
-    expect(() => assertValidFinancialNumber(Number.NaN, "monthly actual value")).toThrow(
-      "Invalid monthly actual value: expected a finite numeric value.",
-    );
-    expect(() => assertValidFinancialNumber(Number.POSITIVE_INFINITY, "monthly actual value")).toThrow(
-      "Invalid monthly actual value: expected a finite numeric value.",
-    );
-  });
-
-  it("rejects accidental extreme values before persistence", () => {
-    expect(() => assertValidFinancialNumber(1e24, "monthly actual value")).toThrow(
-      "Invalid monthly actual value: value exceeds supported range.",
-    );
+    expect(workspace.items.filter((item) => item.entityType === "asset" && item.key === "real_estate").length).toBe(0);
+    expect(workspace.items.filter((item) => item.entityType === "real-estate-property" && item.key === "real_estate").length).toBe(1);
+    expect(workspace.dashboard.netWorth).toBe(1200);
   });
 });

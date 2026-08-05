@@ -25,28 +25,38 @@ import { LoadingSpinner, ToastViewport } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_SCENARIO_KEY } from "@/services/assumptions";
 import { getAssets, updateAsset } from "@/services/assets";
+import { getBankAccounts, updateBankAccount } from "@/services/bankAccounts";
 import { cashFlowManagementService } from "@/services/cashFlowManagement";
 import { compensationService, type CompensationSummary } from "@/services/compensation";
-import { getInvestments } from "@/services/investments";
+import { getInvestments, updateInvestment } from "@/services/investments";
 import { getLiabilities, updateLiability } from "@/services/liabilities";
 import { closeMonthEndClose, getMonthEndCloseWorkspace, reopenMonth, saveMonthEndCloseDraft } from "@/services/monthEndClose";
 import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/MonthEndCloseService";
 import { buildInvestmentValueMap } from "./investmentValueMap";
 import { monthlyReviewComparisonService, projectionInputService, type ProjectionComparisonRow } from "@/services/projection";
-import { getRetirementAccounts } from "@/services/retirement";
+import { getRetirementAccounts, updateRetirementAccount } from "@/services/retirement";
+import { getGoldHoldings, updateGoldHolding } from "@/services/goldHoldings";
+import { getSilverHoldings, updateSilverHolding } from "@/services/silverHoldings";
+import { getRealEstateProperties, updateRealEstateProperty } from "@/services/realEstateProperties";
 import { closeCurrentMonthSnapshot } from "@/services/monthlySnapshots";
 import type { Asset } from "@/types/asset";
+import type { BankAccount } from "@/types/bankAccount";
+import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment } from "@/types/investment";
 import type { Liability } from "@/types/liability";
 import type { MonthEndCloseWorkspace } from "@/types/monthEndClose";
 import type { ProjectionScenario } from "@/types/projection";
+import type { RealEstateProperty } from "@/types/realEstateProperty";
+import type { RetirementAccount } from "@/types/retirementAccount";
+import type { SilverHolding } from "@/types/silverHolding";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 
 type WorkflowStepKey =
   | "compensation"
-  | "investments"
-  | "assets"
-  | "loans"
+  | "financialAssets"
+  | "retirement"
+  | "nonFinancial"
+  | "liabilities"
   | "expenses"
   | "summary"
   | "close";
@@ -79,24 +89,29 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     description: "Confirm salary and deduction assumptions that feed monthly cash flow.",
   },
   {
-    key: "investments",
-    title: "Investment Value Updates",
-    description: "Update current values for mutual funds, stocks, FDs, ESOPs, and alternatives.",
+    key: "financialAssets",
+    title: "Financial Asset Updates",
+    description: "Update bank account balances and portfolio values for investible financial assets.",
   },
   {
-    key: "assets",
-    title: "Asset Value Updates",
-    description: "Refresh non-investment assets such as real estate, cash-like assets, and other holdings.",
+    key: "retirement",
+    title: "Retirement Account Updates",
+    description: "Capture latest balances for EPF, PPF, and NPS accounts.",
   },
   {
-    key: "loans",
-    title: "Loan Balance Updates",
+    key: "nonFinancial",
+    title: "Non-Financial Asset Updates",
+    description: "Refresh physical and tangible asset values including real estate, gold, silver, and other assets.",
+  },
+  {
+    key: "liabilities",
+    title: "Liability Updates",
     description: "Update outstanding principal balances across all liabilities.",
   },
   {
     key: "expenses",
-    title: "Living Expenses",
-    description: "Capture this month’s living expense run-rate used by cash flow and projections.",
+    title: "Living Expenses (OPTIONAL)",
+    description: "Optionally refresh this month’s living expense run-rate used by cash flow and projections.",
   },
   {
     key: "summary",
@@ -198,6 +213,14 @@ function tone(value: number) {
   return "text-slate-700";
 }
 
+function nullableTone(value: number | null) {
+  if (value == null) {
+    return "text-slate-500";
+  }
+
+  return tone(value);
+}
+
 function scoreTone(score: number) {
   if (score >= 80) {
     return "text-emerald-700";
@@ -233,7 +256,32 @@ function formatValueOrDataRequired(value: number | null) {
   return formatCurrency(value, { maximumFractionDigits: 0 });
 }
 
-type MonthlyReviewAuditAction = "save-investments" | "save-assets" | "save-loans" | "save-living-expenses";
+function formatValueOrNotAvailable(value: number | null) {
+  if (value == null) {
+    return "N/A";
+  }
+
+  return formatCurrency(value, { maximumFractionDigits: 0 });
+}
+
+function isImmediatePreviousMonth(prior: { year: number; month: number } | null, pending: { year: number; month: number }) {
+  if (!prior) {
+    return false;
+  }
+
+  if (pending.month === 1) {
+    return prior.year === pending.year - 1 && prior.month === 12;
+  }
+
+  return prior.year === pending.year && prior.month === pending.month - 1;
+}
+
+type MonthlyReviewAuditAction =
+  | "save-financial-assets"
+  | "save-retirement"
+  | "save-non-financial"
+  | "save-liabilities"
+  | "save-living-expenses";
 
 function logMonthlyReviewSaveAudit(params: {
   action: MonthlyReviewAuditAction;
@@ -306,7 +354,7 @@ function buildHealthScoreModel(params: {
 function buildMonthlyInsights(params: {
   health: HealthScoreModel;
   projectionVariance: number;
-  monthOverMonthChange: number;
+  monthOverMonthChange: number | null;
   totalAssets: number;
   totalLiabilities: number;
 }) {
@@ -346,7 +394,13 @@ function buildMonthlyInsights(params: {
     });
   }
 
-  if (params.monthOverMonthChange >= 0) {
+  if (params.monthOverMonthChange == null) {
+    insights.push({
+      title: "Month-over-Month Baseline Missing",
+      detail: "No prior closed month is available before the current review month, so month-over-month trend is unavailable.",
+      tone: "neutral",
+    });
+  } else if (params.monthOverMonthChange >= 0) {
     insights.push({
       title: "Net Worth Momentum Positive",
       detail: `Month-over-month net worth moved ${formatCurrency(params.monthOverMonthChange, { maximumFractionDigits: 0 })}.`,
@@ -381,12 +435,18 @@ function buildMonthlyInsights(params: {
 export default function MonthlyReviewPage() {
   const [workspace, setWorkspace] = useState<MonthEndCloseWorkspace | null>(null);
   const [compensationSummary, setCompensationSummary] = useState<CompensationSummary | null>(null);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
+  const [retirementAccounts, setRetirementAccounts] = useState<RetirementAccount[]>([]);
+  const [goldHoldings, setGoldHoldings] = useState<GoldHolding[]>([]);
+  const [silverHoldings, setSilverHoldings] = useState<SilverHolding[]>([]);
+  const [realEstateProperties, setRealEstateProperties] = useState<RealEstateProperty[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
   const [livingExpenseAmount, setLivingExpenseAmount] = useState<string>("0");
   const [livingExpenseNotes, setLivingExpenseNotes] = useState<string>("");
 
+  const [bankAccountValues, setBankAccountValues] = useState<Record<string, string>>({});
   const [investmentValues, setInvestmentValues] = useState<Record<string, string>>({});
   const [investmentSummaryValues, setInvestmentSummaryValues] = useState<{
     mutualFundsTotal: string;
@@ -395,14 +455,19 @@ export default function MonthlyReviewPage() {
     mutualFundsTotal: "0",
     stocksTotal: "0",
   });
+  const [retirementValues, setRetirementValues] = useState<Record<string, string>>({});
   const [assetValues, setAssetValues] = useState<Record<string, string>>({});
-  const [loanValues, setLoanValues] = useState<Record<string, string>>({});
+  const [goldValues, setGoldValues] = useState<Record<string, string>>({});
+  const [silverValues, setSilverValues] = useState<Record<string, string>>({});
+  const [propertyValues, setPropertyValues] = useState<Record<string, string>>({});
+  const [liabilityValues, setLiabilityValues] = useState<Record<string, string>>({});
 
   const [completedSteps, setCompletedSteps] = useState<Record<WorkflowStepKey, boolean>>({
     compensation: false,
-    investments: false,
-    assets: false,
-    loans: false,
+    financialAssets: false,
+    retirement: false,
+    nonFinancial: false,
+    liabilities: false,
     expenses: false,
     summary: false,
     close: false,
@@ -424,18 +489,33 @@ export default function MonthlyReviewPage() {
   function applyLoadedWorkspaceData(params: {
     monthWorkspace: MonthEndCloseWorkspace;
     summary: CompensationSummary | null;
+    bankAccountRows: BankAccount[];
     investmentRows: Investment[];
+    retirementRows: RetirementAccount[];
+    goldRows: GoldHolding[];
+    silverRows: SilverHolding[];
+    propertyRows: RealEstateProperty[];
     assetRows: Asset[];
     liabilityRows: Liability[];
     cashSnapshot: Awaited<ReturnType<typeof cashFlowManagementService.getCashFlowSnapshot>> | null;
   }) {
     setWorkspace(params.monthWorkspace);
     setCompensationSummary(params.summary);
+    setBankAccounts(params.bankAccountRows);
     setInvestments(params.investmentRows);
+    setRetirementAccounts(params.retirementRows);
+    setGoldHoldings(params.goldRows);
+    setSilverHoldings(params.silverRows);
+    setRealEstateProperties(params.propertyRows);
     setAssets(params.assetRows);
     setLiabilities(params.liabilityRows);
     setLivingExpenseAmount(String(params.cashSnapshot?.livingExpense.monthlyAmount ?? 0));
     setLivingExpenseNotes(params.cashSnapshot?.livingExpense.notes ?? "");
+
+    setBankAccountValues(params.bankAccountRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.current_balance ?? 0);
+      return acc;
+    }, {}));
 
     const investmentValueMap = buildInvestmentValueMap(params.monthWorkspace, params.investmentRows);
     setInvestmentValues(investmentValueMap.valuesById);
@@ -444,11 +524,27 @@ export default function MonthlyReviewPage() {
       mutualFundsTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap.valuesById, "Mutual Funds")),
       stocksTotal: String(sumValueMapByCategory(params.investmentRows, investmentValueMap.valuesById, "Stocks")),
     });
+    setRetirementValues(params.retirementRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.current_balance ?? 0);
+      return acc;
+    }, {}));
     setAssetValues(params.assetRows.reduce<Record<string, string>>((acc, item) => {
       acc[item.id] = String(item.current_value ?? 0);
       return acc;
     }, {}));
-    setLoanValues(params.liabilityRows.reduce<Record<string, string>>((acc, item) => {
+    setGoldValues(params.goldRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.current_value ?? 0);
+      return acc;
+    }, {}));
+    setSilverValues(params.silverRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.current_value ?? 0);
+      return acc;
+    }, {}));
+    setPropertyValues(params.propertyRows.reduce<Record<string, string>>((acc, item) => {
+      acc[item.id] = String(item.current_market_value ?? 0);
+      return acc;
+    }, {}));
+    setLiabilityValues(params.liabilityRows.reduce<Record<string, string>>((acc, item) => {
       acc[item.id] = String(item.outstanding_amount ?? 0);
       return acc;
     }, {}));
@@ -482,10 +578,15 @@ export default function MonthlyReviewPage() {
       setLoading(true);
       setError(null);
 
-      const [monthWorkspace, summary, investmentRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
+      const [monthWorkspace, summary, bankAccountRows, investmentRows, retirementRows, goldRows, silverRows, propertyRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
         getMonthEndCloseWorkspace(),
         compensationService.getSummary().catch(() => null),
+        getBankAccounts(),
         getInvestments(),
+        getRetirementAccounts(),
+        getGoldHoldings(),
+        getSilverHoldings(),
+        getRealEstateProperties(),
         getAssets(),
         getLiabilities(),
         cashFlowManagementService.getCashFlowSnapshot().catch(() => null),
@@ -494,7 +595,12 @@ export default function MonthlyReviewPage() {
       applyLoadedWorkspaceData({
         monthWorkspace,
         summary,
+        bankAccountRows,
         investmentRows,
+        retirementRows,
+        goldRows,
+        silverRows,
+        propertyRows,
         assetRows,
         liabilityRows,
         cashSnapshot,
@@ -520,10 +626,15 @@ export default function MonthlyReviewPage() {
         setLoading(true);
         setError(null);
 
-        const [monthWorkspace, summary, investmentRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
+        const [monthWorkspace, summary, bankAccountRows, investmentRows, retirementRows, goldRows, silverRows, propertyRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
           getMonthEndCloseWorkspace(),
           compensationService.getSummary().catch(() => null),
+          getBankAccounts(),
           getInvestments(),
+          getRetirementAccounts(),
+          getGoldHoldings(),
+          getSilverHoldings(),
+          getRealEstateProperties(),
           getAssets(),
           getLiabilities(),
           cashFlowManagementService.getCashFlowSnapshot().catch(() => null),
@@ -536,7 +647,12 @@ export default function MonthlyReviewPage() {
         applyLoadedWorkspaceData({
           monthWorkspace,
           summary,
+          bankAccountRows,
           investmentRows,
+          retirementRows,
+          goldRows,
+          silverRows,
+          propertyRows,
           assetRows,
           liabilityRows,
           cashSnapshot,
@@ -614,6 +730,243 @@ export default function MonthlyReviewPage() {
     });
   }, [healthModel, summary, workspace]);
 
+  const financialSummaryAudit = useMemo(() => {
+    if (!workspace || !summary || !healthModel) {
+      return null;
+    }
+
+    const netWorthExpected = summary.actualKpis.totalAssets - summary.actualKpis.totalLiabilities;
+    const savingsRateExpected = monthlyCash.monthlyIncome > 0
+      ? (monthlyCash.monthlyIncome - monthlyCash.monthlyExpenses) / monthlyCash.monthlyIncome
+      : 0;
+    const debtToAssetExpected = summary.actualKpis.totalAssets > 0
+      ? summary.actualKpis.totalLiabilities / summary.actualKpis.totalAssets
+      : 0;
+    const varianceRatioExpected = netWorthExpected !== 0
+      ? Math.abs(summary.projectionVariance) / Math.abs(netWorthExpected)
+      : 0;
+
+    const epfInvestmentTotal = investments
+      .filter((item) => item.category === "EPF")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+    const ppfInvestmentTotal = investments
+      .filter((item) => item.category === "PPF")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+    const npsInvestmentTotal = investments
+      .filter((item) => item.category === "NPS")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+
+    const epfRetirementTotal = retirementAccounts
+      .filter((item) => item.account_type === "EPF")
+      .reduce((sum, item) => sum + Number(item.current_balance ?? 0), 0);
+    const ppfRetirementTotal = retirementAccounts
+      .filter((item) => item.account_type === "PPF")
+      .reduce((sum, item) => sum + Number(item.current_balance ?? 0), 0);
+    const npsRetirementTotal = retirementAccounts
+      .filter((item) => item.account_type === "NPS")
+      .reduce((sum, item) => sum + Number(item.current_balance ?? 0), 0);
+
+    const goldInvestmentTotal = investments
+      .filter((item) => item.category === "Gold")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+    const silverInvestmentTotal = investments
+      .filter((item) => item.category === "Silver")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+    const sgbInvestmentTotal = investments
+      .filter((item) => item.category === "Sovereign Gold Bonds")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+
+    const dedicatedGoldTotal = goldHoldings.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+    const dedicatedSilverTotal = silverHoldings.reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+
+    const assetsRealEstateTotal = assets
+      .filter((item) => item.asset_type === "real_estate")
+      .reduce((sum, item) => sum + Number(item.current_value ?? 0), 0);
+    const dedicatedRealEstateTotal = realEstateProperties.reduce((sum, item) => sum + Number(item.current_market_value ?? 0), 0);
+
+    const hasDedicatedRetirement = retirementAccounts.length > 0;
+    const hasDedicatedGold = goldHoldings.length > 0;
+    const hasDedicatedSilver = silverHoldings.length > 0;
+    const hasDedicatedRealEstate = realEstateProperties.length > 0;
+    const canonicalDedupeApplied = hasDedicatedRetirement || hasDedicatedGold || hasDedicatedSilver || hasDedicatedRealEstate;
+
+    const priorClosedMonth = workspace.dashboard.currentClosedMonth;
+    const isAdjacentPriorMonth = isImmediatePreviousMonth(
+      priorClosedMonth ? { year: priorClosedMonth.year, month: priorClosedMonth.month } : null,
+      { year: workspace.month.year, month: workspace.month.month },
+    );
+    const livingExpenseProvided = completedSteps.expenses || toNumber(livingExpenseAmount) > 0 || livingExpenseNotes.trim().length > 0;
+
+    return {
+      rows: [
+        {
+          metric: "Net Worth",
+          formula: "Total Assets - Total Liabilities",
+          sources: "month_end_close_items via MonthEndCloseService summary",
+          sourceRecords: `items=${workspace.items.length}, canonicalDedupeApplied=${canonicalDedupeApplied ? "yes" : "no"}`,
+          substituted: `${formatCurrency(summary.actualKpis.totalAssets, { maximumFractionDigits: 0 })} - ${formatCurrency(summary.actualKpis.totalLiabilities, { maximumFractionDigits: 0 })}`,
+          expected: formatCurrency(netWorthExpected, { maximumFractionDigits: 0 }),
+          displayed: formatCurrency(summary.actualKpis.netWorth, { maximumFractionDigits: 0 }),
+        },
+        {
+          metric: "Projection Variance",
+          formula: "Actual Net Worth - Projected Net Worth",
+          sources: "month_end_close_items actual/projected aggregates",
+          sourceRecords: `items=${workspace.items.length}`,
+          substituted: `${formatCurrency(summary.actualKpis.netWorth, { maximumFractionDigits: 0 })} - ${formatCurrency(summary.projectedKpis.netWorth, { maximumFractionDigits: 0 })}`,
+          expected: formatCurrency(summary.actualKpis.netWorth - summary.projectedKpis.netWorth, { maximumFractionDigits: 0 }),
+          displayed: formatCurrency(summary.projectionVariance, { maximumFractionDigits: 0 }),
+        },
+        {
+          metric: "Month-over-Month Change",
+          formula: "Current month net worth - prior closed month net worth",
+          sources: "month_end_close dashboard KPI",
+          sourceRecords: `reviewMonth=${workspace.month.monthKey}, priorClosed=${priorClosedMonth?.monthKey ?? "none"}, adjacency=${priorClosedMonth ? (isAdjacentPriorMonth ? "adjacent" : "non-adjacent") : "none"}`,
+          substituted: workspace.dashboard.monthOverMonthChange == null
+            ? "No prior closed month available"
+            : `${formatCurrency(workspace.dashboard.netWorth, { maximumFractionDigits: 0 })} - ${formatValueOrNotAvailable(priorClosedMonth ? workspace.dashboard.netWorth - workspace.dashboard.monthOverMonthChange : null)}`,
+          expected: formatValueOrNotAvailable(workspace.dashboard.monthOverMonthChange),
+          displayed: formatValueOrNotAvailable(workspace.dashboard.monthOverMonthChange),
+        },
+        {
+          metric: "Savings Rate",
+          formula: "(Monthly Income - Monthly Expenses) / Monthly Income",
+          sources: "compensationService + cashFlowManagementService",
+          sourceRecords: `incomeSources=compensation, expenseSources=living_expense, provided=${livingExpenseProvided ? "yes" : "no"}`,
+          substituted: livingExpenseProvided
+            ? `(${formatCurrency(monthlyCash.monthlyIncome, { maximumFractionDigits: 0 })} - ${formatCurrency(monthlyCash.monthlyExpenses, { maximumFractionDigits: 0 })}) / ${formatCurrency(monthlyCash.monthlyIncome, { maximumFractionDigits: 0 })}`
+            : "Not provided",
+          expected: formatPercent(savingsRateExpected, { digits: 1, multiply: true }),
+          displayed: formatPercent(healthModel.savingsRate, { digits: 1, multiply: true }),
+        },
+        {
+          metric: "Debt-to-Asset Ratio",
+          formula: "Total Liabilities / Total Assets",
+          sources: "month_end_close_items liabilities/assets buckets",
+          sourceRecords: `liabilityItems=${workspace.items.filter((item) => item.itemType === "liability").length}`,
+          substituted: `${formatCurrency(summary.actualKpis.totalLiabilities, { maximumFractionDigits: 0 })} / ${formatCurrency(summary.actualKpis.totalAssets, { maximumFractionDigits: 0 })}`,
+          expected: formatPercent(debtToAssetExpected, { digits: 1, multiply: true }),
+          displayed: formatPercent(healthModel.debtToAssetRatio, { digits: 1, multiply: true }),
+        },
+        {
+          metric: "Variance Ratio",
+          formula: "|Projection Variance| / |Net Worth|",
+          sources: "MonthEndClose variance summary",
+          sourceRecords: `netWorth=${formatCurrency(netWorthExpected, { maximumFractionDigits: 0 })}`,
+          substituted: `|${formatCurrency(summary.projectionVariance, { maximumFractionDigits: 0 })}| / |${formatCurrency(netWorthExpected, { maximumFractionDigits: 0 })}|`,
+          expected: formatPercent(varianceRatioExpected, { digits: 1, multiply: true }),
+          displayed: formatPercent(healthModel.projectionVarianceRatio, { digits: 1, multiply: true }),
+        },
+      ],
+      overlapChecks: [
+        {
+          label: "EPF duplicate exposure",
+          moduleA: "investment_holdings (EPF)",
+          moduleB: "epf_accounts",
+          moduleAValue: epfInvestmentTotal,
+          moduleBValue: epfRetirementTotal,
+          recommendedSource: "epf_accounts",
+          note: epfInvestmentTotal > 0 && epfRetirementTotal > 0
+            ? "Potential duplicate exposure detected. Canonical source in month-end is dedicated retirement accounts."
+            : "No duplicate exposure detected.",
+        },
+        {
+          label: "PPF duplicate exposure",
+          moduleA: "investment_holdings (PPF)",
+          moduleB: "ppf_accounts",
+          moduleAValue: ppfInvestmentTotal,
+          moduleBValue: ppfRetirementTotal,
+          recommendedSource: "ppf_accounts",
+          note: ppfInvestmentTotal > 0 && ppfRetirementTotal > 0
+            ? "Potential duplicate exposure detected. Canonical source in month-end is dedicated retirement accounts."
+            : "No duplicate exposure detected.",
+        },
+        {
+          label: "NPS duplicate exposure",
+          moduleA: "investment_holdings (NPS)",
+          moduleB: "nps_accounts",
+          moduleAValue: npsInvestmentTotal,
+          moduleBValue: npsRetirementTotal,
+          recommendedSource: "nps_accounts",
+          note: npsInvestmentTotal > 0 && npsRetirementTotal > 0
+            ? "Potential duplicate exposure detected. Canonical source in month-end is dedicated retirement accounts."
+            : "No duplicate exposure detected.",
+        },
+        {
+          label: "Gold duplicate exposure",
+          moduleA: "investment_holdings (Gold)",
+          moduleB: "gold_holdings",
+          moduleAValue: goldInvestmentTotal,
+          moduleBValue: dedicatedGoldTotal,
+          recommendedSource: "gold_holdings",
+          note: goldInvestmentTotal > 0 && dedicatedGoldTotal > 0
+            ? "Potential duplicate exposure detected. Canonical source in month-end is dedicated gold holdings."
+            : "No overlap detected from current module values.",
+        },
+        {
+          label: "Silver duplicate exposure",
+          moduleA: "investment_holdings (Silver)",
+          moduleB: "silver_holdings",
+          moduleAValue: silverInvestmentTotal,
+          moduleBValue: dedicatedSilverTotal,
+          recommendedSource: "silver_holdings",
+          note: silverInvestmentTotal > 0 && dedicatedSilverTotal > 0
+            ? "Potential duplicate exposure detected. Canonical source in month-end is dedicated silver holdings."
+            : "No overlap detected from current module values.",
+        },
+        {
+          label: "Sovereign Gold Bond overlap check",
+          moduleA: "investment_holdings (Sovereign Gold Bonds)",
+          moduleB: "gold_holdings",
+          moduleAValue: sgbInvestmentTotal,
+          moduleBValue: dedicatedGoldTotal,
+          recommendedSource: "review manually",
+          note: sgbInvestmentTotal > 0 && dedicatedGoldTotal > 0
+            ? "SGB is instrument-level and may be intentionally separate from physical gold. Review to confirm no duplicate economic exposure."
+            : "No overlap detected from current module values.",
+        },
+        {
+          label: "Real estate duplicate exposure",
+          moduleA: "assets (asset_type=real_estate)",
+          moduleB: "real_estate_properties",
+          moduleAValue: assetsRealEstateTotal,
+          moduleBValue: dedicatedRealEstateTotal,
+          recommendedSource: "real_estate_properties",
+          note: assetsRealEstateTotal > 0 && dedicatedRealEstateTotal > 0
+            ? "Legacy real_estate assets are excluded when dedicated real-estate properties exist."
+            : "No overlap detected from current module values.",
+        },
+        {
+          label: "Monthly review vs live values overlap check",
+          moduleA: "month_end_close_items (workspace)",
+          moduleB: "live module tables",
+          moduleAValue: summary.actualKpis.netWorth,
+          moduleBValue: summary.actualKpis.netWorth,
+          recommendedSource: "month_end_close_items for Monthly Review metrics",
+          note: "Monthly Review cards use workspace month_end_close_items values; live table updates feed these rows and are not added separately in KPI math.",
+        },
+      ],
+      priorBaseline: {
+        monthKey: priorClosedMonth?.monthKey ?? null,
+        isAdjacent: priorClosedMonth ? isAdjacentPriorMonth : false,
+      },
+    };
+  }, [
+    assets,
+    completedSteps.expenses,
+    goldHoldings,
+    healthModel,
+    investments,
+    livingExpenseAmount,
+    livingExpenseNotes,
+    monthlyCash,
+    realEstateProperties,
+    retirementAccounts,
+    silverHoldings,
+    summary,
+    workspace,
+  ]);
+
   const completedCount = useMemo(() => {
     return WORKFLOW_STEPS.reduce((count, step) => count + (completedSteps[step.key] ? 1 : 0), 0);
   }, [completedSteps]);
@@ -636,23 +989,35 @@ export default function MonthlyReviewPage() {
     setCompletedSteps((current) => ({ ...current, [step]: true }));
   }
 
-  async function handleSaveInvestments() {
+  async function handleSaveFinancialAssets() {
     try {
-      setSavingStep("investments");
+      setSavingStep("financialAssets");
       setError(null);
 
       if (!workspace) {
         throw new Error("Monthly review workspace is unavailable.");
       }
 
-      const overrides = buildMonthEndInvestmentActuals({
+      const investmentOverrides = buildMonthEndInvestmentActuals({
         investments,
         investmentValues,
         investmentSummaryValues,
       });
 
+      const bankOverrideMap = new Map<string, number>(
+        bankAccounts.map((item) => [item.id, toNumber(bankAccountValues[item.id] ?? String(item.current_balance ?? 0))]),
+      );
+
+      const overrides = new Map<string, number>();
+      for (const [id, value] of investmentOverrides.entries()) {
+        overrides.set(id, value);
+      }
+      for (const [id, value] of bankOverrideMap.entries()) {
+        overrides.set(id, value);
+      }
+
       const updatedItems = workspace.items.map((item) => {
-        if (item.entityType !== "investment") {
+        if (item.entityType !== "investment" && item.entityType !== "bank-account") {
           return item;
         }
 
@@ -673,7 +1038,7 @@ export default function MonthlyReviewPage() {
       });
 
       logMonthlyReviewSaveAudit({
-        action: "save-investments",
+        action: "save-financial-assets",
         workspace,
         saveTarget: {
           path: "monthEndCloseService.saveDraft",
@@ -684,9 +1049,31 @@ export default function MonthlyReviewPage() {
           meta: {
             itemCount: updatedItems.length,
             investmentItemCount: updatedItems.filter((item) => item.entityType === "investment").length,
+            bankAccountItemCount: updatedItems.filter((item) => item.entityType === "bank-account").length,
           },
         },
       });
+
+      const investmentUpdates = investments
+        .map((item) => ({
+          id: item.id,
+          nextValue: overrides.get(item.id) ?? Number(item.current_value ?? 0),
+          changed: Math.abs((overrides.get(item.id) ?? Number(item.current_value ?? 0)) - Number(item.current_value ?? 0)) >= 0.01,
+        }))
+        .filter((item) => item.changed);
+
+      const bankUpdates = bankAccounts
+        .map((item) => ({
+          id: item.id,
+          nextValue: overrides.get(item.id) ?? Number(item.current_balance ?? 0),
+          changed: Math.abs((overrides.get(item.id) ?? Number(item.current_balance ?? 0)) - Number(item.current_balance ?? 0)) >= 0.01,
+        }))
+        .filter((item) => item.changed);
+
+      await Promise.all([
+        ...investmentUpdates.map((item) => updateInvestment({ id: item.id, current_value: item.nextValue })),
+        ...bankUpdates.map((item) => updateBankAccount({ id: item.id, current_balance: item.nextValue })),
+      ]);
 
       await saveMonthEndCloseDraft({
         closeId: workspace.close?.id ?? null,
@@ -706,23 +1093,69 @@ export default function MonthlyReviewPage() {
         })),
       });
 
-      markStepComplete("investments");
-      setNotice("Monthly Review investment balances captured for month-end reconciliation.");
+      markStepComplete("financialAssets");
+      setNotice("Financial asset balances captured for month-end reconciliation.");
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save investment values");
+      setError(saveError instanceof Error ? saveError.message : "Unable to save financial asset values");
     } finally {
       setSavingStep(null);
     }
   }
 
-  async function handleSaveAssets() {
+  async function handleSaveRetirement() {
     try {
-      setSavingStep("assets");
+      setSavingStep("retirement");
       setError(null);
 
-      const updates = assets
+      const updates = retirementAccounts
+        .map((item) => {
+          const nextValue = toNumber(retirementValues[item.id] ?? String(item.current_balance ?? 0));
+          return {
+            id: item.id,
+            accountType: item.account_type,
+            nextValue,
+            changed: Math.abs(nextValue - Number(item.current_balance ?? 0)) >= 0.01,
+          };
+        })
+        .filter((item) => item.changed);
+
+      logMonthlyReviewSaveAudit({
+        action: "save-retirement",
+        workspace,
+        saveTarget: {
+          path: "retirement.updateRetirementAccount",
+          closeId: null,
+          status: "n/a",
+          closeYear: null,
+          closeMonth: null,
+          meta: {
+            updateCount: updates.length,
+            retirementAccountIds: updates.map((item) => item.id),
+          },
+        },
+      });
+
+      await Promise.all(updates.map((item) => updateRetirementAccount({ id: item.id, account_type: item.accountType, current_balance: item.nextValue })));
+
+      markStepComplete("retirement");
+      setNotice(`Retirement balances ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
+      window.dispatchEvent(new Event("wealthos:finance-data-updated"));
+      await loadWorkspaceData();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save retirement balances");
+    } finally {
+      setSavingStep(null);
+    }
+  }
+
+  async function handleSaveNonFinancialAssets() {
+    try {
+      setSavingStep("nonFinancial");
+      setError(null);
+
+      const assetUpdates = assets
         .map((item) => {
           const nextValue = toNumber(assetValues[item.id] ?? String(item.current_value ?? 0));
           return {
@@ -733,43 +1166,83 @@ export default function MonthlyReviewPage() {
         })
         .filter((item) => item.changed);
 
+      const goldUpdates = goldHoldings
+        .map((item) => {
+          const nextValue = toNumber(goldValues[item.id] ?? String(item.current_value ?? 0));
+          return {
+            id: item.id,
+            nextValue,
+            changed: Math.abs(nextValue - Number(item.current_value ?? 0)) >= 0.01,
+          };
+        })
+        .filter((item) => item.changed);
+
+      const silverUpdates = silverHoldings
+        .map((item) => {
+          const nextValue = toNumber(silverValues[item.id] ?? String(item.current_value ?? 0));
+          return {
+            id: item.id,
+            nextValue,
+            changed: Math.abs(nextValue - Number(item.current_value ?? 0)) >= 0.01,
+          };
+        })
+        .filter((item) => item.changed);
+
+      const propertyUpdates = realEstateProperties
+        .map((item) => {
+          const nextValue = toNumber(propertyValues[item.id] ?? String(item.current_market_value ?? 0));
+          return {
+            id: item.id,
+            nextValue,
+            changed: Math.abs(nextValue - Number(item.current_market_value ?? 0)) >= 0.01,
+          };
+        })
+        .filter((item) => item.changed);
+
       logMonthlyReviewSaveAudit({
-        action: "save-assets",
+        action: "save-non-financial",
         workspace,
         saveTarget: {
-          path: "assets.updateAsset",
+          path: "assets/updateAsset + gold/silver/real-estate updates",
           closeId: null,
           status: "n/a",
           closeYear: null,
           closeMonth: null,
           meta: {
-            updateCount: updates.length,
-            assetIds: updates.map((item) => item.id),
+            assetUpdateCount: assetUpdates.length,
+            goldUpdateCount: goldUpdates.length,
+            silverUpdateCount: silverUpdates.length,
+            propertyUpdateCount: propertyUpdates.length,
           },
         },
       });
 
-      await Promise.all(updates.map((item) => updateAsset({ id: item.id, current_value: item.nextValue })));
+      await Promise.all([
+        ...assetUpdates.map((item) => updateAsset({ id: item.id, current_value: item.nextValue })),
+        ...goldUpdates.map((item) => updateGoldHolding({ id: item.id, current_value: item.nextValue })),
+        ...silverUpdates.map((item) => updateSilverHolding({ id: item.id, current_value: item.nextValue })),
+        ...propertyUpdates.map((item) => updateRealEstateProperty({ id: item.id, current_market_value: item.nextValue })),
+      ]);
 
-      markStepComplete("assets");
-      setNotice(`Asset values ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
+      markStepComplete("nonFinancial");
+      setNotice("Non-financial asset values updated successfully.");
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save asset values");
+      setError(saveError instanceof Error ? saveError.message : "Unable to save non-financial asset values");
     } finally {
       setSavingStep(null);
     }
   }
 
-  async function handleSaveLoans() {
+  async function handleSaveLiabilities() {
     try {
-      setSavingStep("loans");
+      setSavingStep("liabilities");
       setError(null);
 
       const updates = liabilities
         .map((item) => {
-          const nextValue = toNumber(loanValues[item.id] ?? String(item.outstanding_amount ?? 0));
+          const nextValue = toNumber(liabilityValues[item.id] ?? String(item.outstanding_amount ?? 0));
           return {
             id: item.id,
             nextValue,
@@ -779,7 +1252,7 @@ export default function MonthlyReviewPage() {
         .filter((item) => item.changed);
 
       logMonthlyReviewSaveAudit({
-        action: "save-loans",
+        action: "save-liabilities",
         workspace,
         saveTarget: {
           path: "liabilities.updateLiability",
@@ -796,12 +1269,12 @@ export default function MonthlyReviewPage() {
 
       await Promise.all(updates.map((item) => updateLiability({ id: item.id, outstanding_amount: item.nextValue })));
 
-      markStepComplete("loans");
-      setNotice(`Loan balances ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
+      markStepComplete("liabilities");
+      setNotice(`Liability balances ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save loan balances");
+      setError(saveError instanceof Error ? saveError.message : "Unable to save liabilities");
     } finally {
       setSavingStep(null);
     }
@@ -876,11 +1349,12 @@ export default function MonthlyReviewPage() {
       return;
     }
 
-    const requiredSteps: WorkflowStepKey[] = ["compensation", "investments", "assets", "loans", "expenses", "summary"];
+    const requiredSteps: WorkflowStepKey[] = ["compensation", "financialAssets", "retirement", "nonFinancial", "liabilities", "summary"];
     const incompleteStep = requiredSteps.find((step) => !completedSteps[step]);
 
     if (incompleteStep) {
-      setError(`Complete all workflow steps before closing. Pending: ${incompleteStep}.`);
+      const pendingLabel = WORKFLOW_STEPS.find((step) => step.key === incompleteStep)?.title ?? incompleteStep;
+      setError(`Complete required workflow steps before closing. Pending required step: ${pendingLabel}.`);
       return;
     }
 
@@ -954,7 +1428,7 @@ export default function MonthlyReviewPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <PageHeader
             title="Monthly Review Workspace"
-            description="One guided monthly workflow for compensation, valuations, liabilities, expenses, summary, and month close."
+            description="Complete monthly balance sheet review workflow for compensation, assets, liabilities, summary, and month close."
             summary={workspace ? `Pending close period: ${workspace.month.label}` : undefined}
           />
           <DashboardCard className="w-full max-w-sm p-4">
@@ -1140,14 +1614,37 @@ export default function MonthlyReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-600">
                   <PiggyBank className="h-4 w-4" />
-                  <h3 className="text-base font-semibold text-slate-900">2. Investment Value Updates</h3>
+                  <h3 className="text-base font-semibold text-slate-900">2. Financial Asset Updates</h3>
                 </div>
-                <Button type="button" onClick={() => void handleSaveInvestments()} disabled={savingStep === "investments"}>
-                  {savingStep === "investments" ? "Saving..." : "Save Investment Updates"}
+                <Button type="button" onClick={() => void handleSaveFinancialAssets()} disabled={savingStep === "financialAssets"}>
+                  {savingStep === "financialAssets" ? "Saving..." : "Save Financial Asset Updates"}
                 </Button>
               </div>
               <div className="mt-4 space-y-3">
-                {investments.length === 0 ? <p className="text-sm text-slate-500">No investments available.</p> : null}
+                {bankAccounts.length === 0 && investments.length === 0 ? <p className="text-sm text-slate-500">No financial assets available.</p> : null}
+
+                {bankAccounts.length > 0 ? (
+                  <>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bank Accounts</p>
+                    {bankAccounts.map((item) => (
+                      <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{item.account_name}</p>
+                          <p className="text-xs text-slate-500">{item.bank}</p>
+                        </div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          aria-label={`Bank balance ${item.account_name}`}
+                          value={bankAccountValues[item.id] ?? "0"}
+                          onChange={(event) => setBankAccountValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </>
+                ) : null}
+
+                {investments.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Investments</p> : null}
 
                 {mutualFundInvestments.length > 0 ? (
                   <div className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
@@ -1158,6 +1655,7 @@ export default function MonthlyReviewPage() {
                     <Input
                       type="number"
                       step="0.01"
+                      aria-label="Mutual Funds Total"
                       value={investmentSummaryValues.mutualFundsTotal}
                       onChange={(event) => setInvestmentSummaryValues((current) => ({ ...current, mutualFundsTotal: event.target.value }))}
                     />
@@ -1173,6 +1671,7 @@ export default function MonthlyReviewPage() {
                     <Input
                       type="number"
                       step="0.01"
+                      aria-label="Stocks Total"
                       value={investmentSummaryValues.stocksTotal}
                       onChange={(event) => setInvestmentSummaryValues((current) => ({ ...current, stocksTotal: event.target.value }))}
                     />
@@ -1188,6 +1687,7 @@ export default function MonthlyReviewPage() {
                     <Input
                       type="number"
                       step="0.01"
+                      aria-label={`Investment value ${item.investment_name}`}
                       value={investmentValues[item.id] ?? "0"}
                       onChange={(event) => setInvestmentValues((current) => ({ ...current, [item.id]: event.target.value }))}
                     />
@@ -1200,14 +1700,99 @@ export default function MonthlyReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-600">
                   <Landmark className="h-4 w-4" />
-                  <h3 className="text-base font-semibold text-slate-900">3. Asset Value Updates</h3>
+                  <h3 className="text-base font-semibold text-slate-900">3. Retirement Account Updates</h3>
                 </div>
-                <Button type="button" onClick={() => void handleSaveAssets()} disabled={savingStep === "assets"}>
-                  {savingStep === "assets" ? "Saving..." : "Save Asset Updates"}
+                <Button type="button" onClick={() => void handleSaveRetirement()} disabled={savingStep === "retirement"}>
+                  {savingStep === "retirement" ? "Saving..." : "Save Retirement Updates"}
                 </Button>
               </div>
               <div className="mt-4 space-y-3">
-                {assets.length === 0 ? <p className="text-sm text-slate-500">No assets available.</p> : null}
+                {retirementAccounts.length === 0 ? <p className="text-sm text-slate-500">No retirement accounts available.</p> : null}
+                {retirementAccounts.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{item.account_type} - {item.institution}</p>
+                      <p className="text-xs text-slate-500">Owner: {item.owner}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      aria-label={`Retirement balance ${item.account_type} ${item.institution}`}
+                      value={retirementValues[item.id] ?? "0"}
+                      onChange={(event) => setRetirementValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </DashboardCard>
+
+            <DashboardCard>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Scale className="h-4 w-4" />
+                  <h3 className="text-base font-semibold text-slate-900">4. Non-Financial Asset Updates</h3>
+                </div>
+                <Button type="button" onClick={() => void handleSaveNonFinancialAssets()} disabled={savingStep === "nonFinancial"}>
+                  {savingStep === "nonFinancial" ? "Saving..." : "Save Non-Financial Asset Updates"}
+                </Button>
+              </div>
+              <div className="mt-4 space-y-3">
+                {realEstateProperties.length === 0 && goldHoldings.length === 0 && silverHoldings.length === 0 && assets.length === 0 ? (
+                  <p className="text-sm text-slate-500">No non-financial assets available.</p>
+                ) : null}
+
+                {realEstateProperties.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Real Estate</p> : null}
+                {realEstateProperties.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{item.property_name}</p>
+                      <p className="text-xs text-slate-500">{item.city}, {item.state}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      aria-label={`Property value ${item.property_name}`}
+                      value={propertyValues[item.id] ?? "0"}
+                      onChange={(event) => setPropertyValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                    />
+                  </div>
+                ))}
+
+                {goldHoldings.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gold</p> : null}
+                {goldHoldings.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{item.description}</p>
+                      <p className="text-xs text-slate-500">{item.holding_type}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      aria-label={`Gold value ${item.description}`}
+                      value={goldValues[item.id] ?? "0"}
+                      onChange={(event) => setGoldValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                    />
+                  </div>
+                ))}
+
+                {silverHoldings.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Silver</p> : null}
+                {silverHoldings.map((item) => (
+                  <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{item.description}</p>
+                      <p className="text-xs text-slate-500">{item.holding_type}</p>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      aria-label={`Silver value ${item.description}`}
+                      value={silverValues[item.id] ?? "0"}
+                      onChange={(event) => setSilverValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                    />
+                  </div>
+                ))}
+
+                {assets.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Other Assets</p> : null}
                 {assets.map((item) => (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
                     <div>
@@ -1217,6 +1802,7 @@ export default function MonthlyReviewPage() {
                     <Input
                       type="number"
                       step="0.01"
+                      aria-label={`Asset value ${item.asset_name}`}
                       value={assetValues[item.id] ?? "0"}
                       onChange={(event) => setAssetValues((current) => ({ ...current, [item.id]: event.target.value }))}
                     />
@@ -1229,10 +1815,10 @@ export default function MonthlyReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-600">
                   <Scale className="h-4 w-4" />
-                  <h3 className="text-base font-semibold text-slate-900">4. Loan Balance Updates</h3>
+                  <h3 className="text-base font-semibold text-slate-900">5. Liability Updates</h3>
                 </div>
-                <Button type="button" onClick={() => void handleSaveLoans()} disabled={savingStep === "loans"}>
-                  {savingStep === "loans" ? "Saving..." : "Save Loan Updates"}
+                <Button type="button" onClick={() => void handleSaveLiabilities()} disabled={savingStep === "liabilities"}>
+                  {savingStep === "liabilities" ? "Saving..." : "Save Liability Updates"}
                 </Button>
               </div>
               <div className="mt-4 space-y-3">
@@ -1246,8 +1832,9 @@ export default function MonthlyReviewPage() {
                     <Input
                       type="number"
                       step="0.01"
-                      value={loanValues[item.id] ?? "0"}
-                      onChange={(event) => setLoanValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                      aria-label={`Liability value ${item.account_name}`}
+                      value={liabilityValues[item.id] ?? "0"}
+                      onChange={(event) => setLiabilityValues((current) => ({ ...current, [item.id]: event.target.value }))}
                     />
                   </div>
                 ))}
@@ -1258,7 +1845,7 @@ export default function MonthlyReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-600">
                   <ClipboardCheck className="h-4 w-4" />
-                  <h3 className="text-base font-semibold text-slate-900">5. Living Expenses</h3>
+                  <h3 className="text-base font-semibold text-slate-900">6. Living Expenses (OPTIONAL)</h3>
                 </div>
                 <Button type="button" onClick={() => void handleSaveExpenses()} disabled={savingStep === "expenses"}>
                   {savingStep === "expenses" ? "Saving..." : "Save Living Expenses"}
@@ -1280,7 +1867,7 @@ export default function MonthlyReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-600">
                   <Sparkles className="h-4 w-4" />
-                  <h3 className="text-base font-semibold text-slate-900">6. Financial Summary</h3>
+                  <h3 className="text-base font-semibold text-slate-900">7. Financial Summary</h3>
                 </div>
                 <Button type="button" variant="outline" onClick={() => markStepComplete("summary")}>Mark Summary Reviewed</Button>
               </div>
@@ -1298,7 +1885,7 @@ export default function MonthlyReviewPage() {
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                       <p className="text-xs uppercase tracking-wide text-slate-500">Month-over-Month Change</p>
-                      <p className={`mt-1 text-lg font-semibold ${tone(workspace.dashboard.monthOverMonthChange)}`}>{formatCurrency(workspace.dashboard.monthOverMonthChange, { maximumFractionDigits: 0 })}</p>
+                      <p className={`mt-1 text-lg font-semibold ${nullableTone(workspace.dashboard.monthOverMonthChange)}`}>{formatValueOrNotAvailable(workspace.dashboard.monthOverMonthChange)}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                       <p className="text-xs uppercase tracking-wide text-slate-500">Financial Health Score</p>
@@ -1335,6 +1922,64 @@ export default function MonthlyReviewPage() {
                       ))}
                     </div>
                   </div>
+
+                  {financialSummaryAudit ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Financial Summary Audit</p>
+                      <div className="mt-3 hidden overflow-x-auto md:block">
+                        <table className="min-w-full border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                              <th className="px-2 py-2">Metric</th>
+                              <th className="px-2 py-2">Formula</th>
+                              <th className="px-2 py-2">Sources</th>
+                              <th className="px-2 py-2">Source Records</th>
+                              <th className="px-2 py-2">Substituted Values</th>
+                              <th className="px-2 py-2">Expected</th>
+                              <th className="px-2 py-2">Displayed</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {financialSummaryAudit.rows.map((row) => (
+                              <tr key={row.metric} className="border-b border-slate-100 align-top">
+                                <td className="px-2 py-2 font-medium text-slate-900">{row.metric}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.formula}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.sources}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.sourceRecords}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.substituted}</td>
+                                <td className="px-2 py-2 text-slate-900">{row.expected}</td>
+                                <td className="px-2 py-2 text-slate-900">{row.displayed}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        <p className="text-sm font-semibold text-slate-900">Potential Duplicate Exposure</p>
+                        {financialSummaryAudit.priorBaseline.monthKey ? (
+                          <p className={`text-xs ${financialSummaryAudit.priorBaseline.isAdjacent ? "text-slate-600" : "text-amber-700"}`}>
+                            Prior closed month used for MoM: {financialSummaryAudit.priorBaseline.monthKey}
+                            {financialSummaryAudit.priorBaseline.isAdjacent ? "" : " (non-adjacent baseline)"}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-700">No prior closed month available for MoM baseline.</p>
+                        )}
+                        {financialSummaryAudit.overlapChecks.map((check) => (
+                          <div key={check.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-sm font-medium text-slate-900">{check.label}</p>
+                            <p className="text-xs text-slate-600">
+                              {check.moduleA}: {formatCurrency(check.moduleAValue, { maximumFractionDigits: 0 })}
+                            </p>
+                            <p className="text-xs text-slate-600">
+                              {check.moduleB}: {formatCurrency(check.moduleBValue, { maximumFractionDigits: 0 })}
+                            </p>
+                            <p className="text-xs text-slate-600">Recommended canonical source: {check.recommendedSource}</p>
+                            <p className="text-xs text-slate-700">{check.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-slate-500">Financial summary will appear once the workspace is loaded.</p>
@@ -1345,7 +1990,7 @@ export default function MonthlyReviewPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-600">
                   <CheckCircle2 className="h-4 w-4" />
-                  <h3 className="text-base font-semibold text-slate-900">7. Month Close Confirmation</h3>
+                  <h3 className="text-base font-semibold text-slate-900">8. Month Close Confirmation</h3>
                 </div>
                 <div className="flex items-center gap-2">
                   {workspace.latestClose?.id && latestClosedMonthLabel ? (
@@ -1369,7 +2014,7 @@ export default function MonthlyReviewPage() {
                   <div key={step.key} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
                     <span className="text-slate-700">{step.title}</span>
                     <span className={completedSteps[step.key] ? "text-emerald-700" : "text-amber-700"}>
-                      {completedSteps[step.key] ? "Complete" : "Pending"}
+                      {completedSteps[step.key] ? "Complete" : step.key === "expenses" ? "Optional" : "Pending"}
                     </span>
                   </div>
                 ))}

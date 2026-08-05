@@ -115,7 +115,7 @@ export interface MonthEndCloseDashboard {
   totalAssets: number;
   totalLiabilities: number;
   netWorth: number;
-  monthOverMonthChange: number;
+  monthOverMonthChange: number | null;
   projectionVariance: number;
   largestPositiveVariance: MonthEndCloseEditorItem | null;
   largestNegativeVariance: MonthEndCloseEditorItem | null;
