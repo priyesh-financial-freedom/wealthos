@@ -68,10 +68,10 @@ interface MonthEndCloseServiceDependencies {
 
 const ITEM_DEFINITION_MAP = new Map(MONTH_END_CLOSE_ITEM_DEFINITIONS.map((item) => [item.key, item]));
 const MUTUAL_FUND_CATEGORIES = new Set<InvestmentCategory>(["Mutual Funds"]);
-const STOCK_CATEGORIES = new Set<InvestmentCategory>(["Stocks", "ETFs", "Bonds", "Crypto", "Cash Equivalents"]);
+const STOCK_CATEGORIES = new Set<InvestmentCategory>(["Stocks", "ETFs", "Crypto", "Cash Equivalents"]);
 const GOLD_CATEGORIES = new Set<InvestmentCategory>(["Gold", "Sovereign Gold Bonds"]);
 const SILVER_CATEGORIES = new Set<InvestmentCategory>(["Silver"]);
-const FIXED_DEPOSIT_CATEGORIES = new Set<InvestmentCategory>(["Fixed Deposits"]);
+const FIXED_DEPOSIT_CATEGORIES = new Set<InvestmentCategory>(["Fixed Deposits", "Bonds"]);
 const EPF_CATEGORIES = new Set<InvestmentCategory>(["EPF"]);
 const PPF_CATEGORIES = new Set<InvestmentCategory>(["PPF"]);
 const NPS_CATEGORIES = new Set<InvestmentCategory>(["NPS"]);
@@ -286,7 +286,7 @@ function buildInvestmentSeeds(
       return [];
     }
 
-    if (options.hasDedicatedGoldHoldings && investment.category === "Gold") {
+    if (options.hasDedicatedGoldHoldings && GOLD_CATEGORIES.has(investment.category)) {
       return [];
     }
 
@@ -677,24 +677,8 @@ function buildWorkspaceItems(params: {
     });
   }
 
-  // Preserve historical draft rows even when current seed generation omits an entity.
-  for (const snapshot of draftSnapshots.exact.values()) {
-    if (!rowMap.has(snapshot.rowKey)) {
-      rowMap.set(snapshot.rowKey, {
-        rowKey: snapshot.rowKey,
-        entityId: snapshot.entityId,
-        entityType: snapshot.entityType,
-        entityTypeLabel: snapshot.entityTypeLabel,
-        entityName: snapshot.entityName,
-        key: snapshot.key,
-        itemType: snapshot.itemType,
-        openingValue: Number(snapshot.openingValue ?? 0),
-        projectedValue: Number(snapshot.projectedValue ?? 0),
-        actualValue: Number(snapshot.actualValue ?? 0),
-        sortOrder: Number(snapshot.sortOrder ?? 0),
-      });
-    }
-  }
+  // Reconciliation is driven by current canonical seed rows.
+  // Draft rows that no longer map to active entities are removed by reconcileDraftOnWorkspaceLoad.
 
   const rows = sortRowSeeds([...rowMap.values()]);
   rows.forEach((row) => {

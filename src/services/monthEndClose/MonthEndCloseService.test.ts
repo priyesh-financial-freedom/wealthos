@@ -314,7 +314,7 @@ describe("MonthEndCloseService getWorkspace", () => {
     expect(repository.deleteCloseItemsByIds).not.toHaveBeenCalledWith(["draft-item-esop"]);
   });
 
-  it("preserves draft investment rows even when the investment is deleted from live holdings", async () => {
+  it("removes draft investment rows when the investment no longer exists in live holdings", async () => {
     const draft = buildClose({
       id: "draft-deleted-investment",
       status: "draft",
@@ -354,11 +354,10 @@ describe("MonthEndCloseService getWorkspace", () => {
     });
 
     const workspace = await service.getWorkspace();
-    const preserved = workspace.items.find((item) => item.entityType === "investment" && item.entityId === "22222222-2222-2222-2222-222222222222");
+    const removed = workspace.items.find((item) => item.entityType === "investment" && item.entityId === "22222222-2222-2222-2222-222222222222");
 
-    expect(preserved).toBeDefined();
-    expect(preserved?.actualValue).toBe(180000);
-    expect(repository.deleteCloseItemsByIds).not.toHaveBeenCalledWith(["deleted-investment-item"]);
+    expect(removed).toBeUndefined();
+    expect(repository.deleteCloseItemsByIds).toHaveBeenCalledWith(["deleted-investment-item"]);
   });
 
   it("keeps draft actual_value when an investment is renamed but retains the same id", async () => {
@@ -480,7 +479,7 @@ describe("MonthEndCloseService getWorkspace", () => {
     expect(repository.deleteCloseItemsByIds).not.toHaveBeenCalledWith(["renamed-investment-item"]);
   });
 
-  it("reconciles draft items on load while preserving existing draft rows", async () => {
+  it("reconciles draft items on load and removes deleted draft rows", async () => {
     const draft = buildClose({ id: "draft-1", status: "draft" });
     const staleDeletedItem = buildCloseItem({
       id: "stale-1",
@@ -587,17 +586,17 @@ describe("MonthEndCloseService getWorkspace", () => {
 
     const workspace = await service.getWorkspace();
 
-    expect(workspace.items.map((item) => item.entityId).sort()).toEqual(["active-account", "deleted-account", "new-account"]);
+    expect(workspace.items.map((item) => item.entityId).sort()).toEqual(["active-account", "new-account"]);
     expect(workspace.items.find((item) => item.entityId === "active-account")?.actualValue).toBe(98765);
     expect(workspace.items.find((item) => item.entityId === "new-account")?.actualValue).toBe(222222);
-    expect(workspace.items.find((item) => item.entityId === "deleted-account")?.actualValue).toBe(55000);
+    expect(workspace.items.find((item) => item.entityId === "deleted-account")).toBeUndefined();
 
-    expect(repository.deleteCloseItemsByIds).not.toHaveBeenCalled();
+    expect(repository.deleteCloseItemsByIds).toHaveBeenCalledWith(["stale-1"]);
     expect(repository.upsertCloseItems).toHaveBeenCalledTimes(1);
 
     const upsertPayload = repository.upsertCloseItems.mock.calls[0][0] as Array<{ close_id: string; entity_id: string }>;
     expect(upsertPayload.every((row) => row.close_id === draft.id)).toBe(true);
-    expect(upsertPayload.map((row) => row.entity_id).sort()).toEqual(["active-account", "deleted-account", "new-account"]);
+    expect(upsertPayload.map((row) => row.entity_id).sort()).toEqual(["active-account", "new-account"]);
   });
 
   it("uses earliest open period as pending close period", async () => {
@@ -978,5 +977,85 @@ describe("MonthEndCloseService getWorkspace", () => {
     expect(workspace.items.filter((item) => item.entityType === "asset" && item.key === "real_estate").length).toBe(0);
     expect(workspace.items.filter((item) => item.entityType === "real-estate-property" && item.key === "real_estate").length).toBe(1);
     expect(workspace.dashboard.netWorth).toBe(1200);
+  });
+
+  it("ignores sovereign gold bond investments when dedicated gold holdings exist", async () => {
+    const draft = buildClose({ id: "draft-gold-dedupe", status: "draft", close_month: 8, close_year: 2026 });
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getEarliestOpenMonthEndClose: vi.fn(async () => draft),
+      getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getDraftForMonth: vi.fn(async () => draft),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => undefined),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        investments: [
+          buildInvestment({ id: "inv-sgb", category: "Sovereign Gold Bonds", name: "SGB 2032", currentValue: 250 }),
+        ],
+        goldHoldings: [
+          {
+            id: "gold-1",
+            user_id: "user-1",
+            holding_type: "Physical Gold",
+            description: "Coins",
+            quantity: 1,
+            unit: "grams",
+            purity: null,
+            purchase_date: null,
+            cost_basis: 0,
+            current_value: 300,
+            custodian: null,
+            institution: null,
+            owner: null,
+            nominee: null,
+            notes: null,
+            documents_placeholder: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.items.filter((item) => item.entityType === "investment" && item.key === "gold").length).toBe(0);
+    expect(workspace.items.filter((item) => item.entityType === "gold-holding" && item.key === "gold").length).toBe(1);
+    expect(workspace.dashboard.totalAssets).toBe(300);
+  });
+
+  it("maps bonds into fixed_deposits bucket", async () => {
+    const draft = buildClose({ id: "draft-bonds", status: "draft", close_month: 8, close_year: 2026 });
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getEarliestOpenMonthEndClose: vi.fn(async () => draft),
+      getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getDraftForMonth: vi.fn(async () => draft),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => undefined),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        investments: [
+          buildInvestment({ id: "inv-bond", category: "Bonds", name: "Gov Bond", currentValue: 450 }),
+        ],
+      }),
+    });
+
+    const workspace = await service.getWorkspace();
+    expect(workspace.items.find((item) => item.entityType === "investment" && item.entityId === "inv-bond")?.key).toBe("fixed_deposits");
+    expect(workspace.dashboard.totalAssets).toBe(450);
   });
 });

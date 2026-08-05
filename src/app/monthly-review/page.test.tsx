@@ -503,6 +503,201 @@ describe("MonthlyReviewPage", () => {
     expect(screen.getByText("No prior closed month available for MoM baseline.")).toBeTruthy();
   });
 
+  it("renders net worth breakdown buckets and reconciles totals", async () => {
+    calculateVarianceSummaryMock.mockReturnValueOnce({
+      actualKpis: {
+        cash: 100,
+        mutualFunds: 200,
+        totalAssets: 7600,
+        totalLiabilities: 390,
+        netWorth: 7210,
+        totalsByKey: {
+          bank_accounts: 100,
+          mutual_funds: 200,
+          stocks: 300,
+          gold: 900,
+          silver: 1000,
+          fixed_deposits: 700,
+          epf: 400,
+          ppf: 500,
+          nps: 600,
+          real_estate: 800,
+          other_assets: 1100,
+          home_loans: 120,
+          car_loans: 130,
+          other_liabilities: 140,
+        },
+      },
+      projectedKpis: {
+        cash: 100,
+        mutualFunds: 200,
+        totalAssets: 7500,
+        totalLiabilities: 390,
+        netWorth: 7110,
+        totalsByKey: {
+          bank_accounts: 100,
+          mutual_funds: 200,
+          stocks: 300,
+          gold: 900,
+          silver: 1000,
+          fixed_deposits: 700,
+          epf: 400,
+          ppf: 500,
+          nps: 600,
+          real_estate: 800,
+          other_assets: 1100,
+          home_loans: 120,
+          car_loans: 130,
+          other_liabilities: 140,
+        },
+      },
+      projectionVariance: 100,
+    });
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace());
+
+    render(<MonthlyReviewPage />);
+
+    expect(await screen.findByText("Net Worth Breakdown (Canonical Sources)")).toBeTruthy();
+    expect(screen.getAllByText("Cash / Bank").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Mutual Funds").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Stocks").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("EPF").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("PPF").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("NPS").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Fixed Deposits / Bonds").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Property").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Gold").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Silver").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Vehicle").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Other Assets").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Total Assets").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Home Loans").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Car Loans").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Credit Cards").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Overdraft").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Other Liabilities").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Total Liabilities").length).toBeGreaterThan(0);
+
+    expect(screen.getByText(/Rendered asset bucket sum:/)).toBeTruthy();
+    expect(screen.getByText(/Rendered liability bucket sum:/)).toBeTruthy();
+    expect(screen.getByText(/Net Worth check:/)).toBeTruthy();
+
+    expect(screen.getAllByText("month_end_close_items canonical bucket: bank_accounts").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("month_end_close_items canonical bucket: epf").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("month_end_close_items canonical bucket: home_loans").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\+ month_end_close_items/)).toBeNull();
+  });
+
+  it("uses workspace month-end bucket values without adding live source values", async () => {
+    const cashFromClose = 6697693;
+    const epfFromClose = 18942389;
+    const propertyFromClose = 32000000;
+    const liabilitiesFromClose = 9376770;
+
+    calculateVarianceSummaryMock.mockReturnValueOnce({
+      actualKpis: {
+        cash: cashFromClose,
+        mutualFunds: 5950786,
+        totalAssets: 72199062,
+        totalLiabilities: liabilitiesFromClose,
+        netWorth: 62822292,
+        totalsByKey: {
+          bank_accounts: cashFromClose,
+          mutual_funds: 5950786,
+          stocks: 1280367,
+          gold: 4450000,
+          silver: 0,
+          fixed_deposits: 0,
+          epf: epfFromClose,
+          ppf: 2023378,
+          nps: 455522,
+          real_estate: propertyFromClose,
+          other_assets: 1198927,
+          home_loans: 9175517,
+          car_loans: 0,
+          other_liabilities: 201253,
+        },
+      },
+      projectedKpis: {
+        cash: cashFromClose,
+        mutualFunds: 5950786,
+        totalAssets: 70000000,
+        totalLiabilities: liabilitiesFromClose,
+        netWorth: 60623230,
+        totalsByKey: {
+          bank_accounts: cashFromClose,
+          mutual_funds: 5950786,
+          stocks: 1280367,
+          gold: 4450000,
+          silver: 0,
+          fixed_deposits: 0,
+          epf: epfFromClose,
+          ppf: 2023378,
+          nps: 455522,
+          real_estate: propertyFromClose,
+          other_assets: 1198927,
+          home_loans: 9175517,
+          car_loans: 0,
+          other_liabilities: 201253,
+        },
+      },
+      projectionVariance: 2199062,
+    });
+
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace());
+    getBankAccountsMock.mockResolvedValueOnce([
+      { id: "bank-1", account_name: "Primary", bank: "HDFC", account_type: "Savings", current_balance: cashFromClose },
+    ]);
+    getRetirementAccountsMock.mockResolvedValueOnce([
+      {
+        id: "epf-1",
+        user_id: "user-1",
+        account_type: "EPF",
+        owner: "Self",
+        institution: "EPFO",
+        current_balance: epfFromClose,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        employer: null,
+        uan: null,
+        employee_contribution: null,
+        employer_contribution: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+    ] satisfies RetirementAccount[]);
+    getRealEstatePropertiesMock.mockResolvedValueOnce([
+      { id: "re-1", property_name: "Home", city: "Mumbai", state: "MH", current_market_value: propertyFromClose },
+    ]);
+
+    render(<MonthlyReviewPage />);
+
+    expect(await screen.findByText("Net Worth Breakdown (Canonical Sources)")).toBeTruthy();
+
+    const cashRows = screen.getAllByText("Cash / Bank");
+    expect(cashRows.length).toBeGreaterThan(0);
+    const cashRowText = cashRows[0].closest("tr")?.textContent ?? cashRows[0].parentElement?.textContent ?? "";
+    expect(cashRowText).toContain("66,97,693");
+    expect(cashRowText).not.toContain("1,33,95,386");
+
+    const epfRows = screen.getAllByText("EPF");
+    const epfRowText = epfRows[0].closest("tr")?.textContent ?? epfRows[0].parentElement?.textContent ?? "";
+    expect(epfRowText).toContain("1,89,42,389");
+    expect(epfRowText).not.toContain("3,78,84,778");
+
+    const breakdownSection = screen.getByText("Net Worth Breakdown (Canonical Sources)").closest("section")?.textContent ?? "";
+    expect(breakdownSection).toContain("Rendered asset bucket sum:");
+    expect(breakdownSection).toContain("Rendered liability bucket sum:");
+    expect(breakdownSection).toContain("Net Worth check:");
+  });
+
   it("renders duplicate exposure warnings in financial summary audit", async () => {
     getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace());
     getRetirementAccountsMock.mockResolvedValueOnce([
@@ -548,5 +743,7 @@ describe("MonthlyReviewPage", () => {
     expect(screen.getByText("EPF duplicate exposure")).toBeTruthy();
     expect(screen.getByText("Gold duplicate exposure")).toBeTruthy();
     expect(screen.getByText("Silver duplicate exposure")).toBeTruthy();
+    expect(screen.getByText("Ignored Duplicate Sources")).toBeTruthy();
+    expect(screen.getByText("EPF also exists in investment holdings but was ignored because retirement accounts are canonical.")).toBeTruthy();
   });
 });

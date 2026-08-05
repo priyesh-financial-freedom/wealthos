@@ -44,7 +44,7 @@ import type { BankAccount } from "@/types/bankAccount";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment } from "@/types/investment";
 import type { Liability } from "@/types/liability";
-import type { MonthEndCloseWorkspace } from "@/types/monthEndClose";
+import type { MonthEndCloseItemKey, MonthEndCloseWorkspace } from "@/types/monthEndClose";
 import type { ProjectionScenario } from "@/types/projection";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
@@ -80,6 +80,15 @@ interface ProjectionComparisonViewModel {
   fixedPlanAvailable: boolean;
   rollingPlanAvailable: boolean;
   actualAvailable: boolean;
+}
+
+interface NetWorthBreakdownRow {
+  label: string;
+  amount: number;
+  source: string;
+  canonicalSourceApplied: boolean;
+  duplicateSourcesIgnored: boolean;
+  note?: string;
 }
 
 const WORKFLOW_STEPS: WorkflowStep[] = [
@@ -430,6 +439,18 @@ function buildMonthlyInsights(params: {
   }
 
   return insights;
+}
+
+function sumWorkspaceBucket(items: MonthEndCloseWorkspace["items"], key: MonthEndCloseItemKey) {
+  return items
+    .filter((item) => item.key === key)
+    .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0);
+}
+
+function sumWorkspaceRowsByPredicate(items: MonthEndCloseWorkspace["items"], predicate: (item: MonthEndCloseWorkspace["items"][number]) => boolean) {
+  return items
+    .filter(predicate)
+    .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0);
 }
 
 export default function MonthlyReviewPage() {
@@ -790,12 +811,235 @@ export default function MonthlyReviewPage() {
     const hasDedicatedRealEstate = realEstateProperties.length > 0;
     const canonicalDedupeApplied = hasDedicatedRetirement || hasDedicatedGold || hasDedicatedSilver || hasDedicatedRealEstate;
 
+    const totalsByKey = summary.actualKpis.totalsByKey;
+
     const priorClosedMonth = workspace.dashboard.currentClosedMonth;
     const isAdjacentPriorMonth = isImmediatePreviousMonth(
       priorClosedMonth ? { year: priorClosedMonth.year, month: priorClosedMonth.month } : null,
       { year: workspace.month.year, month: workspace.month.month },
     );
     const livingExpenseProvided = completedSteps.expenses || toNumber(livingExpenseAmount) > 0 || livingExpenseNotes.trim().length > 0;
+
+    const assetTypeById = new Map(assets.map((item) => [item.id, item.asset_type] as const));
+    const liabilityTypeById = new Map(liabilities.map((item) => [item.id, item.liability_type] as const));
+    const vehicleAmountUsed = sumWorkspaceRowsByPredicate(
+      workspace.items,
+      (item) => item.key === "other_assets" && item.entityType === "asset" && assetTypeById.get(item.entityId) === "vehicle",
+    );
+    const creditCardAmountUsed = sumWorkspaceRowsByPredicate(
+      workspace.items,
+      (item) => item.key === "other_liabilities" && item.entityType === "liability" && liabilityTypeById.get(item.entityId) === "Credit Card",
+    );
+    const overdraftAmountUsed = sumWorkspaceRowsByPredicate(
+      workspace.items,
+      (item) =>
+        item.key === "other_liabilities" &&
+        item.entityType === "liability" &&
+        (liabilityTypeById.get(item.entityId) === "Bank Overdraft" || liabilityTypeById.get(item.entityId) === "Overdraft / Line of Credit"),
+    );
+    const otherAssetsAmountUsed = totalsByKey.other_assets - vehicleAmountUsed;
+    const otherLiabilitiesAmountUsed = totalsByKey.other_liabilities - creditCardAmountUsed - overdraftAmountUsed;
+
+    const ignoredDuplicateWarnings: string[] = [];
+    if (hasDedicatedRetirement && epfInvestmentTotal > 0) {
+      ignoredDuplicateWarnings.push("EPF also exists in investment holdings but was ignored because retirement accounts are canonical.");
+    }
+    if (hasDedicatedRetirement && ppfInvestmentTotal > 0) {
+      ignoredDuplicateWarnings.push("PPF also exists in investment holdings but was ignored because retirement accounts are canonical.");
+    }
+    if (hasDedicatedRetirement && npsInvestmentTotal > 0) {
+      ignoredDuplicateWarnings.push("NPS also exists in investment holdings but was ignored because retirement accounts are canonical.");
+    }
+    if (hasDedicatedGold && (goldInvestmentTotal > 0 || sgbInvestmentTotal > 0)) {
+      ignoredDuplicateWarnings.push("Gold also exists in investment holdings but was ignored because gold holdings are canonical.");
+    }
+    if (hasDedicatedSilver && silverInvestmentTotal > 0) {
+      ignoredDuplicateWarnings.push("Silver also exists in investment holdings but was ignored because silver holdings are canonical.");
+    }
+    if (hasDedicatedRealEstate && assetsRealEstateTotal > 0) {
+      ignoredDuplicateWarnings.push("Property also exists in generic assets but was ignored because real estate properties are canonical.");
+    }
+
+    const netWorthBreakdownRows: NetWorthBreakdownRow[] = [
+      {
+        label: "Cash / Bank",
+        amount: totalsByKey.bank_accounts,
+        source: "month_end_close_items canonical bucket: bank_accounts",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Mutual Funds",
+        amount: totalsByKey.mutual_funds,
+        source: "month_end_close_items canonical bucket: mutual_funds",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Stocks",
+        amount: totalsByKey.stocks,
+        source: "month_end_close_items canonical bucket: stocks",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "EPF",
+        amount: totalsByKey.epf,
+        source: "month_end_close_items canonical bucket: epf",
+        canonicalSourceApplied: hasDedicatedRetirement,
+        duplicateSourcesIgnored: hasDedicatedRetirement && epfInvestmentTotal > 0,
+        note: hasDedicatedRetirement && epfInvestmentTotal > 0
+          ? "Investment EPF values were ignored as duplicate source."
+          : undefined,
+      },
+      {
+        label: "PPF",
+        amount: totalsByKey.ppf,
+        source: "month_end_close_items canonical bucket: ppf",
+        canonicalSourceApplied: hasDedicatedRetirement,
+        duplicateSourcesIgnored: hasDedicatedRetirement && ppfInvestmentTotal > 0,
+        note: hasDedicatedRetirement && ppfInvestmentTotal > 0
+          ? "Investment PPF values were ignored as duplicate source."
+          : undefined,
+      },
+      {
+        label: "NPS",
+        amount: totalsByKey.nps,
+        source: "month_end_close_items canonical bucket: nps",
+        canonicalSourceApplied: hasDedicatedRetirement,
+        duplicateSourcesIgnored: hasDedicatedRetirement && npsInvestmentTotal > 0,
+        note: hasDedicatedRetirement && npsInvestmentTotal > 0
+          ? "Investment NPS values were ignored as duplicate source."
+          : undefined,
+      },
+      {
+        label: "Fixed Deposits / Bonds",
+        amount: totalsByKey.fixed_deposits,
+        source: "month_end_close_items canonical bucket: fixed_deposits",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Property",
+        amount: totalsByKey.real_estate,
+        source: "month_end_close_items canonical bucket: real_estate",
+        canonicalSourceApplied: hasDedicatedRealEstate,
+        duplicateSourcesIgnored: hasDedicatedRealEstate && assetsRealEstateTotal > 0,
+        note: hasDedicatedRealEstate && assetsRealEstateTotal > 0
+          ? "Legacy real_estate asset rows were ignored as duplicate source."
+          : undefined,
+      },
+      {
+        label: "Gold",
+        amount: totalsByKey.gold,
+        source: "month_end_close_items canonical bucket: gold",
+        canonicalSourceApplied: hasDedicatedGold,
+        duplicateSourcesIgnored: hasDedicatedGold && (goldInvestmentTotal > 0 || sgbInvestmentTotal > 0),
+        note: hasDedicatedGold && (goldInvestmentTotal > 0 || sgbInvestmentTotal > 0)
+          ? "Investment gold and SGB values were ignored as duplicate source."
+          : undefined,
+      },
+      {
+        label: "Silver",
+        amount: totalsByKey.silver,
+        source: "month_end_close_items canonical bucket: silver",
+        canonicalSourceApplied: hasDedicatedSilver,
+        duplicateSourcesIgnored: hasDedicatedSilver && silverInvestmentTotal > 0,
+        note: hasDedicatedSilver && silverInvestmentTotal > 0
+          ? "Investment silver values were ignored as duplicate source."
+          : undefined,
+      },
+      {
+        label: "Vehicle",
+        amount: vehicleAmountUsed,
+        source: "month_end_close_items canonical bucket: other_assets (vehicle rows)",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Other Assets",
+        amount: otherAssetsAmountUsed,
+        source: "month_end_close_items canonical bucket: other_assets",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Total Assets",
+        amount: summary.actualKpis.totalAssets,
+        source: "sum(canonical asset buckets in month_end_close_items)",
+        canonicalSourceApplied: canonicalDedupeApplied,
+        duplicateSourcesIgnored: ignoredDuplicateWarnings.length > 0,
+      },
+      {
+        label: "Home Loans",
+        amount: totalsByKey.home_loans,
+        source: "month_end_close_items canonical bucket: home_loans",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Car Loans",
+        amount: totalsByKey.car_loans,
+        source: "month_end_close_items canonical bucket: car_loans",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Credit Cards",
+        amount: creditCardAmountUsed,
+        source: "month_end_close_items canonical bucket: other_liabilities (credit card rows)",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Overdraft",
+        amount: overdraftAmountUsed,
+        source: "month_end_close_items canonical bucket: other_liabilities (overdraft rows)",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Other Liabilities",
+        amount: otherLiabilitiesAmountUsed,
+        source: "month_end_close_items canonical bucket: other_liabilities",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Total Liabilities",
+        amount: summary.actualKpis.totalLiabilities,
+        source: "sum(liability buckets in month_end_close_items)",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: false,
+      },
+      {
+        label: "Net Worth",
+        amount: summary.actualKpis.netWorth,
+        source: "Total Assets - Total Liabilities",
+        canonicalSourceApplied: true,
+        duplicateSourcesIgnored: ignoredDuplicateWarnings.length > 0,
+      },
+    ];
+
+    const renderedAssetTotal = netWorthBreakdownRows
+      .filter((row) => [
+        "Cash / Bank",
+        "Mutual Funds",
+        "Stocks",
+        "EPF",
+        "PPF",
+        "NPS",
+        "Fixed Deposits / Bonds",
+        "Property",
+        "Gold",
+        "Silver",
+        "Vehicle",
+        "Other Assets",
+      ].includes(row.label))
+      .reduce((sum, row) => sum + row.amount, 0);
+    const renderedLiabilityTotal = netWorthBreakdownRows
+      .filter((row) => ["Home Loans", "Car Loans", "Credit Cards", "Overdraft", "Other Liabilities"].includes(row.label))
+      .reduce((sum, row) => sum + row.amount, 0);
 
     return {
       rows: [
@@ -950,6 +1194,12 @@ export default function MonthlyReviewPage() {
         monthKey: priorClosedMonth?.monthKey ?? null,
         isAdjacent: priorClosedMonth ? isAdjacentPriorMonth : false,
       },
+      netWorthBreakdown: {
+        rows: netWorthBreakdownRows,
+        renderedAssetTotal,
+        renderedLiabilityTotal,
+      },
+      ignoredDuplicateWarnings,
     };
   }, [
     assets,
@@ -964,6 +1214,7 @@ export default function MonthlyReviewPage() {
     retirementAccounts,
     silverHoldings,
     summary,
+    liabilities,
     workspace,
   ]);
 
@@ -1907,6 +2158,63 @@ export default function MonthlyReviewPage() {
                       <p className="mt-1 text-sm font-semibold text-slate-900">{formatPercent(healthModel.projectionVarianceRatio, { digits: 1, multiply: true })}</p>
                     </div>
                   </div>
+
+                  {financialSummaryAudit ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                      <p className="text-sm font-semibold text-slate-900">Net Worth Breakdown (Canonical Sources)</p>
+                      <p className="mt-1 text-xs text-slate-600">Exact formula: Net Worth = Total Assets - Total Liabilities (from month_end_close_items canonical buckets).</p>
+                      <div className="mt-3 hidden overflow-x-auto md:block">
+                        <table className="min-w-full border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                              <th className="px-2 py-2">Bucket</th>
+                              <th className="px-2 py-2">Amount Used</th>
+                              <th className="px-2 py-2">Source Module/Table</th>
+                              <th className="px-2 py-2">Canonical Applied</th>
+                              <th className="px-2 py-2">Duplicate Ignored</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {financialSummaryAudit.netWorthBreakdown.rows.map((row) => (
+                              <tr key={row.label} className="border-b border-slate-100 align-top">
+                                <td className="px-2 py-2 font-medium text-slate-900">{row.label}</td>
+                                <td className="px-2 py-2 text-slate-900">{formatCurrency(row.amount, { maximumFractionDigits: 0 })}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.source}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.canonicalSourceApplied ? "Yes" : "No"}</td>
+                                <td className="px-2 py-2 text-slate-700">{row.duplicateSourcesIgnored ? "Yes" : "No"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-3 space-y-2 md:hidden">
+                        {financialSummaryAudit.netWorthBreakdown.rows.map((row) => (
+                          <div key={row.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-sm font-medium text-slate-900">{row.label}</p>
+                            <p className="text-xs text-slate-700">Amount used: {formatCurrency(row.amount, { maximumFractionDigits: 0 })}</p>
+                            <p className="text-xs text-slate-600">Source: {row.source}</p>
+                            <p className="text-xs text-slate-600">Canonical applied: {row.canonicalSourceApplied ? "Yes" : "No"}</p>
+                            <p className="text-xs text-slate-600">Duplicate ignored: {row.duplicateSourcesIgnored ? "Yes" : "No"}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                        <p>Rendered asset bucket sum: {formatCurrency(financialSummaryAudit.netWorthBreakdown.renderedAssetTotal, { maximumFractionDigits: 0 })}</p>
+                        <p>Rendered liability bucket sum: {formatCurrency(financialSummaryAudit.netWorthBreakdown.renderedLiabilityTotal, { maximumFractionDigits: 0 })}</p>
+                        <p>Net Worth check: {formatCurrency(summary.actualKpis.totalAssets, { maximumFractionDigits: 0 })} - {formatCurrency(summary.actualKpis.totalLiabilities, { maximumFractionDigits: 0 })} = {formatCurrency(summary.actualKpis.netWorth, { maximumFractionDigits: 0 })}</p>
+                      </div>
+                      {financialSummaryAudit.ignoredDuplicateWarnings.length > 0 ? (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="text-sm font-medium text-amber-800">Ignored Duplicate Sources</p>
+                          <div className="mt-1 space-y-1">
+                            {financialSummaryAudit.ignoredDuplicateWarnings.map((warning) => (
+                              <p key={warning} className="text-xs text-amber-800">{warning}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div>
                     <div className="mb-3 flex items-center gap-2 text-slate-700">
