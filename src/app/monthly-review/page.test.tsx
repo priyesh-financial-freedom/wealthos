@@ -19,8 +19,10 @@ const serviceMocks = vi.hoisted(() => ({
   getRetirementAccountsMock: vi.fn<() => Promise<RetirementAccount[]>>(),
   updateRetirementAccountMock: vi.fn(),
   getGoldHoldingsMock: vi.fn<() => Promise<Array<Record<string, unknown>>>>(),
+  createGoldHoldingMock: vi.fn(),
   updateGoldHoldingMock: vi.fn(),
   getSilverHoldingsMock: vi.fn<() => Promise<Array<Record<string, unknown>>>>(),
+  createSilverHoldingMock: vi.fn(),
   updateSilverHoldingMock: vi.fn(),
   getRealEstatePropertiesMock: vi.fn<() => Promise<Array<Record<string, unknown>>>>(),
   updateRealEstatePropertyMock: vi.fn(),
@@ -42,8 +44,10 @@ const {
   getRetirementAccountsMock,
   updateRetirementAccountMock,
   getGoldHoldingsMock,
+  createGoldHoldingMock,
   updateGoldHoldingMock,
   getSilverHoldingsMock,
+  createSilverHoldingMock,
   updateSilverHoldingMock,
   getRealEstatePropertiesMock,
   updateRealEstatePropertyMock,
@@ -67,7 +71,15 @@ beforeEach(() => {
   getBankAccountsMock.mockResolvedValue([]);
   getInvestmentsMock.mockResolvedValue([]);
   updateRetirementAccountMock.mockResolvedValue({});
+  createGoldHoldingMock.mockResolvedValue({
+    id: "gold-created",
+    current_value: 0,
+  });
   updateGoldHoldingMock.mockResolvedValue({});
+  createSilverHoldingMock.mockResolvedValue({
+    id: "silver-created",
+    current_value: 0,
+  });
   updateSilverHoldingMock.mockResolvedValue({});
   updateRealEstatePropertyMock.mockResolvedValue({});
   updateBankAccountMock.mockResolvedValue({});
@@ -249,11 +261,13 @@ vi.mock("@/services/retirement", () => ({
 
 vi.mock("@/services/goldHoldings", () => ({
   getGoldHoldings: getGoldHoldingsMock,
+  createGoldHolding: createGoldHoldingMock,
   updateGoldHolding: updateGoldHoldingMock,
 }));
 
 vi.mock("@/services/silverHoldings", () => ({
   getSilverHoldings: getSilverHoldingsMock,
+  createSilverHolding: createSilverHoldingMock,
   updateSilverHolding: updateSilverHoldingMock,
 }));
 
@@ -501,7 +515,7 @@ describe("MonthlyReviewPage", () => {
     fireEvent.click(screen.getByText("Save Financial Asset Updates"));
     await waitFor(() => expect(screen.getByText("Financial asset balances captured for month-end reconciliation.")).toBeTruthy());
     fireEvent.click(screen.getByText("Save Retirement Updates"));
-    await waitFor(() => expect(screen.getByText("Retirement balances reviewed successfully.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Retirement balances synced to month-end review.")).toBeTruthy());
     fireEvent.click(screen.getByText("Save Non-Financial Asset Updates"));
     await waitFor(() => expect(screen.getByText("Non-financial asset values updated successfully.")).toBeTruthy());
     fireEvent.click(screen.getByText("Save Liability Updates"));
@@ -1170,5 +1184,104 @@ describe("MonthlyReviewPage", () => {
 
     expect(screen.getByText("₹43,00,000")).toBeTruthy();
     expect(screen.getByText("₹1,20,000")).toBeTruthy();
+  });
+
+  it("shows add controls and creates missing gold/silver holdings from prior close values", async () => {
+    getMonthEndCloseWorkspaceMock
+      .mockResolvedValueOnce(buildWorkspace({
+        items: [
+          {
+            rowKey: "gold-holding:ghost-gold",
+            entityId: "ghost-gold",
+            entityType: "gold-holding",
+            entityTypeLabel: "Physical Gold",
+            entityName: "Gold at home",
+            key: "gold",
+            label: "Gold at home",
+            itemType: "asset",
+            sortOrder: 1,
+            openingValue: 75000,
+            projectedValue: 75000,
+            actualValue: 0,
+            absoluteVariance: -75000,
+            percentageVariance: -100,
+          },
+          {
+            rowKey: "silver-holding:ghost-silver",
+            entityId: "ghost-silver",
+            entityType: "silver-holding",
+            entityTypeLabel: "Physical Silver",
+            entityName: "Silver holding",
+            key: "silver",
+            label: "Silver holding",
+            itemType: "asset",
+            sortOrder: 1,
+            openingValue: 12000,
+            projectedValue: 12000,
+            actualValue: 0,
+            absoluteVariance: -12000,
+            percentageVariance: -100,
+          },
+        ],
+      }))
+      .mockResolvedValueOnce(buildWorkspace({
+        items: [
+          buildWorkspaceItem({ rowKey: "gold-holding:gold-created", entityId: "gold-created", entityType: "gold-holding", entityTypeLabel: "Physical Gold", entityName: "Gold at home", key: "gold", actualValue: 75000 }),
+          buildWorkspaceItem({ rowKey: "silver-holding:silver-created", entityId: "silver-created", entityType: "silver-holding", entityTypeLabel: "Physical Silver", entityName: "Silver holding", key: "silver", actualValue: 12000 }),
+        ],
+      }))
+      .mockResolvedValueOnce(buildWorkspace({
+        items: [
+          buildWorkspaceItem({ rowKey: "gold-holding:gold-created", entityId: "gold-created", entityType: "gold-holding", entityTypeLabel: "Physical Gold", entityName: "Gold at home", key: "gold", actualValue: 75000 }),
+          buildWorkspaceItem({ rowKey: "silver-holding:silver-created", entityId: "silver-created", entityType: "silver-holding", entityTypeLabel: "Physical Silver", entityName: "Silver holding", key: "silver", actualValue: 12000 }),
+        ],
+      }));
+
+    createGoldHoldingMock.mockResolvedValueOnce({
+      id: "gold-created",
+      description: "Gold at home",
+      holding_type: "Physical Gold",
+      current_value: 75000,
+      owner: "Household",
+    });
+
+    createSilverHoldingMock.mockResolvedValueOnce({
+      id: "silver-created",
+      description: "Silver holding",
+      holding_type: "Physical Silver",
+      current_value: 12000,
+      owner: "Household",
+    });
+
+    render(<MonthlyReviewPage />);
+
+    expect(await screen.findByText("4. Non-Financial Asset Updates")).toBeTruthy();
+    expect(screen.getByText("Add Gold Holding")).toBeTruthy();
+    expect(screen.getByText("Add Silver Holding")).toBeTruthy();
+    expect(screen.getAllByText("Create holding from prior close").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByText("Create holding from prior close")[0]);
+    fireEvent.click(screen.getAllByText("Create holding from prior close")[1]);
+
+    expect((screen.getByLabelText("New gold holding value") as HTMLInputElement).value).toBe("75000");
+    expect((screen.getByLabelText("New silver holding value") as HTMLInputElement).value).toBe("12000");
+
+    fireEvent.click(screen.getByText("Save Non-Financial Asset Updates"));
+
+    await waitFor(() => {
+      expect(createGoldHoldingMock).toHaveBeenCalledWith(expect.objectContaining({
+        description: "Gold at home",
+        current_value: 75000,
+      }));
+      expect(createSilverHoldingMock).toHaveBeenCalledWith(expect.objectContaining({
+        description: "Silver holding",
+        current_value: 12000,
+      }));
+      expect(saveMonthEndCloseDraftMock).toHaveBeenCalled();
+    });
+
+    const latestPayload = saveMonthEndCloseDraftMock.mock.calls.at(-1)?.[0] as { items: Array<{ entityType: string; entityId: string; actualValue: number }> };
+    expect(latestPayload.items.find((item) => item.entityType === "gold-holding" && item.entityId === "gold-created")?.actualValue).toBe(75000);
+    expect(latestPayload.items.find((item) => item.entityType === "silver-holding" && item.entityId === "silver-created")?.actualValue).toBe(12000);
   });
 });

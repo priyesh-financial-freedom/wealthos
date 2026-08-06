@@ -35,8 +35,8 @@ import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/
 import { buildInvestmentValueMap } from "./investmentValueMap";
 import { monthlyReviewComparisonService, projectionInputService, type ProjectionComparisonRow } from "@/services/projection";
 import { getRetirementAccounts, updateRetirementAccount } from "@/services/retirement";
-import { getGoldHoldings, updateGoldHolding } from "@/services/goldHoldings";
-import { getSilverHoldings, updateSilverHolding } from "@/services/silverHoldings";
+import { createGoldHolding, getGoldHoldings, updateGoldHolding } from "@/services/goldHoldings";
+import { createSilverHolding, getSilverHoldings, updateSilverHolding } from "@/services/silverHoldings";
 import { getRealEstateProperties, updateRealEstateProperty } from "@/services/realEstateProperties";
 import { closeCurrentMonthSnapshot } from "@/services/monthlySnapshots";
 import type { Asset } from "@/types/asset";
@@ -478,6 +478,12 @@ function sumWorkspaceRowsByPredicate(items: MonthEndCloseWorkspace["items"], pre
     .reduce((sum, item) => sum + Number(item.actualValue ?? 0), 0);
 }
 
+function sumWorkspaceOpeningRowsByPredicate(items: MonthEndCloseWorkspace["items"], predicate: (item: MonthEndCloseWorkspace["items"][number]) => boolean) {
+  return items
+    .filter(predicate)
+    .reduce((sum, item) => sum + Number(item.openingValue ?? 0), 0);
+}
+
 export default function MonthlyReviewPage() {
   const [workspace, setWorkspace] = useState<MonthEndCloseWorkspace | null>(null);
   const [compensationSummary, setCompensationSummary] = useState<CompensationSummary | null>(null);
@@ -507,6 +513,14 @@ export default function MonthlyReviewPage() {
   const [silverValues, setSilverValues] = useState<Record<string, string>>({});
   const [propertyValues, setPropertyValues] = useState<Record<string, string>>({});
   const [liabilityValues, setLiabilityValues] = useState<Record<string, string>>({});
+  const [showAddGoldForm, setShowAddGoldForm] = useState(false);
+  const [showAddSilverForm, setShowAddSilverForm] = useState(false);
+  const [newGoldHoldingName, setNewGoldHoldingName] = useState("Gold at home");
+  const [newGoldHoldingOwner, setNewGoldHoldingOwner] = useState("Household");
+  const [newGoldHoldingValue, setNewGoldHoldingValue] = useState("0");
+  const [newSilverHoldingName, setNewSilverHoldingName] = useState("Silver holding");
+  const [newSilverHoldingOwner, setNewSilverHoldingOwner] = useState("Household");
+  const [newSilverHoldingValue, setNewSilverHoldingValue] = useState("0");
 
   const [completedSteps, setCompletedSteps] = useState<Record<WorkflowStepKey, boolean>>({
     compensation: false,
@@ -598,6 +612,14 @@ export default function MonthlyReviewPage() {
       acc[item.id] = String(item.outstanding_amount ?? 0);
       return acc;
     }, {}));
+
+    if (params.goldRows.length > 0) {
+      setShowAddGoldForm(false);
+    }
+
+    if (params.silverRows.length > 0) {
+      setShowAddSilverForm(false);
+    }
   }
 
   async function loadProjectionComparisonForWorkspace(monthWorkspace: MonthEndCloseWorkspace) {
@@ -1257,6 +1279,38 @@ export default function MonthlyReviewPage() {
   const hasDedicatedGoldHoldings = goldHoldings.length > 0;
   const hasDedicatedSilverHoldings = silverHoldings.length > 0;
 
+  const preferredOwner = useMemo(() => {
+    const candidate = [
+      ...retirementAccounts.map((item) => item.owner),
+      ...goldHoldings.map((item) => item.owner),
+      ...silverHoldings.map((item) => item.owner),
+      ...bankAccounts.map((item) => item.owner),
+    ].find((owner) => typeof owner === "string" && owner.trim().length > 0);
+
+    return candidate?.trim() || "Household";
+  }, [bankAccounts, goldHoldings, retirementAccounts, silverHoldings]);
+
+  useEffect(() => {
+    setNewGoldHoldingOwner(preferredOwner);
+    setNewSilverHoldingOwner(preferredOwner);
+  }, [preferredOwner]);
+
+  const priorClosedGoldValue = useMemo(() => {
+    if (!workspace) {
+      return 0;
+    }
+
+    return sumWorkspaceOpeningRowsByPredicate(workspace.items, (item) => item.key === "gold");
+  }, [workspace]);
+
+  const priorClosedSilverValue = useMemo(() => {
+    if (!workspace) {
+      return 0;
+    }
+
+    return sumWorkspaceOpeningRowsByPredicate(workspace.items, (item) => item.key === "silver");
+  }, [workspace]);
+
   const financialAssetInvestments = useMemo(() => {
     return investments.filter((item) => !isCanonicalExcludedInvestment({
       category: item.category,
@@ -1474,7 +1528,7 @@ export default function MonthlyReviewPage() {
       });
 
       markStepComplete("retirement");
-      setNotice(`Retirement balances ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
+      setNotice("Retirement balances synced to month-end review.");
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (saveError) {
@@ -1537,6 +1591,9 @@ export default function MonthlyReviewPage() {
         })
         .filter((item) => item.changed);
 
+      const shouldCreateGoldHolding = showAddGoldForm && goldHoldings.length === 0;
+      const shouldCreateSilverHolding = showAddSilverForm && silverHoldings.length === 0;
+
       logMonthlyReviewSaveAudit({
         action: "save-non-financial",
         workspace,
@@ -1555,6 +1612,9 @@ export default function MonthlyReviewPage() {
         },
       });
 
+      let createdGoldHolding: GoldHolding | null = null;
+      let createdSilverHolding: SilverHolding | null = null;
+
       await Promise.all([
         ...assetUpdates.map((item) => updateAsset({ id: item.id, current_value: item.nextValue })),
         ...goldUpdates.map((item) => updateGoldHolding({ id: item.id, current_value: item.nextValue })),
@@ -1562,12 +1622,48 @@ export default function MonthlyReviewPage() {
         ...propertyUpdates.map((item) => updateRealEstateProperty({ id: item.id, current_market_value: item.nextValue })),
       ]);
 
+      if (shouldCreateGoldHolding) {
+        const value = toNumber(newGoldHoldingValue);
+        createdGoldHolding = await createGoldHolding({
+          holding_type: "Physical Gold",
+          description: newGoldHoldingName.trim() || "Gold at home",
+          quantity: 1,
+          unit: "grams",
+          cost_basis: value,
+          current_value: value,
+          owner: newGoldHoldingOwner.trim() || "Household",
+        });
+      }
+
+      if (shouldCreateSilverHolding) {
+        const value = toNumber(newSilverHoldingValue);
+        createdSilverHolding = await createSilverHolding({
+          holding_type: "Physical Silver",
+          description: newSilverHoldingName.trim() || "Silver holding",
+          quantity: 1,
+          unit: "grams",
+          cost_basis: value,
+          current_value: value,
+          owner: newSilverHoldingOwner.trim() || "Household",
+        });
+      }
+
       const assetOverrideMap = new Map<string, number>(assetUpdates.map((item) => [item.id, item.nextValue]));
       const goldOverrideMap = new Map<string, number>(goldUpdates.map((item) => [item.id, item.nextValue]));
       const silverOverrideMap = new Map<string, number>(silverUpdates.map((item) => [item.id, item.nextValue]));
       const propertyOverrideMap = new Map<string, number>(propertyUpdates.map((item) => [item.id, item.nextValue]));
 
-      const updatedItems = workspace.items.map((item) => {
+      if (createdGoldHolding) {
+        goldOverrideMap.set(createdGoldHolding.id, Number(createdGoldHolding.current_value ?? 0));
+      }
+
+      if (createdSilverHolding) {
+        silverOverrideMap.set(createdSilverHolding.id, Number(createdSilverHolding.current_value ?? 0));
+      }
+
+      const workspaceForSave = (createdGoldHolding || createdSilverHolding) ? await getMonthEndCloseWorkspace() : workspace;
+
+      const updatedItems = workspaceForSave.items.map((item) => {
         let override: number | null = null;
 
         if (item.entityType === "asset") {
@@ -1593,9 +1689,9 @@ export default function MonthlyReviewPage() {
       });
 
       await saveMonthEndCloseDraft({
-        closeId: workspace.close?.id ?? null,
-        closeMonth: workspace.month.month,
-        closeYear: workspace.month.year,
+        closeId: workspaceForSave.close?.id ?? null,
+        closeMonth: workspaceForSave.month.month,
+        closeYear: workspaceForSave.month.year,
         items: updatedItems.map((item) => ({
           entityId: item.entityId,
           entityType: item.entityType,
@@ -2145,7 +2241,57 @@ export default function MonthlyReviewPage() {
                 ))}
 
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gold</p>
-                {goldHoldings.length === 0 ? <p className="text-xs text-slate-500">No gold holdings available.</p> : null}
+                {goldHoldings.length === 0 ? (
+                  <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs text-slate-600">No gold holdings available.</p>
+                    {priorClosedGoldValue > 0 ? (
+                      <p className="text-xs text-amber-700">
+                        Prior closed month includes {formatCurrency(priorClosedGoldValue, { maximumFractionDigits: 0 })} for gold. Create a holding from prior close to keep canonical month-end values in sync.
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" onClick={() => setShowAddGoldForm((current) => !current)}>
+                        {showAddGoldForm ? "Cancel" : "Add Gold Holding"}
+                      </Button>
+                      {priorClosedGoldValue > 0 ? (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setShowAddGoldForm(true);
+                            setNewGoldHoldingName("Gold at home");
+                            setNewGoldHoldingOwner(preferredOwner);
+                            setNewGoldHoldingValue(String(priorClosedGoldValue));
+                          }}
+                        >
+                          Create holding from prior close
+                        </Button>
+                      ) : null}
+                    </div>
+                    {showAddGoldForm ? (
+                      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-3">
+                        <Input
+                          aria-label="New gold holding name"
+                          value={newGoldHoldingName}
+                          onChange={(event) => setNewGoldHoldingName(event.target.value)}
+                          placeholder="Gold at home"
+                        />
+                        <Input
+                          aria-label="New gold holding owner"
+                          value={newGoldHoldingOwner}
+                          onChange={(event) => setNewGoldHoldingOwner(event.target.value)}
+                          placeholder="Owner"
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          aria-label="New gold holding value"
+                          value={newGoldHoldingValue}
+                          onChange={(event) => setNewGoldHoldingValue(event.target.value)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {goldHoldings.map((item) => (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
                     <div>
@@ -2164,7 +2310,57 @@ export default function MonthlyReviewPage() {
                 ))}
 
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Silver</p>
-                {silverHoldings.length === 0 ? <p className="text-xs text-slate-500">No silver holdings available.</p> : null}
+                {silverHoldings.length === 0 ? (
+                  <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs text-slate-600">No silver holdings available.</p>
+                    {priorClosedSilverValue > 0 ? (
+                      <p className="text-xs text-amber-700">
+                        Prior closed month includes {formatCurrency(priorClosedSilverValue, { maximumFractionDigits: 0 })} for silver. Create a holding from prior close to keep canonical month-end values in sync.
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" onClick={() => setShowAddSilverForm((current) => !current)}>
+                        {showAddSilverForm ? "Cancel" : "Add Silver Holding"}
+                      </Button>
+                      {priorClosedSilverValue > 0 ? (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setShowAddSilverForm(true);
+                            setNewSilverHoldingName("Silver holding");
+                            setNewSilverHoldingOwner(preferredOwner);
+                            setNewSilverHoldingValue(String(priorClosedSilverValue));
+                          }}
+                        >
+                          Create holding from prior close
+                        </Button>
+                      ) : null}
+                    </div>
+                    {showAddSilverForm ? (
+                      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-3">
+                        <Input
+                          aria-label="New silver holding name"
+                          value={newSilverHoldingName}
+                          onChange={(event) => setNewSilverHoldingName(event.target.value)}
+                          placeholder="Silver holding"
+                        />
+                        <Input
+                          aria-label="New silver holding owner"
+                          value={newSilverHoldingOwner}
+                          onChange={(event) => setNewSilverHoldingOwner(event.target.value)}
+                          placeholder="Owner"
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          aria-label="New silver holding value"
+                          value={newSilverHoldingValue}
+                          onChange={(event) => setNewSilverHoldingValue(event.target.value)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {silverHoldings.map((item) => (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
                     <div>
