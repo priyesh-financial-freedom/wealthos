@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const TARGET_DRAFT_CLOSE_ID = "f8df4b99-744f-4301-a6d4-e916df3abc78";
 const CLOSED_JULY_CLOSE_ID = "c826b7f9-e0ab-4b31-96e3-6275a09e767c";
@@ -43,9 +43,38 @@ const INITIAL_STATE = {
   status: 0,
 };
 
+let rebuildAugustDraftAction: (prevState: typeof INITIAL_STATE, formData: FormData) => Promise<{ ok: boolean; status: number; error?: string; result?: unknown }>;
+
 describe("rebuildAugustDraftAction", () => {
+  beforeAll(async () => {
+    ({ rebuildAugustDraftAction } = await import("./page"));
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockGetUser.mockReset();
+    mockMaybeSingle.mockReset();
+    mockEq.mockReset();
+    mockSelect.mockReset();
+    mockFrom.mockReset();
+    mockCreateSupabaseServerClient.mockReset();
+    mockRebuildDraftCloseItemsFromCanonicalSources.mockReset();
+    mockRevalidatePath.mockReset();
+
+    mockEq.mockImplementation(() => ({ maybeSingle: mockMaybeSingle }));
+    mockSelect.mockImplementation(() => ({ eq: mockEq }));
+    mockFrom.mockImplementation(() => ({ select: mockSelect }));
+
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+
+    mockMaybeSingle.mockResolvedValue({
+      data: null,
+      error: null,
+    });
 
     mockCreateSupabaseServerClient.mockResolvedValue({
       auth: {
@@ -61,7 +90,6 @@ describe("rebuildAugustDraftAction", () => {
       error: null,
     });
 
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(false);
@@ -85,7 +113,6 @@ describe("rebuildAugustDraftAction", () => {
       error: null,
     });
 
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(false);
@@ -109,7 +136,6 @@ describe("rebuildAugustDraftAction", () => {
       error: null,
     });
 
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(false);
@@ -181,7 +207,6 @@ describe("rebuildAugustDraftAction", () => {
       ],
     });
 
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(true);
@@ -229,7 +254,6 @@ describe("rebuildAugustDraftAction", () => {
       duplicateGroupsRemoved: [],
     });
 
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(true);
@@ -296,7 +320,6 @@ describe("rebuildAugustDraftAction", () => {
       ],
     });
 
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(true);
@@ -305,7 +328,6 @@ describe("rebuildAugustDraftAction", () => {
   });
 
   it("blocks July closed close id", async () => {
-    const { rebuildAugustDraftAction } = await import("./page");
     const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(CLOSED_JULY_CLOSE_ID));
 
     expect(result.ok).toBe(false);

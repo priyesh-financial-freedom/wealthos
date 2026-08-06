@@ -157,6 +157,16 @@ type DuplicateGroupReport = {
   totalActualValue: number;
 };
 
+type RebuildDuplicateGroup = {
+  groupKey: string;
+  itemKey: string;
+  entityName: string;
+  rowCount: number;
+  entityTypes: string[];
+  entityIds: string[];
+  totalActualValue: number;
+};
+
 type RebuildDraftActionState = {
   ok: boolean;
   status: number;
@@ -180,10 +190,19 @@ type RebuildDraftActionState = {
       netWorth: number;
       totalsByKey: Record<string, number>;
     };
-    beforeDuplicateGroups: DuplicateGroupReport[];
-    afterDuplicateGroups: DuplicateGroupReport[];
-    duplicateGroupsRemoved: DuplicateGroupReport[];
+    beforeDuplicateGroups: RebuildDuplicateGroup[];
+    afterDuplicateGroups: RebuildDuplicateGroup[];
+    duplicateGroupsRemoved: RebuildDuplicateGroup[];
   };
+};
+
+type RebuildCloseRow = {
+  id: string;
+  user_id: string;
+  status: string;
+  close_year?: number | null;
+  close_month?: number | null;
+  version_number?: number | null;
 };
 
 const RETIREMENT_INVESTMENT_CATEGORIES = new Set(["EPF", "PPF", "NPS"]);
@@ -619,11 +638,13 @@ export async function rebuildAugustDraftAction(prevState: RebuildDraftActionStat
       };
     }
 
-    const { data: closeData, error: closeError } = await client
+    const { data: rawCloseData, error: closeError } = await client
       .from("month_end_closes")
-      .select("id,user_id,status")
+      .select("id,user_id,status,close_year,close_month,version_number")
       .eq("id", submittedCloseId)
       .maybeSingle();
+
+    const closeData = rawCloseData as RebuildCloseRow | null;
 
     if (closeError) {
       throw new Error(closeError.message || "Failed to validate close ownership.");
