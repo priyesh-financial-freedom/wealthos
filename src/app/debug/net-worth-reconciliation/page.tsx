@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { formatCurrency } from "@/lib/formatters";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { mapRawInvestmentRowToInvestment } from "@/services/investments";
 import { RebuildDraftAction } from "./RebuildDraftAction";
 
 type ItemKey =
@@ -51,6 +52,11 @@ type DashboardItemRow = {
   amountUsed: number;
   includedInNetWorth: boolean;
   notes: string;
+};
+
+type DashboardInvestmentRow = {
+  investment: ReturnType<typeof mapRawInvestmentRowToInvestment>;
+  sourceTable: "investment_holdings" | "investments";
 };
 
 type MonthlyCloseRow = {
@@ -131,6 +137,16 @@ type AssumptionSnapshotRow = {
       liabilities?: number;
     };
   };
+};
+
+type DuplicateGroupReport = {
+  groupKey: string;
+  itemKey: ItemKey;
+  entityName: string;
+  rowCount: number;
+  entityTypes: string[];
+  entityIds: string[];
+  totalActualValue: number;
 };
 
 const RETIREMENT_INVESTMENT_CATEGORIES = new Set(["EPF", "PPF", "NPS"]);
@@ -300,6 +316,52 @@ function monthlyReviewAggregates(items: MonthlyCloseItemRow[]) {
     totalLiabilities,
     netWorth: totalAssets - totalLiabilities,
   };
+}
+
+function normalizeDuplicateEntityName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function summarizeCurrentDuplicateGroups(items: MonthlyCloseItemRow[]): DuplicateGroupReport[] {
+  const groups = new Map<string, DuplicateGroupReport>();
+
+  for (const item of items) {
+    const entityName = item.entity_name?.trim() || item.item_label?.trim() || item.entity_id;
+    const groupKey = `${item.item_key}:${normalizeDuplicateEntityName(entityName)}`;
+    const existing = groups.get(groupKey);
+
+    if (existing) {
+      existing.rowCount += 1;
+      existing.totalActualValue += asNumber(item.actual_value);
+      if (!existing.entityTypes.includes(item.entity_type)) {
+        existing.entityTypes.push(item.entity_type);
+      }
+      if (!existing.entityIds.includes(item.entity_id)) {
+        existing.entityIds.push(item.entity_id);
+      }
+      continue;
+    }
+
+    groups.set(groupKey, {
+      groupKey,
+      itemKey: item.item_key,
+      entityName,
+      rowCount: 1,
+      entityTypes: [item.entity_type],
+      entityIds: [item.entity_id],
+      totalActualValue: asNumber(item.actual_value),
+    });
+  }
+
+  return [...groups.values()]
+    .filter((group) => group.rowCount > 1)
+    .sort((left, right) => {
+      if (left.itemKey !== right.itemKey) {
+        return left.itemKey.localeCompare(right.itemKey);
+      }
+
+      return left.entityName.localeCompare(right.entityName, "en", { sensitivity: "base" });
+    });
 }
 
 function toSideBySideDashboard(rows: DashboardItemRow[]) {
@@ -510,8 +572,8 @@ export default async function NetWorthReconciliationPage() {
     fixedPlanRes,
   ] = await Promise.all([
     selectRows<Row>(client, "bank_accounts", "id, account_name, bank, owner, current_balance, include_in_net_worth, status", (q) => q.eq("user_id", user.id)),
-    selectRows<Row>(client, "investment_holdings", "id, investment_name, category, current_value, owner, status", (q) => q.eq("user_id", user.id)),
-    selectRows<Row>(client, "investments", "id, investment_name, category, current_value, owner, status", (q) => q.eq("user_id", user.id)),
+    selectRows<Row>(client, "investment_holdings", "id, user_id, owner, institution, investment_name, investment_type, cost_value, current_value, status, notes, created_at, updated_at", (q) => q.eq("user_id", user.id)),
+    selectRows<Row>(client, "investments", "id, user_id, investment_name, category, units, nav_price, cost_basis, today_gain_loss, amc, region, purchase_date, notes, created_at, updated_at", (q) => q.eq("user_id", user.id)),
     selectRows<Row>(client, "fixed_deposit_accounts", "id, institution, account_number, owner, current_value", (q) => q.eq("user_id", user.id)),
     selectRows<Row>(client, "epf_accounts", "id, owner, institution, current_balance", (q) => q.eq("user_id", user.id)),
     selectRows<Row>(client, "ppf_accounts", "id, owner, institution, current_balance", (q) => q.eq("user_id", user.id)),
@@ -552,8 +614,9 @@ export default async function NetWorthReconciliationPage() {
     }
   }
 
-  const investments = invRes.rows.length > 0 ? invRes.rows : legacyInvRes.rows;
-  const investmentSourceTable = invRes.rows.length > 0 ? "investment_holdings" : "investments";
+  const investments: DashboardInvestmentRow[] = invRes.rows.length > 0
+    ? invRes.rows.map((row) => ({ investment: mapRawInvestmentRowToInvestment(row), sourceTable: "investment_holdings" as const }))
+    : legacyInvRes.rows.map((row) => ({ investment: mapRawInvestmentRowToInvestment(row), sourceTable: "investments" as const }));
 
   const hasDedicatedRealEstate = realEstateRes.rows.length > 0;
 
@@ -574,13 +637,13 @@ export default async function NetWorthReconciliationPage() {
   }
 
   for (const row of investments) {
-    const category = asText((row as Row).category || (row as Row).investment_type);
+    const category = row.investment.category;
     const base = {
-      itemName: asText((row as Row).investment_name),
-      sourceTable: investmentSourceTable,
-      sourceRecordId: asText((row as Row).id),
-      owner: asText((row as Row).owner) || "N/A",
-      amountUsed: asNumber((row as Row).current_value),
+      itemName: row.investment.investment_name,
+      sourceTable: row.sourceTable,
+      sourceRecordId: row.investment.id,
+      owner: row.investment.owner ?? "N/A",
+      amountUsed: row.investment.current_value,
       includedInNetWorth: true,
       notes: category,
     };
@@ -599,7 +662,7 @@ export default async function NetWorthReconciliationPage() {
     }
     if (RETIREMENT_INVESTMENT_CATEGORIES.has(category)) {
       const bucket: DashboardBucket = category === "EPF" ? "EPF" : category === "PPF" ? "PPF" : "NPS";
-      dashboardRows.push({ bucket, ...base, notes: `${category} from ${investmentSourceTable}` });
+      dashboardRows.push({ bucket, ...base, notes: `${category} from ${row.sourceTable}` });
       continue;
     }
     if (GOLD_INVESTMENT_CATEGORIES.has(category)) {
@@ -782,6 +845,18 @@ export default async function NetWorthReconciliationPage() {
 
   const monthlyAgg = monthlyReviewAggregates(closeItemsRes.rows);
   const monthlyTotals = toSideBySideMonthly(closeItemsRes.rows);
+  const currentDuplicateGroups = summarizeCurrentDuplicateGroups(closeItemsRes.rows);
+  const duplicateVerificationKeys: ItemKey[] = [
+    "bank_accounts",
+    "mutual_funds",
+    "stocks",
+    "epf",
+    "ppf",
+    "nps",
+    "real_estate",
+    "home_loans",
+    "car_loans",
+  ];
 
   const rollingPlan = rollingPlanRes.rows[0] ?? null;
 
@@ -965,6 +1040,54 @@ export default async function NetWorthReconciliationPage() {
             <p><span className="font-medium">version_number:</span> {workspaceClose?.version_number ?? "N/A"}</p>
             <p><span className="font-medium">status:</span> {workspaceClose?.status ?? "N/A"}</p>
             <p><span className="font-medium">latest closed close_id:</span> {latestClosed?.id ?? "N/A"}</p>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-900">Duplicate Verification</p>
+            <p className="mt-1 text-sm text-slate-600">These groups should be zero after rebuilding the August draft from canonical sources.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {duplicateVerificationKeys.map((itemKey) => {
+                const matches = currentDuplicateGroups.filter((group) => group.itemKey === itemKey);
+                return (
+                  <div key={itemKey} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                    <p className="font-medium text-slate-900">{itemKey}</p>
+                    <p className={matches.length === 0 ? "mt-1 text-emerald-700" : "mt-1 text-rose-700"}>
+                      {matches.length === 0 ? "No duplicate groups remaining" : `${matches.length} duplicate group(s) remain`}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            {currentDuplicateGroups.length > 0 ? (
+              <div className="mt-4 overflow-auto">
+                <table className="min-w-[880px] text-left text-sm">
+                  <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-2 py-2">Item Key</th>
+                      <th className="px-2 py-2">Entity Name</th>
+                      <th className="px-2 py-2 text-right">Row Count</th>
+                      <th className="px-2 py-2">Entity Types</th>
+                      <th className="px-2 py-2">Entity IDs</th>
+                      <th className="px-2 py-2 text-right">Total Actual</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentDuplicateGroups.map((group) => (
+                      <tr key={group.groupKey} className="border-b border-slate-100 align-top">
+                        <td className="px-2 py-2">{group.itemKey}</td>
+                        <td className="px-2 py-2">{group.entityName}</td>
+                        <td className="px-2 py-2 text-right">{group.rowCount}</td>
+                        <td className="px-2 py-2">{group.entityTypes.join(", ")}</td>
+                        <td className="px-2 py-2 font-mono text-xs">{group.entityIds.join(", ")}</td>
+                        <td className="px-2 py-2 text-right">{formatAmount(group.totalActualValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-emerald-700">No duplicate economic groups are present in the current draft rows.</p>
+            )}
           </div>
 
           <div className="mt-4 overflow-auto">
@@ -1154,6 +1277,7 @@ export default async function NetWorthReconciliationPage() {
             <p><span className="font-medium">Is Rolling using old month-end close data?</span> {rollingPlan?.base_close_id ? (latestClosed && rollingPlan.base_close_id !== latestClosed.id ? "Yes, base_close_id differs from latest closed close_id." : "No, base_close_id matches latest closed close_id.") : "No base_close_id found."}</p>
             <p><span className="font-medium">Which close_id should Rolling use?</span> {latestClosed?.id ?? "N/A"}</p>
             <p><span className="font-medium">Which close_id is Rolling actually using?</span> {rollingPlan?.base_close_id ?? "N/A"}</p>
+            <p><span className="font-medium">Has Monthly Review net worth been recalculated from cleaned draft rows?</span> {currentDuplicateGroups.length === 0 ? "Yes. The displayed Monthly Review totals are derived from the current draft month_end_close_items and no duplicate groups remain in the tracked incident buckets." : "Not yet fully clean. Duplicate groups still remain in current draft rows, so Monthly Review totals may still be inflated."}</p>
             <p><span className="font-medium">Are EPF / NPS values coming from retirement accounts or stale month_end_close_items?</span> {qaEpfNps}</p>
             <p><span className="font-medium">Is Gold missing because no live gold_holding exists or because month_end_close_items has no gold row?</span> {qaGold}</p>
           </div>

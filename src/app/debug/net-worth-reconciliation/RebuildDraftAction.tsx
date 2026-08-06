@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 
 const INCIDENT_CLOSE_ID = "f8df4b99-744f-4301-a6d4-e916df3abc78";
+const REBUILD_RESULT_STORAGE_KEY = "wealthos:august-draft-rebuild-result";
+
+type DuplicateGroup = {
+  groupKey: string;
+  itemKey: string;
+  entityName: string;
+  rowCount: number;
+  entityTypes: string[];
+  entityIds: string[];
+  totalActualValue: number;
+};
 
 type RebuildResponse = {
   ok: boolean;
@@ -28,12 +40,29 @@ type RebuildResponse = {
       netWorth: number;
       totalsByKey: Record<string, number>;
     };
+    beforeDuplicateGroups: DuplicateGroup[];
+    afterDuplicateGroups: DuplicateGroup[];
+    duplicateGroupsRemoved: DuplicateGroup[];
   };
 };
 
 export function RebuildDraftAction() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<RebuildResponse | null>(null);
+
+  useEffect(() => {
+    const raw = window.sessionStorage.getItem(REBUILD_RESULT_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      setResponse(JSON.parse(raw) as RebuildResponse);
+    } catch {
+      window.sessionStorage.removeItem(REBUILD_RESULT_STORAGE_KEY);
+    }
+  }, []);
 
   async function rebuild() {
     setLoading(true);
@@ -49,9 +78,16 @@ export function RebuildDraftAction() {
       });
 
       const payload = (await res.json()) as RebuildResponse;
+      window.sessionStorage.setItem(REBUILD_RESULT_STORAGE_KEY, JSON.stringify(payload));
       setResponse(payload);
+
+      if (payload.ok) {
+        router.refresh();
+      }
     } catch (error) {
-      setResponse({ ok: false, error: error instanceof Error ? error.message : "Request failed." });
+      const payload = { ok: false, error: error instanceof Error ? error.message : "Request failed." };
+      window.sessionStorage.setItem(REBUILD_RESULT_STORAGE_KEY, JSON.stringify(payload));
+      setResponse(payload);
     } finally {
       setLoading(false);
     }
@@ -77,6 +113,17 @@ export function RebuildDraftAction() {
               <p>After item count: {response.result.afterItemCount}</p>
               <p>Before totals: assets={response.result.beforeTotals.totalAssets}, liabilities={response.result.beforeTotals.totalLiabilities}, netWorth={response.result.beforeTotals.netWorth}</p>
               <p>After totals: assets={response.result.afterTotals.totalAssets}, liabilities={response.result.afterTotals.totalLiabilities}, netWorth={response.result.afterTotals.netWorth}</p>
+              <p>Duplicate groups removed: {response.result.duplicateGroupsRemoved.length}</p>
+              {response.result.duplicateGroupsRemoved.length > 0 ? (
+                <ul className="list-disc pl-5">
+                  {response.result.duplicateGroupsRemoved.map((group) => (
+                    <li key={group.groupKey}>
+                      {group.itemKey} - {group.entityName} ({group.rowCount} rows before)
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <p>Page refreshed after rebuild. Current reconciliation below reflects the latest draft rows.</p>
             </div>
           ) : (
             <p>{response.error ?? "Rebuild failed."}</p>

@@ -66,6 +66,16 @@ interface MonthEndCloseServiceDependencies {
   balanceSheetLoader?: () => Promise<BalanceSheetData>;
 }
 
+export interface DraftCloseDuplicateGroup {
+  groupKey: string;
+  itemKey: MonthEndCloseItemKey;
+  entityName: string;
+  rowCount: number;
+  entityTypes: string[];
+  entityIds: string[];
+  totalActualValue: number;
+}
+
 export interface RebuildDraftCloseItemsResult {
   closeId: string;
   closeYear: number;
@@ -75,6 +85,9 @@ export interface RebuildDraftCloseItemsResult {
   afterItemCount: number;
   beforeTotals: MonthEndCloseKpiSummary;
   afterTotals: MonthEndCloseKpiSummary;
+  beforeDuplicateGroups: DraftCloseDuplicateGroup[];
+  afterDuplicateGroups: DraftCloseDuplicateGroup[];
+  duplicateGroupsRemoved: DraftCloseDuplicateGroup[];
 }
 
 const ITEM_DEFINITION_MAP = new Map(MONTH_END_CLOSE_ITEM_DEFINITIONS.map((item) => [item.key, item]));
@@ -507,6 +520,52 @@ function persistedItemToSnapshot(item: MonthEndCloseItem): PersistedItemSnapshot
     actualValue: Number(item.actual_value ?? 0),
     sortOrder: item.sort_order,
   };
+}
+
+function normalizeDuplicateEntityName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function summarizeDuplicateGroups(items: MonthEndCloseItem[]): DraftCloseDuplicateGroup[] {
+  const groups = new Map<string, DraftCloseDuplicateGroup>();
+
+  for (const item of items) {
+    const entityName = item.entity_name?.trim() || item.item_label?.trim() || item.entity_id;
+    const groupKey = `${item.item_key}:${normalizeDuplicateEntityName(entityName)}`;
+    const existing = groups.get(groupKey);
+
+    if (existing) {
+      existing.rowCount += 1;
+      existing.totalActualValue += Number(item.actual_value ?? 0);
+      if (!existing.entityTypes.includes(item.entity_type)) {
+        existing.entityTypes.push(item.entity_type);
+      }
+      if (!existing.entityIds.includes(item.entity_id)) {
+        existing.entityIds.push(item.entity_id);
+      }
+      continue;
+    }
+
+    groups.set(groupKey, {
+      groupKey,
+      itemKey: item.item_key,
+      entityName,
+      rowCount: 1,
+      entityTypes: [item.entity_type],
+      entityIds: [item.entity_id],
+      totalActualValue: Number(item.actual_value ?? 0),
+    });
+  }
+
+  return [...groups.values()]
+    .filter((group) => group.rowCount > 1)
+    .sort((left, right) => {
+      if (left.itemKey !== right.itemKey) {
+        return left.itemKey.localeCompare(right.itemKey);
+      }
+
+      return left.entityName.localeCompare(right.entityName, "en", { sensitivity: "base" });
+    });
 }
 
 function splitPersistedSnapshots(items: MonthEndCloseItem[]) {
@@ -966,6 +1025,7 @@ export class MonthEndCloseService {
 
     const beforeItems = await this.repository.getCloseItems(closeRecord.id);
     const beforeTotals = summarizePersistedItems(beforeItems, "actual_value");
+    const beforeDuplicateGroups = summarizeDuplicateGroups(beforeItems);
 
     const nearestPriorClosed = await this.repository.getNearestPriorClosedMonthEndClose(
       userId,
@@ -997,6 +1057,10 @@ export class MonthEndCloseService {
 
     const afterItems = await this.repository.getCloseItems(closeRecord.id);
     const afterTotals = summarizePersistedItems(afterItems, "actual_value");
+    const afterDuplicateGroups = summarizeDuplicateGroups(afterItems);
+    const duplicateGroupsRemoved = beforeDuplicateGroups.filter(
+      (group) => !afterDuplicateGroups.some((afterGroup) => afterGroup.groupKey === group.groupKey),
+    );
 
     console.info("[MonthEndCloseService.rebuildDraftCloseItemsFromCanonicalSources]", {
       closeId: closeRecord.id,
@@ -1006,6 +1070,8 @@ export class MonthEndCloseService {
       afterItemCount: afterItems.length,
       beforeTotals: beforeTotals.totalsByKey,
       afterTotals: afterTotals.totalsByKey,
+      beforeDuplicateGroups,
+      afterDuplicateGroups,
     });
 
     return {
@@ -1017,6 +1083,9 @@ export class MonthEndCloseService {
       afterItemCount: afterItems.length,
       beforeTotals,
       afterTotals,
+      beforeDuplicateGroups,
+      afterDuplicateGroups,
+      duplicateGroupsRemoved,
     };
   }
 

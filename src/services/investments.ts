@@ -257,6 +257,15 @@ function mapHoldingRowToInvestment(params: {
   };
 }
 
+export function mapRawInvestmentRowToInvestment(row: Record<string, unknown>): Investment {
+  return mapHoldingRowToInvestment({
+    row,
+    monthlyChange: 0,
+    currentMonthValue: null,
+    previousMonthValue: null,
+  });
+}
+
 function classifyExposure(category: InvestmentCategory): InvestmentExposure {
   return debtCategories.has(category) ? "debt" : "equity";
 }
