@@ -71,6 +71,7 @@ export function RebuildDraftAction() {
     try {
       const res = await fetch("/api/debug/month-end-close/rebuild-draft", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
         },
