@@ -1,20 +1,50 @@
 import type { Investment } from "@/types/investment";
 import type { MonthEndCloseWorkspace } from "@/types/monthEndClose";
 
+const RETIREMENT_INVESTMENT_CATEGORIES = new Set(["EPF", "PPF", "NPS"]);
+const GOLD_INVESTMENT_CATEGORIES = new Set(["Gold", "Sovereign Gold Bonds"]);
+const SILVER_INVESTMENT_CATEGORIES = new Set(["Silver"]);
+
 export interface InvestmentValueMapResult {
   valuesById: Record<string, string>;
   warningMessage: string | null;
   missingRows: Array<{ id: string; name: string; category: string }>;
 }
 
-export function buildInvestmentValueMap(workspace: MonthEndCloseWorkspace, investments: Investment[]): InvestmentValueMapResult {
+interface InvestmentValueMapOptions {
+  hasDedicatedRetirementAccounts?: boolean;
+  hasDedicatedGoldHoldings?: boolean;
+  hasDedicatedSilverHoldings?: boolean;
+}
+
+function shouldIgnoreByCanonicalSource(investment: Investment, options: InvestmentValueMapOptions) {
+  if (options.hasDedicatedRetirementAccounts && RETIREMENT_INVESTMENT_CATEGORIES.has(investment.category)) {
+    return true;
+  }
+
+  if (options.hasDedicatedGoldHoldings && GOLD_INVESTMENT_CATEGORIES.has(investment.category)) {
+    return true;
+  }
+
+  if (options.hasDedicatedSilverHoldings && SILVER_INVESTMENT_CATEGORIES.has(investment.category)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function buildInvestmentValueMap(
+  workspace: MonthEndCloseWorkspace,
+  investments: Investment[],
+  options: InvestmentValueMapOptions = {},
+): InvestmentValueMapResult {
   const workspaceByEntityId = new Map(
     workspace.items
       .filter((item) => item.entityType === "investment")
       .map((item) => [item.entityId, item.actualValue]),
   );
 
-  const relevantInvestments = investments.filter((investment) => investment.status === "active");
+  const relevantInvestments = investments.filter((investment) => investment.status === "active" && !shouldIgnoreByCanonicalSource(investment, options));
   const missing = relevantInvestments.filter((investment) => !workspaceByEntityId.has(investment.id));
 
   if (missing.length > 0) {

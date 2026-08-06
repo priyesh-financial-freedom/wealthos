@@ -165,4 +165,24 @@ describe("buildInvestmentValueMap", () => {
     const result = buildInvestmentValueMap(workspace, [investment]);
     expect(result.warningMessage).toBeNull();
   });
+
+  it("does not warn for canonical-excluded retirement and precious-metal investments", () => {
+    const epfInvestment = buildInvestment({ id: "inv-epf", investment_name: "EPF Legacy", category: "EPF", current_value: 100000 });
+    const goldInvestment = buildInvestment({ id: "inv-gold", investment_name: "Gold ETF", category: "Gold", current_value: 200000 });
+    const silverInvestment = buildInvestment({ id: "inv-silver", investment_name: "Silver ETF", category: "Silver", current_value: 50000 });
+    const workspace = buildWorkspace(111111, "different-id");
+
+    const result = buildInvestmentValueMap(
+      workspace,
+      [epfInvestment, goldInvestment, silverInvestment],
+      {
+        hasDedicatedRetirementAccounts: true,
+        hasDedicatedGoldHoldings: true,
+        hasDedicatedSilverHoldings: true,
+      },
+    );
+
+    expect(result.warningMessage).toBeNull();
+    expect(result.missingRows).toEqual([]);
+  });
 });

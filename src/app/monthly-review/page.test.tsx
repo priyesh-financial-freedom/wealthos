@@ -310,6 +310,35 @@ function buildWorkspace(overrides?: Partial<MonthEndCloseWorkspace>): MonthEndCl
   };
 }
 
+function buildWorkspaceItem(partial: {
+  rowKey: string;
+  entityId: string;
+  entityType: "retirement-account" | "gold-holding" | "silver-holding" | "real-estate-property" | "asset";
+  entityTypeLabel: string;
+  entityName: string;
+  key: "epf" | "ppf" | "nps" | "gold" | "silver" | "real_estate" | "other_assets";
+  actualValue: number;
+  projectedValue?: number;
+}): MonthEndCloseWorkspace["items"][number] {
+  const projectedValue = partial.projectedValue ?? 0;
+  return {
+    rowKey: partial.rowKey,
+    entityId: partial.entityId,
+    entityType: partial.entityType,
+    entityTypeLabel: partial.entityTypeLabel,
+    entityName: partial.entityName,
+    key: partial.key,
+    label: partial.entityName,
+    itemType: "asset",
+    sortOrder: 1,
+    openingValue: partial.actualValue,
+    projectedValue,
+    actualValue: partial.actualValue,
+    absoluteVariance: partial.actualValue - projectedValue,
+    percentageVariance: projectedValue === 0 ? 0 : ((partial.actualValue - projectedValue) / Math.abs(projectedValue)) * 100,
+  };
+}
+
 describe("MonthlyReviewPage", () => {
   it("renders projection comparison section", async () => {
     getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace());
@@ -745,5 +774,401 @@ describe("MonthlyReviewPage", () => {
     expect(screen.getByText("Silver duplicate exposure")).toBeTruthy();
     expect(screen.getByText("Ignored Duplicate Sources")).toBeTruthy();
     expect(screen.getByText("EPF also exists in investment holdings but was ignored because retirement accounts are canonical.")).toBeTruthy();
+  });
+
+  it("excludes EPF and gold/silver investments from Financial Asset updates when dedicated modules exist", async () => {
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace());
+    getRetirementAccountsMock.mockResolvedValueOnce([
+      {
+        id: "epf-1",
+        user_id: "user-1",
+        account_type: "EPF",
+        owner: "Self",
+        institution: "EPFO",
+        current_balance: 100000,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        employer: null,
+        uan: null,
+        employee_contribution: null,
+        employer_contribution: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+    ] satisfies RetirementAccount[]);
+    getGoldHoldingsMock.mockResolvedValueOnce([
+      { id: "gold-1", description: "Gold Coins", holding_type: "Physical Gold", current_value: 250000 },
+    ]);
+    getSilverHoldingsMock.mockResolvedValueOnce([
+      { id: "silver-1", description: "Silver Bars", holding_type: "Physical Silver", current_value: 90000 },
+    ]);
+    getInvestmentsMock.mockResolvedValueOnce([
+      { id: "inv-mf", category: "Mutual Funds", current_value: 100000, status: "active", investment_name: "MF 1" },
+      { id: "inv-epf", category: "EPF", current_value: 100000, status: "active", investment_name: "EPF Investment" },
+      { id: "inv-gold", category: "Gold", current_value: 250000, status: "active", investment_name: "Gold ETF" },
+      { id: "inv-silver", category: "Silver", current_value: 90000, status: "active", investment_name: "Silver ETF" },
+    ]);
+
+    render(<MonthlyReviewPage />);
+
+    expect(await screen.findByText("2. Financial Asset Updates")).toBeTruthy();
+    expect(screen.queryByLabelText("Investment value EPF Investment")).toBeNull();
+    expect(screen.queryByLabelText("Investment value Gold ETF")).toBeNull();
+    expect(screen.queryByLabelText("Investment value Silver ETF")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Mutual Funds Total"), { target: { value: "120000" } });
+    fireEvent.click(screen.getByText("Save Financial Asset Updates"));
+
+    await waitFor(() => {
+      expect(saveMonthEndCloseDraftMock).toHaveBeenCalled();
+    });
+
+    const updatedInvestmentIds = updateInvestmentMock.mock.calls
+      .map((call) => call[0] as { id: string })
+      .map((payload) => payload.id);
+
+    expect(updatedInvestmentIds).toContain("inv-mf");
+    expect(updatedInvestmentIds).not.toContain("inv-epf");
+    expect(updatedInvestmentIds).not.toContain("inv-gold");
+    expect(updatedInvestmentIds).not.toContain("inv-silver");
+  });
+
+  it("syncs retirement save to month-end draft rows and refreshed breakdown values", async () => {
+    const firstWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "retirement-account:epf-1", entityId: "epf-1", entityType: "retirement-account", entityTypeLabel: "EPF", entityName: "Self • EPFO", key: "epf", actualValue: 18942389 }),
+        buildWorkspaceItem({ rowKey: "retirement-account:nps-1", entityId: "nps-1", entityType: "retirement-account", entityTypeLabel: "NPS", entityName: "Self • NPS", key: "nps", actualValue: 455522 }),
+      ],
+    });
+    const secondWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "retirement-account:epf-1", entityId: "epf-1", entityType: "retirement-account", entityTypeLabel: "EPF", entityName: "Self • EPFO", key: "epf", actualValue: 18886844 }),
+        buildWorkspaceItem({ rowKey: "retirement-account:nps-1", entityId: "nps-1", entityType: "retirement-account", entityTypeLabel: "NPS", entityName: "Self • NPS", key: "nps", actualValue: 525712 }),
+      ],
+    });
+
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(firstWorkspace).mockResolvedValueOnce(secondWorkspace);
+    getRetirementAccountsMock.mockResolvedValue([
+      {
+        id: "epf-1",
+        user_id: "user-1",
+        account_type: "EPF",
+        owner: "Self",
+        institution: "EPFO",
+        current_balance: 18942389,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        employer: null,
+        uan: null,
+        employee_contribution: null,
+        employer_contribution: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+      {
+        id: "nps-1",
+        user_id: "user-1",
+        account_type: "NPS",
+        owner: "Self",
+        institution: "NPS",
+        current_balance: 455522,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        pran: null,
+        pop: null,
+        equity_percent: null,
+        corporate_debt_percent: null,
+        government_securities_percent: null,
+        alternative_assets_percent: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+    ] satisfies RetirementAccount[]);
+
+    calculateVarianceSummaryMock
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 20000000,
+          totalLiabilities: 0,
+          netWorth: 20000000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 18942389,
+            ppf: 0,
+            nps: 455522,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 20000000,
+          totalLiabilities: 0,
+          netWorth: 20000000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 18942389,
+            ppf: 0,
+            nps: 455522,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      })
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 20000000,
+          totalLiabilities: 0,
+          netWorth: 20000000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 18886844,
+            ppf: 0,
+            nps: 525712,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 20000000,
+          totalLiabilities: 0,
+          netWorth: 20000000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 18886844,
+            ppf: 0,
+            nps: 525712,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      });
+
+    render(<MonthlyReviewPage />);
+
+    await screen.findByText("3. Retirement Account Updates");
+    fireEvent.change(screen.getByLabelText("Retirement balance EPF EPFO"), { target: { value: "18886844" } });
+    fireEvent.change(screen.getByLabelText("Retirement balance NPS NPS"), { target: { value: "525712" } });
+    fireEvent.click(screen.getByText("Save Retirement Updates"));
+
+    await waitFor(() => {
+      expect(updateRetirementAccountMock).toHaveBeenCalled();
+      expect(saveMonthEndCloseDraftMock).toHaveBeenCalled();
+    });
+
+    const latestPayload = saveMonthEndCloseDraftMock.mock.calls.at(-1)?.[0] as { items: Array<{ entityType: string; entityId: string; actualValue: number }> };
+    expect(latestPayload.items.find((item) => item.entityType === "retirement-account" && item.entityId === "epf-1")?.actualValue).toBe(18886844);
+    expect(latestPayload.items.find((item) => item.entityType === "retirement-account" && item.entityId === "nps-1")?.actualValue).toBe(525712);
+
+    expect(screen.getByText("₹1,88,86,844")).toBeTruthy();
+    expect(screen.getByText("₹5,25,712")).toBeTruthy();
+  });
+
+  it("renders and saves gold/silver rows in non-financial updates and syncs breakdown", async () => {
+    const firstWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "gold-holding:gold-1", entityId: "gold-1", entityType: "gold-holding", entityTypeLabel: "Physical Gold", entityName: "Gold Coins", key: "gold", actualValue: 4450000 }),
+        buildWorkspaceItem({ rowKey: "silver-holding:silver-1", entityId: "silver-1", entityType: "silver-holding", entityTypeLabel: "Physical Silver", entityName: "Silver Bars", key: "silver", actualValue: 90000 }),
+      ],
+    });
+    const secondWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "gold-holding:gold-1", entityId: "gold-1", entityType: "gold-holding", entityTypeLabel: "Physical Gold", entityName: "Gold Coins", key: "gold", actualValue: 4300000 }),
+        buildWorkspaceItem({ rowKey: "silver-holding:silver-1", entityId: "silver-1", entityType: "silver-holding", entityTypeLabel: "Physical Silver", entityName: "Silver Bars", key: "silver", actualValue: 120000 }),
+      ],
+    });
+
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(firstWorkspace).mockResolvedValueOnce(secondWorkspace);
+    getGoldHoldingsMock.mockResolvedValue([
+      { id: "gold-1", description: "Gold Coins", holding_type: "Physical Gold", current_value: 4450000, owner: "Self" },
+    ]);
+    getSilverHoldingsMock.mockResolvedValue([
+      { id: "silver-1", description: "Silver Bars", holding_type: "Physical Silver", current_value: 90000, owner: "Self" },
+    ]);
+
+    calculateVarianceSummaryMock
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 4540000,
+          totalLiabilities: 0,
+          netWorth: 4540000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 4450000,
+            silver: 90000,
+            fixed_deposits: 0,
+            epf: 0,
+            ppf: 0,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 4540000,
+          totalLiabilities: 0,
+          netWorth: 4540000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 4450000,
+            silver: 90000,
+            fixed_deposits: 0,
+            epf: 0,
+            ppf: 0,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      })
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 4420000,
+          totalLiabilities: 0,
+          netWorth: 4420000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 4300000,
+            silver: 120000,
+            fixed_deposits: 0,
+            epf: 0,
+            ppf: 0,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 4420000,
+          totalLiabilities: 0,
+          netWorth: 4420000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 4300000,
+            silver: 120000,
+            fixed_deposits: 0,
+            epf: 0,
+            ppf: 0,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      });
+
+    render(<MonthlyReviewPage />);
+
+    expect(await screen.findByText("4. Non-Financial Asset Updates")).toBeTruthy();
+    expect(screen.getByLabelText("Gold value Gold Coins")).toBeTruthy();
+    expect(screen.getByLabelText("Silver value Silver Bars")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Gold value Gold Coins"), { target: { value: "4300000" } });
+    fireEvent.change(screen.getByLabelText("Silver value Silver Bars"), { target: { value: "120000" } });
+    fireEvent.click(screen.getByText("Save Non-Financial Asset Updates"));
+
+    await waitFor(() => {
+      expect(updateGoldHoldingMock).toHaveBeenCalled();
+      expect(updateSilverHoldingMock).toHaveBeenCalled();
+      expect(saveMonthEndCloseDraftMock).toHaveBeenCalled();
+    });
+
+    const latestPayload = saveMonthEndCloseDraftMock.mock.calls.at(-1)?.[0] as { items: Array<{ entityType: string; entityId: string; actualValue: number }> };
+    expect(latestPayload.items.find((item) => item.entityType === "gold-holding" && item.entityId === "gold-1")?.actualValue).toBe(4300000);
+    expect(latestPayload.items.find((item) => item.entityType === "silver-holding" && item.entityId === "silver-1")?.actualValue).toBe(120000);
+
+    expect(screen.getByText("₹43,00,000")).toBeTruthy();
+    expect(screen.getByText("₹1,20,000")).toBeTruthy();
   });
 });

@@ -1031,6 +1031,58 @@ describe("MonthEndCloseService getWorkspace", () => {
     expect(workspace.dashboard.totalAssets).toBe(300);
   });
 
+  it("ignores silver investments when dedicated silver holdings exist", async () => {
+    const draft = buildClose({ id: "draft-silver-dedupe", status: "draft", close_month: 8, close_year: 2026 });
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getEarliestOpenMonthEndClose: vi.fn(async () => draft),
+      getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getDraftForMonth: vi.fn(async () => draft),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => undefined),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        investments: [
+          buildInvestment({ id: "inv-silver", category: "Silver", name: "Silver ETF", currentValue: 250 }),
+        ],
+        silverHoldings: [
+          {
+            id: "silver-1",
+            user_id: "user-1",
+            holding_type: "Physical Silver",
+            description: "Bars",
+            quantity: 1,
+            unit: "grams",
+            purity: null,
+            purchase_date: null,
+            cost_basis: 0,
+            current_value: 300,
+            custodian: null,
+            institution: null,
+            owner: null,
+            nominee: null,
+            notes: null,
+            documents_placeholder: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.items.filter((item) => item.entityType === "investment" && item.key === "silver").length).toBe(0);
+    expect(workspace.items.filter((item) => item.entityType === "silver-holding" && item.key === "silver").length).toBe(1);
+    expect(workspace.dashboard.totalAssets).toBe(300);
+  });
+
   it("maps bonds into fixed_deposits bucket", async () => {
     const draft = buildClose({ id: "draft-bonds", status: "draft", close_month: 8, close_year: 2026 });
     const repository = {

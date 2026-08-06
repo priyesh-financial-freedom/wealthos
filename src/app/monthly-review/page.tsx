@@ -91,6 +91,31 @@ interface NetWorthBreakdownRow {
   note?: string;
 }
 
+const RETIREMENT_INVESTMENT_CATEGORIES = new Set(["EPF", "PPF", "NPS"]);
+const GOLD_INVESTMENT_CATEGORIES = new Set(["Gold", "Sovereign Gold Bonds"]);
+const SILVER_INVESTMENT_CATEGORIES = new Set(["Silver"]);
+
+function isCanonicalExcludedInvestment(params: {
+  category: Investment["category"];
+  hasDedicatedRetirementAccounts: boolean;
+  hasDedicatedGoldHoldings: boolean;
+  hasDedicatedSilverHoldings: boolean;
+}) {
+  if (params.hasDedicatedRetirementAccounts && RETIREMENT_INVESTMENT_CATEGORIES.has(params.category)) {
+    return true;
+  }
+
+  if (params.hasDedicatedGoldHoldings && GOLD_INVESTMENT_CATEGORIES.has(params.category)) {
+    return true;
+  }
+
+  if (params.hasDedicatedSilverHoldings && SILVER_INVESTMENT_CATEGORIES.has(params.category)) {
+    return true;
+  }
+
+  return false;
+}
+
 const WORKFLOW_STEPS: WorkflowStep[] = [
   {
     key: "compensation",
@@ -538,7 +563,11 @@ export default function MonthlyReviewPage() {
       return acc;
     }, {}));
 
-    const investmentValueMap = buildInvestmentValueMap(params.monthWorkspace, params.investmentRows);
+    const investmentValueMap = buildInvestmentValueMap(params.monthWorkspace, params.investmentRows, {
+      hasDedicatedRetirementAccounts: params.retirementRows.length > 0,
+      hasDedicatedGoldHoldings: params.goldRows.length > 0,
+      hasDedicatedSilverHoldings: params.silverRows.length > 0,
+    });
     setInvestmentValues(investmentValueMap.valuesById);
     setMappingWarning(investmentValueMap.warningMessage);
     setInvestmentSummaryValues({
@@ -1224,17 +1253,30 @@ export default function MonthlyReviewPage() {
 
   const completionPercent = Math.round((completedCount / WORKFLOW_STEPS.length) * 100);
 
+  const hasDedicatedRetirementAccounts = retirementAccounts.length > 0;
+  const hasDedicatedGoldHoldings = goldHoldings.length > 0;
+  const hasDedicatedSilverHoldings = silverHoldings.length > 0;
+
+  const financialAssetInvestments = useMemo(() => {
+    return investments.filter((item) => !isCanonicalExcludedInvestment({
+      category: item.category,
+      hasDedicatedRetirementAccounts,
+      hasDedicatedGoldHoldings,
+      hasDedicatedSilverHoldings,
+    }));
+  }, [hasDedicatedGoldHoldings, hasDedicatedRetirementAccounts, hasDedicatedSilverHoldings, investments]);
+
   const mutualFundInvestments = useMemo(() => {
-    return investments.filter((item) => item.category === "Mutual Funds");
-  }, [investments]);
+    return financialAssetInvestments.filter((item) => item.category === "Mutual Funds");
+  }, [financialAssetInvestments]);
 
   const stockInvestments = useMemo(() => {
-    return investments.filter((item) => item.category === "Stocks");
-  }, [investments]);
+    return financialAssetInvestments.filter((item) => item.category === "Stocks");
+  }, [financialAssetInvestments]);
 
   const granularInvestments = useMemo(() => {
-    return investments.filter((item) => item.category !== "Mutual Funds" && item.category !== "Stocks");
-  }, [investments]);
+    return financialAssetInvestments.filter((item) => item.category !== "Mutual Funds" && item.category !== "Stocks");
+  }, [financialAssetInvestments]);
 
   function markStepComplete(step: WorkflowStepKey) {
     setCompletedSteps((current) => ({ ...current, [step]: true }));
@@ -1250,7 +1292,7 @@ export default function MonthlyReviewPage() {
       }
 
       const investmentOverrides = buildMonthEndInvestmentActuals({
-        investments,
+        investments: financialAssetInvestments,
         investmentValues,
         investmentSummaryValues,
       });
@@ -1305,7 +1347,7 @@ export default function MonthlyReviewPage() {
         },
       });
 
-      const investmentUpdates = investments
+      const investmentUpdates = financialAssetInvestments
         .map((item) => ({
           id: item.id,
           nextValue: overrides.get(item.id) ?? Number(item.current_value ?? 0),
@@ -1360,6 +1402,10 @@ export default function MonthlyReviewPage() {
       setSavingStep("retirement");
       setError(null);
 
+      if (!workspace) {
+        throw new Error("Monthly review workspace is unavailable.");
+      }
+
       const updates = retirementAccounts
         .map((item) => {
           const nextValue = toNumber(retirementValues[item.id] ?? String(item.current_balance ?? 0));
@@ -1390,6 +1436,43 @@ export default function MonthlyReviewPage() {
 
       await Promise.all(updates.map((item) => updateRetirementAccount({ id: item.id, account_type: item.accountType, current_balance: item.nextValue })));
 
+      const retirementOverrideMap = new Map<string, number>(updates.map((item) => [item.id, item.nextValue]));
+      const updatedItems = workspace.items.map((item) => {
+        if (item.entityType !== "retirement-account") {
+          return item;
+        }
+
+        const override = retirementOverrideMap.get(item.entityId);
+        if (override == null) {
+          return item;
+        }
+
+        return {
+          ...item,
+          actualValue: override,
+          absoluteVariance: override - item.projectedValue,
+          percentageVariance: item.projectedValue === 0 ? (override === 0 ? 0 : null) : ((override - item.projectedValue) / Math.abs(item.projectedValue)) * 100,
+        };
+      });
+
+      await saveMonthEndCloseDraft({
+        closeId: workspace.close?.id ?? null,
+        closeMonth: workspace.month.month,
+        closeYear: workspace.month.year,
+        items: updatedItems.map((item) => ({
+          entityId: item.entityId,
+          entityType: item.entityType,
+          entityName: item.entityName,
+          key: item.key,
+          label: item.label,
+          itemType: item.itemType,
+          sortOrder: item.sortOrder,
+          openingValue: item.openingValue,
+          projectedValue: item.projectedValue,
+          actualValue: item.actualValue,
+        })),
+      });
+
       markStepComplete("retirement");
       setNotice(`Retirement balances ${updates.length > 0 ? "updated" : "reviewed"} successfully.`);
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
@@ -1405,6 +1488,10 @@ export default function MonthlyReviewPage() {
     try {
       setSavingStep("nonFinancial");
       setError(null);
+
+      if (!workspace) {
+        throw new Error("Monthly review workspace is unavailable.");
+      }
 
       const assetUpdates = assets
         .map((item) => {
@@ -1474,6 +1561,54 @@ export default function MonthlyReviewPage() {
         ...silverUpdates.map((item) => updateSilverHolding({ id: item.id, current_value: item.nextValue })),
         ...propertyUpdates.map((item) => updateRealEstateProperty({ id: item.id, current_market_value: item.nextValue })),
       ]);
+
+      const assetOverrideMap = new Map<string, number>(assetUpdates.map((item) => [item.id, item.nextValue]));
+      const goldOverrideMap = new Map<string, number>(goldUpdates.map((item) => [item.id, item.nextValue]));
+      const silverOverrideMap = new Map<string, number>(silverUpdates.map((item) => [item.id, item.nextValue]));
+      const propertyOverrideMap = new Map<string, number>(propertyUpdates.map((item) => [item.id, item.nextValue]));
+
+      const updatedItems = workspace.items.map((item) => {
+        let override: number | null = null;
+
+        if (item.entityType === "asset") {
+          override = assetOverrideMap.get(item.entityId) ?? null;
+        } else if (item.entityType === "gold-holding") {
+          override = goldOverrideMap.get(item.entityId) ?? null;
+        } else if (item.entityType === "silver-holding") {
+          override = silverOverrideMap.get(item.entityId) ?? null;
+        } else if (item.entityType === "real-estate-property") {
+          override = propertyOverrideMap.get(item.entityId) ?? null;
+        }
+
+        if (override == null) {
+          return item;
+        }
+
+        return {
+          ...item,
+          actualValue: override,
+          absoluteVariance: override - item.projectedValue,
+          percentageVariance: item.projectedValue === 0 ? (override === 0 ? 0 : null) : ((override - item.projectedValue) / Math.abs(item.projectedValue)) * 100,
+        };
+      });
+
+      await saveMonthEndCloseDraft({
+        closeId: workspace.close?.id ?? null,
+        closeMonth: workspace.month.month,
+        closeYear: workspace.month.year,
+        items: updatedItems.map((item) => ({
+          entityId: item.entityId,
+          entityType: item.entityType,
+          entityName: item.entityName,
+          key: item.key,
+          label: item.label,
+          itemType: item.itemType,
+          sortOrder: item.sortOrder,
+          openingValue: item.openingValue,
+          projectedValue: item.projectedValue,
+          actualValue: item.actualValue,
+        })),
+      });
 
       markStepComplete("nonFinancial");
       setNotice("Non-financial asset values updated successfully.");
@@ -1872,7 +2007,7 @@ export default function MonthlyReviewPage() {
                 </Button>
               </div>
               <div className="mt-4 space-y-3">
-                {bankAccounts.length === 0 && investments.length === 0 ? <p className="text-sm text-slate-500">No financial assets available.</p> : null}
+                {bankAccounts.length === 0 && financialAssetInvestments.length === 0 ? <p className="text-sm text-slate-500">No financial assets available.</p> : null}
 
                 {bankAccounts.length > 0 ? (
                   <>
@@ -1895,7 +2030,7 @@ export default function MonthlyReviewPage() {
                   </>
                 ) : null}
 
-                {investments.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Investments</p> : null}
+                {financialAssetInvestments.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Investments</p> : null}
 
                 {mutualFundInvestments.length > 0 ? (
                   <div className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
@@ -2009,12 +2144,14 @@ export default function MonthlyReviewPage() {
                   </div>
                 ))}
 
-                {goldHoldings.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gold</p> : null}
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Gold</p>
+                {goldHoldings.length === 0 ? <p className="text-xs text-slate-500">No gold holdings available.</p> : null}
                 {goldHoldings.map((item) => (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
                     <div>
                       <p className="text-sm font-medium text-slate-900">{item.description}</p>
                       <p className="text-xs text-slate-500">{item.holding_type}</p>
+                      <p className="text-xs text-slate-500">Owner: {item.owner ?? "Not set"}</p>
                     </div>
                     <Input
                       type="number"
@@ -2026,12 +2163,14 @@ export default function MonthlyReviewPage() {
                   </div>
                 ))}
 
-                {silverHoldings.length > 0 ? <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Silver</p> : null}
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Silver</p>
+                {silverHoldings.length === 0 ? <p className="text-xs text-slate-500">No silver holdings available.</p> : null}
                 {silverHoldings.map((item) => (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_180px] md:items-center">
                     <div>
                       <p className="text-sm font-medium text-slate-900">{item.description}</p>
                       <p className="text-xs text-slate-500">{item.holding_type}</p>
+                      <p className="text-xs text-slate-500">Owner: {item.owner ?? "Not set"}</p>
                     </div>
                     <Input
                       type="number"
