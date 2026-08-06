@@ -44,7 +44,7 @@ import type { BankAccount } from "@/types/bankAccount";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment } from "@/types/investment";
 import type { Liability } from "@/types/liability";
-import { MONTH_END_CLOSE_ITEM_DEFINITIONS, type MonthEndCloseEditorItem, type MonthEndCloseItem, type MonthEndCloseItemKey, type MonthEndClosePersistInput, type MonthEndCloseWorkspace } from "@/types/monthEndClose";
+import { MONTH_END_CLOSE_ITEM_DEFINITIONS, type MonthEndCloseEditorItem, type MonthEndCloseItem, type MonthEndCloseItemKey, type MonthEndCloseItemType, type MonthEndClosePersistInput, type MonthEndCloseWorkspace } from "@/types/monthEndClose";
 import type { ProjectionScenario } from "@/types/projection";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
@@ -90,6 +90,20 @@ interface NetWorthBreakdownRow {
   duplicateSourcesIgnored: boolean;
   note?: string;
 }
+
+type MonthEndCloseDraftRow = Pick<
+  MonthEndCloseEditorItem,
+  "key"
+  | "label"
+  | "entityType"
+  | "entityId"
+  | "entityName"
+  | "itemType"
+  | "sortOrder"
+  | "openingValue"
+  | "projectedValue"
+  | "actualValue"
+>;
 
 const RETIREMENT_INVESTMENT_CATEGORIES = new Set(["EPF", "PPF", "NPS"]);
 const GOLD_INVESTMENT_CATEGORIES = new Set(["Gold", "Sovereign Gold Bonds"]);
@@ -548,7 +562,7 @@ function buildRetirementDraftItems(params: {
       .map((item) => [item.entityId, item] as const),
   );
 
-  const nonRetirementRows = params.workspace.items
+  const nonRetirementRows: MonthEndCloseDraftRow[] = params.workspace.items
     .filter((item) => item.entityType !== "retirement-account")
     .map((item) => ({
       entityId: item.entityId,
@@ -563,7 +577,10 @@ function buildRetirementDraftItems(params: {
       actualValue: item.actualValue,
     }));
 
-  const retirementRows = params.retirementAccounts.map((account, index) => {
+  const retirementEntityType: MonthEndCloseEditorItem["entityType"] = "retirement-account";
+  const retirementItemType: MonthEndCloseItemType = "asset";
+
+  const retirementRows: MonthEndCloseDraftRow[] = params.retirementAccounts.map((account, index) => {
     const existingRow = existingRetirementRows.get(account.id);
     const key = retirementItemKey(account.account_type);
     const entityName = retirementEntityName(account);
@@ -586,11 +603,11 @@ function buildRetirementDraftItems(params: {
 
     return {
       entityId: account.id,
-      entityType: "retirement-account",
+      entityType: retirementEntityType,
       entityName,
       key,
       label: entityName,
-      itemType: "asset",
+      itemType: retirementItemType,
       sortOrder: getDefinitionSortOrder(key) * 1000 + index,
       openingValue: 0,
       projectedValue: 0,
