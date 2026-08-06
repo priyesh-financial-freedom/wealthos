@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-
-const INCIDENT_CLOSE_ID = "f8df4b99-744f-4301-a6d4-e916df3abc78";
-const REBUILD_RESULT_STORAGE_KEY = "wealthos:august-draft-rebuild-result";
+import type { RebuildDraftActionState } from "./rebuildAugustDraftAction";
 
 type DuplicateGroup = {
   groupKey: string;
@@ -18,94 +17,81 @@ type DuplicateGroup = {
   totalActualValue: number;
 };
 
-type RebuildResponse = {
-  ok: boolean;
-  error?: string;
-  result?: {
-    closeId: string;
-    closeYear: number;
-    closeMonth: number;
-    status: "draft";
-    beforeItemCount: number;
-    afterItemCount: number;
-    beforeTotals: {
-      totalAssets: number;
-      totalLiabilities: number;
-      netWorth: number;
-      totalsByKey: Record<string, number>;
-    };
-    afterTotals: {
-      totalAssets: number;
-      totalLiabilities: number;
-      netWorth: number;
-      totalsByKey: Record<string, number>;
-    };
-    beforeDuplicateGroups: DuplicateGroup[];
-    afterDuplicateGroups: DuplicateGroup[];
-    duplicateGroupsRemoved: DuplicateGroup[];
+type RebuildDraftActionResult = {
+  closeId: string;
+  closeYear: number;
+  closeMonth: number;
+  status: "draft";
+  beforeItemCount: number;
+  afterItemCount: number;
+  beforeTotals: {
+    totalAssets: number;
+    totalLiabilities: number;
+    netWorth: number;
+    totalsByKey: Record<string, number>;
   };
+  afterTotals: {
+    totalAssets: number;
+    totalLiabilities: number;
+    netWorth: number;
+    totalsByKey: Record<string, number>;
+  };
+  beforeDuplicateGroups: DuplicateGroup[];
+  afterDuplicateGroups: DuplicateGroup[];
+  duplicateGroupsRemoved: DuplicateGroup[];
 };
 
-export function RebuildDraftAction() {
+type ClientActionState = RebuildDraftActionState & {
+  result?: RebuildDraftActionResult;
+};
+
+interface RebuildDraftActionProps {
+  closeId: string;
+  action: (prevState: ClientActionState, formData: FormData) => Promise<ClientActionState>;
+}
+
+const INITIAL_STATE: ClientActionState = {
+  ok: false,
+  status: 0,
+};
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? "Rebuilding..." : "Rebuild August Draft From Canonical Sources"}
+    </Button>
+  );
+}
+
+export function RebuildDraftAction({ closeId, action }: RebuildDraftActionProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [response, setResponse] = useState<RebuildResponse | null>(null);
+  const [response, formAction] = useActionState(action, INITIAL_STATE);
+  const refreshedAfterSuccess = useRef(false);
 
   useEffect(() => {
-    const raw = window.sessionStorage.getItem(REBUILD_RESULT_STORAGE_KEY);
-    if (!raw) {
+    if (!response.ok || refreshedAfterSuccess.current) {
       return;
     }
 
-    try {
-      setResponse(JSON.parse(raw) as RebuildResponse);
-    } catch {
-      window.sessionStorage.removeItem(REBUILD_RESULT_STORAGE_KEY);
-    }
-  }, []);
-
-  async function rebuild() {
-    setLoading(true);
-    setResponse(null);
-
-    try {
-      const res = await fetch("/api/debug/month-end-close/rebuild-draft", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ closeId: INCIDENT_CLOSE_ID }),
-      });
-
-      const payload = (await res.json()) as RebuildResponse;
-      window.sessionStorage.setItem(REBUILD_RESULT_STORAGE_KEY, JSON.stringify(payload));
-      setResponse(payload);
-
-      if (payload.ok) {
-        router.refresh();
-      }
-    } catch (error) {
-      const payload = { ok: false, error: error instanceof Error ? error.message : "Request failed." };
-      window.sessionStorage.setItem(REBUILD_RESULT_STORAGE_KEY, JSON.stringify(payload));
-      setResponse(payload);
-    } finally {
-      setLoading(false);
-    }
-  }
+    refreshedAfterSuccess.current = true;
+    router.refresh();
+  }, [response.ok, router]);
 
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
       <p className="text-sm font-semibold text-amber-900">Internal Repair Action</p>
       <p className="mt-1 text-sm text-amber-800">Rebuild August 2026 draft close from canonical live sources (draft-only, incident-scoped).</p>
       <div className="mt-3 flex items-center gap-3">
-        <Button type="button" onClick={rebuild} disabled={loading}>
-          {loading ? "Rebuilding..." : "Rebuild August Draft From Canonical Sources"}
-        </Button>
-        <span className="text-xs text-amber-900">close_id: {INCIDENT_CLOSE_ID}</span>
+        <form action={formAction}>
+          <input type="hidden" name="closeId" value={closeId} />
+          <SubmitButton />
+        </form>
+        <span className="text-xs text-amber-900">close_id: {closeId}</span>
       </div>
 
-      {response ? (
+      {response.status !== 0 ? (
         <div className={`mt-4 rounded-lg border p-3 text-sm ${response.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-rose-200 bg-rose-50 text-rose-800"}`}>
           {response.ok && response.result ? (
             <div className="space-y-1">

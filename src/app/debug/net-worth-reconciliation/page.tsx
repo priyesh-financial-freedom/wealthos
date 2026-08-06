@@ -6,6 +6,9 @@ import { formatCurrency } from "@/lib/formatters";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { mapRawInvestmentRowToInvestment } from "@/services/investments";
 import { RebuildDraftAction } from "./RebuildDraftAction";
+import { runRebuildAugustDraftAction, type RebuildDraftActionState } from "./rebuildAugustDraftAction";
+
+const INCIDENT_CLOSE_ID = "f8df4b99-744f-4301-a6d4-e916df3abc78";
 
 type ItemKey =
   | "bank_accounts"
@@ -528,6 +531,13 @@ function jsonCompact(value: unknown): string {
   }
 }
 
+export async function rebuildAugustDraftAction(prevState: RebuildDraftActionState, formData: FormData): Promise<RebuildDraftActionState> {
+  "use server";
+
+  void prevState;
+  return runRebuildAugustDraftAction(formData);
+}
+
 export default async function NetWorthReconciliationPage() {
   const client = await createSupabaseServerClient();
   const {
@@ -960,7 +970,7 @@ export default async function NetWorthReconciliationPage() {
           summary="Read-only diagnostics with an explicit incident-scoped repair action for the August draft close."
         />
 
-        <RebuildDraftAction />
+        <RebuildDraftAction closeId={INCIDENT_CLOSE_ID} action={rebuildAugustDraftAction} />
 
         <DashboardCard>
           <h2 className="text-lg font-semibold text-slate-900">Scope and Session</h2>
