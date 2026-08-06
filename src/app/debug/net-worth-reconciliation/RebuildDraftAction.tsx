@@ -5,7 +5,6 @@ import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import type { RebuildDraftActionState } from "./rebuildAugustDraftAction";
 
 type DuplicateGroup = {
   groupKey: string;
@@ -41,9 +40,14 @@ type RebuildDraftActionResult = {
   duplicateGroupsRemoved: DuplicateGroup[];
 };
 
-type ClientActionState = RebuildDraftActionState & {
+type RebuildDraftActionState = {
+  ok: boolean;
+  status: number;
+  error?: string;
   result?: RebuildDraftActionResult;
 };
+
+type ClientActionState = RebuildDraftActionState;
 
 interface RebuildDraftActionProps {
   closeId: string;

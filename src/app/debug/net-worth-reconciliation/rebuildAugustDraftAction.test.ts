@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const TARGET_DRAFT_CLOSE_ID = "f8df4b99-744f-4301-a6d4-e916df3abc78";
+const CLOSED_JULY_CLOSE_ID = "c826b7f9-e0ab-4b31-96e3-6275a09e767c";
 
 const mockGetUser = vi.fn();
 const mockMaybeSingle = vi.fn();
@@ -34,7 +38,12 @@ function makeFormData(closeId: string) {
   return formData;
 }
 
-describe("runRebuildAugustDraftAction", () => {
+const INITIAL_STATE = {
+  ok: false,
+  status: 0,
+};
+
+describe("rebuildAugustDraftAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -52,8 +61,8 @@ describe("runRebuildAugustDraftAction", () => {
       error: null,
     });
 
-    const { runRebuildAugustDraftAction } = await import("./rebuildAugustDraftAction");
-    const result = await runRebuildAugustDraftAction(makeFormData(TARGET_DRAFT_CLOSE_ID));
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(401);
@@ -76,8 +85,8 @@ describe("runRebuildAugustDraftAction", () => {
       error: null,
     });
 
-    const { runRebuildAugustDraftAction } = await import("./rebuildAugustDraftAction");
-    const result = await runRebuildAugustDraftAction(makeFormData(TARGET_DRAFT_CLOSE_ID));
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(403);
@@ -100,8 +109,8 @@ describe("runRebuildAugustDraftAction", () => {
       error: null,
     });
 
-    const { runRebuildAugustDraftAction } = await import("./rebuildAugustDraftAction");
-    const result = await runRebuildAugustDraftAction(makeFormData(TARGET_DRAFT_CLOSE_ID));
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(409);
@@ -172,8 +181,8 @@ describe("runRebuildAugustDraftAction", () => {
       ],
     });
 
-    const { runRebuildAugustDraftAction } = await import("./rebuildAugustDraftAction");
-    const result = await runRebuildAugustDraftAction(makeFormData(TARGET_DRAFT_CLOSE_ID));
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);
@@ -220,8 +229,8 @@ describe("runRebuildAugustDraftAction", () => {
       duplicateGroupsRemoved: [],
     });
 
-    const { runRebuildAugustDraftAction } = await import("./rebuildAugustDraftAction");
-    const result = await runRebuildAugustDraftAction(makeFormData(TARGET_DRAFT_CLOSE_ID));
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(true);
     expect(result.result?.beforeItemCount).toBe(31);
@@ -287,11 +296,32 @@ describe("runRebuildAugustDraftAction", () => {
       ],
     });
 
-    const { runRebuildAugustDraftAction } = await import("./rebuildAugustDraftAction");
-    const result = await runRebuildAugustDraftAction(makeFormData(TARGET_DRAFT_CLOSE_ID));
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(TARGET_DRAFT_CLOSE_ID));
 
     expect(result.ok).toBe(true);
     expect(result.result?.afterDuplicateGroups).toHaveLength(0);
     expect(result.result?.duplicateGroupsRemoved).toHaveLength(1);
+  });
+
+  it("blocks July closed close id", async () => {
+    const { rebuildAugustDraftAction } = await import("./page");
+    const result = await rebuildAugustDraftAction(INITIAL_STATE, makeFormData(CLOSED_JULY_CLOSE_ID));
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(409);
+    expect(result.error).toBe("Only draft closes can be rebuilt.");
+    expect(mockCreateSupabaseServerClient).not.toHaveBeenCalled();
+    expect(mockRebuildDraftCloseItemsFromCanonicalSources).not.toHaveBeenCalled();
+  });
+
+  it("uses form submission wiring and does not call fetch for rebuild", () => {
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/debug/net-worth-reconciliation/page.tsx"), "utf8");
+    const actionSource = readFileSync(resolve(process.cwd(), "src/app/debug/net-worth-reconciliation/RebuildDraftAction.tsx"), "utf8");
+
+    expect(pageSource.includes('<RebuildDraftAction closeId={INCIDENT_CLOSE_ID} action={rebuildAugustDraftAction} />')).toBe(true);
+    expect(actionSource.includes("<form action={formAction}>")).toBe(true);
+    expect(actionSource.includes('name="closeId"')).toBe(true);
+    expect(actionSource.includes("fetch(")).toBe(false);
   });
 });

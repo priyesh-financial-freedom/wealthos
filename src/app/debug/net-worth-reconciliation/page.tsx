@@ -2,13 +2,18 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
+import { revalidatePath } from "next/cache";
 import { formatCurrency } from "@/lib/formatters";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { mapRawInvestmentRowToInvestment } from "@/services/investments";
+import { createMonthEndCloseServerService } from "@/services/monthEndClose/server";
 import { RebuildDraftAction } from "./RebuildDraftAction";
-import { runRebuildAugustDraftAction, type RebuildDraftActionState } from "./rebuildAugustDraftAction";
 
 const INCIDENT_CLOSE_ID = "f8df4b99-744f-4301-a6d4-e916df3abc78";
+const CLOSED_JULY_CLOSE_ID = "c826b7f9-e0ab-4b31-96e3-6275a09e767c";
+const AUTH_REQUIRED_MESSAGE = "Authentication required. Please refresh and sign in again.";
+const CLOSE_OWNERSHIP_MESSAGE = "This close does not belong to the current user.";
+const DRAFT_ONLY_MESSAGE = "Only draft closes can be rebuilt.";
 
 type ItemKey =
   | "bank_accounts"
@@ -150,6 +155,35 @@ type DuplicateGroupReport = {
   entityTypes: string[];
   entityIds: string[];
   totalActualValue: number;
+};
+
+type RebuildDraftActionState = {
+  ok: boolean;
+  status: number;
+  error?: string;
+  result?: {
+    closeId: string;
+    closeYear: number;
+    closeMonth: number;
+    status: "draft";
+    beforeItemCount: number;
+    afterItemCount: number;
+    beforeTotals: {
+      totalAssets: number;
+      totalLiabilities: number;
+      netWorth: number;
+      totalsByKey: Record<string, number>;
+    };
+    afterTotals: {
+      totalAssets: number;
+      totalLiabilities: number;
+      netWorth: number;
+      totalsByKey: Record<string, number>;
+    };
+    beforeDuplicateGroups: DuplicateGroupReport[];
+    afterDuplicateGroups: DuplicateGroupReport[];
+    duplicateGroupsRemoved: DuplicateGroupReport[];
+  };
 };
 
 const RETIREMENT_INVESTMENT_CATEGORIES = new Set(["EPF", "PPF", "NPS"]);
@@ -535,7 +569,128 @@ export async function rebuildAugustDraftAction(prevState: RebuildDraftActionStat
   "use server";
 
   void prevState;
-  return runRebuildAugustDraftAction(formData);
+
+  const submittedCloseId = String(formData.get("closeId") ?? "").trim();
+
+  if (submittedCloseId.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: "closeId is required.",
+    };
+  }
+
+  if (submittedCloseId === CLOSED_JULY_CLOSE_ID) {
+    return {
+      ok: false,
+      status: 409,
+      error: DRAFT_ONLY_MESSAGE,
+    };
+  }
+
+  if (submittedCloseId !== INCIDENT_CLOSE_ID) {
+    return {
+      ok: false,
+      status: 403,
+      error: CLOSE_OWNERSHIP_MESSAGE,
+    };
+  }
+
+  try {
+    const client = await createSupabaseServerClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await client.auth.getUser();
+
+    const authUserId = user?.id ?? null;
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[debug/rebuildAugustDraftAction] auth", {
+        userId: authUserId,
+        submittedCloseId,
+      });
+    }
+
+    if (authError || !user) {
+      return {
+        ok: false,
+        status: 401,
+        error: AUTH_REQUIRED_MESSAGE,
+      };
+    }
+
+    const { data: closeData, error: closeError } = await client
+      .from("month_end_closes")
+      .select("id,user_id,status")
+      .eq("id", submittedCloseId)
+      .maybeSingle();
+
+    if (closeError) {
+      throw new Error(closeError.message || "Failed to validate close ownership.");
+    }
+
+    const closeUserId = typeof closeData?.user_id === "string" ? closeData.user_id : null;
+    const closeStatus = closeData?.status;
+
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[debug/rebuildAugustDraftAction] close lookup", {
+        submittedCloseId,
+        closeUserId,
+        closeStatus,
+      });
+    }
+
+    if (!closeData || closeUserId !== user.id) {
+      return {
+        ok: false,
+        status: 403,
+        error: CLOSE_OWNERSHIP_MESSAGE,
+      };
+    }
+
+    if (closeStatus !== "draft") {
+      return {
+        ok: false,
+        status: 409,
+        error: DRAFT_ONLY_MESSAGE,
+      };
+    }
+
+    const service = createMonthEndCloseServerService();
+    const result = await service.rebuildDraftCloseItemsFromCanonicalSources(submittedCloseId);
+
+    revalidatePath("/debug/net-worth-reconciliation");
+
+    return {
+      ok: true,
+      status: 200,
+      result,
+    };
+  } catch (error) {
+    const message = error instanceof Error && error.message.trim().length > 0 ? error.message : "Unexpected server error.";
+
+    if (message.includes("Authentication required")) {
+      return {
+        ok: false,
+        status: 401,
+        error: AUTH_REQUIRED_MESSAGE,
+      };
+    }
+
+    if (message.includes("Only draft month-end closes can be rebuilt")) {
+      return {
+        ok: false,
+        status: 409,
+        error: DRAFT_ONLY_MESSAGE,
+      };
+    }
+
+    return {
+      ok: false,
+      status: 500,
+      error: `Failed to rebuild draft close items. ${message}`,
+    };
+  }
 }
 
 export default async function NetWorthReconciliationPage() {
