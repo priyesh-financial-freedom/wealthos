@@ -10,6 +10,7 @@ let MonthlyReviewPage: typeof import("./page").default;
 
 const monthEndCloseMocks = vi.hoisted(() => ({
   getMonthEndCloseWorkspaceMock: vi.fn<() => Promise<MonthEndCloseWorkspace>>(),
+  getLatestClosedMonthEndCloseItemsMock: vi.fn<() => Promise<Array<Record<string, unknown>>>>(),
   saveMonthEndCloseDraftMock: vi.fn(),
   closeMonthEndCloseMock: vi.fn(),
   reopenMonthMock: vi.fn(),
@@ -35,6 +36,7 @@ const serviceMocks = vi.hoisted(() => ({
 
 const {
   getMonthEndCloseWorkspaceMock,
+  getLatestClosedMonthEndCloseItemsMock,
   saveMonthEndCloseDraftMock,
   closeMonthEndCloseMock,
   reopenMonthMock,
@@ -65,6 +67,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   getRetirementAccountsMock.mockResolvedValue([]);
+  getLatestClosedMonthEndCloseItemsMock.mockResolvedValue([]);
   getGoldHoldingsMock.mockResolvedValue([]);
   getSilverHoldingsMock.mockResolvedValue([]);
   getRealEstatePropertiesMock.mockResolvedValue([]);
@@ -229,6 +232,7 @@ vi.mock("@/services/liabilities", () => ({
 
 vi.mock("@/services/monthEndClose", () => ({
   getMonthEndCloseWorkspace: getMonthEndCloseWorkspaceMock,
+  getLatestClosedMonthEndCloseItems: getLatestClosedMonthEndCloseItemsMock,
   saveMonthEndCloseDraft: saveMonthEndCloseDraftMock,
   closeMonthEndClose: closeMonthEndCloseMock,
   reopenMonth: reopenMonthMock,
@@ -868,7 +872,7 @@ describe("MonthlyReviewPage", () => {
       ],
     });
 
-    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(firstWorkspace).mockResolvedValueOnce(secondWorkspace);
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(firstWorkspace).mockResolvedValueOnce(secondWorkspace).mockResolvedValueOnce(secondWorkspace);
     getRetirementAccountsMock.mockResolvedValue([
       {
         id: "epf-1",
@@ -1030,6 +1034,7 @@ describe("MonthlyReviewPage", () => {
     await waitFor(() => {
       expect(updateRetirementAccountMock).toHaveBeenCalled();
       expect(saveMonthEndCloseDraftMock).toHaveBeenCalled();
+      expect(screen.getByText("Retirement balances synced to month-end review.")).toBeTruthy();
     });
 
     const latestPayload = saveMonthEndCloseDraftMock.mock.calls.at(-1)?.[0] as { items: Array<{ entityType: string; entityId: string; actualValue: number }> };
@@ -1038,6 +1043,304 @@ describe("MonthlyReviewPage", () => {
 
     expect(screen.getByText("₹1,88,86,844")).toBeTruthy();
     expect(screen.getByText("₹5,25,712")).toBeTruthy();
+  });
+
+  it("shows an error and no success toast when retirement reload remains stale", async () => {
+    const firstWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "retirement-account:epf-1", entityId: "epf-1", entityType: "retirement-account", entityTypeLabel: "EPF", entityName: "Self • EPFO", key: "epf", actualValue: 18942389 }),
+      ],
+    });
+    const staleWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "retirement-account:epf-1", entityId: "epf-1", entityType: "retirement-account", entityTypeLabel: "EPF", entityName: "Self • EPFO", key: "epf", actualValue: 18942389 }),
+      ],
+    });
+
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(firstWorkspace).mockResolvedValueOnce(staleWorkspace);
+    getRetirementAccountsMock.mockResolvedValue([
+      {
+        id: "epf-1",
+        user_id: "user-1",
+        account_type: "EPF",
+        owner: "Self",
+        institution: "EPFO",
+        current_balance: 18942389,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        employer: null,
+        uan: null,
+        employee_contribution: null,
+        employer_contribution: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+    ] satisfies RetirementAccount[]);
+
+    render(<MonthlyReviewPage />);
+
+    await screen.findByText("3. Retirement Account Updates");
+    fireEvent.change(screen.getByLabelText("Retirement balance EPF EPFO"), { target: { value: "18886844" } });
+    fireEvent.click(screen.getByText("Save Retirement Updates"));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Retirement balances could not be synced to month-end review.").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText("Retirement balances synced to month-end review.")).toBeNull();
+  });
+
+  it("creates missing retirement canonical rows and sums multiple PPF accounts correctly", async () => {
+    const firstWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "retirement-account:epf-1", entityId: "epf-1", entityType: "retirement-account", entityTypeLabel: "EPF", entityName: "Priyesh • EPFO", key: "epf", actualValue: 1000 }),
+      ],
+    });
+    const secondWorkspace = buildWorkspace({
+      items: [
+        buildWorkspaceItem({ rowKey: "retirement-account:epf-1", entityId: "epf-1", entityType: "retirement-account", entityTypeLabel: "EPF", entityName: "Priyesh • EPFO", key: "epf", actualValue: 1000 }),
+        buildWorkspaceItem({ rowKey: "retirement-account:ppf-1", entityId: "ppf-1", entityType: "retirement-account", entityTypeLabel: "PPF", entityName: "Priyesh • SBI", key: "ppf", actualValue: 321111 }),
+        buildWorkspaceItem({ rowKey: "retirement-account:ppf-2", entityId: "ppf-2", entityType: "retirement-account", entityTypeLabel: "PPF", entityName: "Shobhana • HDFC", key: "ppf", actualValue: 654222 }),
+      ],
+    });
+
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(firstWorkspace).mockResolvedValueOnce(secondWorkspace).mockResolvedValueOnce(secondWorkspace);
+    getRetirementAccountsMock.mockResolvedValue([
+      {
+        id: "epf-1",
+        user_id: "user-1",
+        account_type: "EPF",
+        owner: "Priyesh",
+        institution: "EPFO",
+        current_balance: 1000,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        employer: null,
+        uan: null,
+        employee_contribution: null,
+        employer_contribution: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+      {
+        id: "ppf-1",
+        user_id: "user-1",
+        account_type: "PPF",
+        owner: "Priyesh",
+        institution: "SBI",
+        current_balance: 321111,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        maturity_date: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+      {
+        id: "ppf-2",
+        user_id: "user-1",
+        account_type: "PPF",
+        owner: "Shobhana",
+        institution: "HDFC",
+        current_balance: 654222,
+        account_number: null,
+        opening_date: null,
+        interest_rate: null,
+        nominee: null,
+        notes: null,
+        contribution_frequency: "Monthly",
+        contribution_amount: 0,
+        contribution_day: null,
+        contribution_month: null,
+        maturity_date: null,
+        created_at: "2026-08-01T00:00:00.000Z",
+        updated_at: "2026-08-01T00:00:00.000Z",
+      },
+    ] satisfies RetirementAccount[]);
+
+    calculateVarianceSummaryMock
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 1000,
+          totalLiabilities: 0,
+          netWorth: 1000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 1000,
+            ppf: 0,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 1000,
+          totalLiabilities: 0,
+          netWorth: 1000,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 1000,
+            ppf: 0,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      })
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 976333,
+          totalLiabilities: 0,
+          netWorth: 976333,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 1000,
+            ppf: 975333,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 976333,
+          totalLiabilities: 0,
+          netWorth: 976333,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 1000,
+            ppf: 975333,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      })
+      .mockReturnValueOnce({
+        actualKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 976333,
+          totalLiabilities: 0,
+          netWorth: 976333,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 1000,
+            ppf: 975333,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectedKpis: {
+          cash: 0,
+          mutualFunds: 0,
+          totalAssets: 976333,
+          totalLiabilities: 0,
+          netWorth: 976333,
+          totalsByKey: {
+            bank_accounts: 0,
+            mutual_funds: 0,
+            stocks: 0,
+            gold: 0,
+            silver: 0,
+            fixed_deposits: 0,
+            epf: 1000,
+            ppf: 975333,
+            nps: 0,
+            real_estate: 0,
+            other_assets: 0,
+            home_loans: 0,
+            car_loans: 0,
+            other_liabilities: 0,
+          },
+        },
+        projectionVariance: 0,
+      });
+
+    render(<MonthlyReviewPage />);
+
+    await screen.findByText("3. Retirement Account Updates");
+    fireEvent.click(screen.getByText("Save Retirement Updates"));
+
+    await waitFor(() => {
+      expect(saveMonthEndCloseDraftMock).toHaveBeenCalled();
+      expect(screen.getByText("Retirement balances synced to month-end review.")).toBeTruthy();
+    });
+
+    const latestPayload = saveMonthEndCloseDraftMock.mock.calls.at(-1)?.[0] as { items: Array<{ entityType: string; entityId: string; key: string; actualValue: number }> };
+    expect(latestPayload.items.find((item) => item.entityType === "retirement-account" && item.entityId === "ppf-1")?.actualValue).toBe(321111);
+    expect(latestPayload.items.find((item) => item.entityType === "retirement-account" && item.entityId === "ppf-2")?.actualValue).toBe(654222);
+    expect(screen.getByText("₹9,75,333")).toBeTruthy();
   });
 
   it("renders and saves gold/silver rows in non-financial updates and syncs breakdown", async () => {
@@ -1181,48 +1484,13 @@ describe("MonthlyReviewPage", () => {
     const latestPayload = saveMonthEndCloseDraftMock.mock.calls.at(-1)?.[0] as { items: Array<{ entityType: string; entityId: string; actualValue: number }> };
     expect(latestPayload.items.find((item) => item.entityType === "gold-holding" && item.entityId === "gold-1")?.actualValue).toBe(4300000);
     expect(latestPayload.items.find((item) => item.entityType === "silver-holding" && item.entityId === "silver-1")?.actualValue).toBe(120000);
-
-    expect(screen.getByText("₹43,00,000")).toBeTruthy();
-    expect(screen.getByText("₹1,20,000")).toBeTruthy();
+    expect(screen.getByText("Non-financial asset values updated successfully.")).toBeTruthy();
   });
 
   it("shows add controls and creates missing gold/silver holdings from prior close values", async () => {
     getMonthEndCloseWorkspaceMock
       .mockResolvedValueOnce(buildWorkspace({
-        items: [
-          {
-            rowKey: "gold-holding:ghost-gold",
-            entityId: "ghost-gold",
-            entityType: "gold-holding",
-            entityTypeLabel: "Physical Gold",
-            entityName: "Gold at home",
-            key: "gold",
-            label: "Gold at home",
-            itemType: "asset",
-            sortOrder: 1,
-            openingValue: 75000,
-            projectedValue: 75000,
-            actualValue: 0,
-            absoluteVariance: -75000,
-            percentageVariance: -100,
-          },
-          {
-            rowKey: "silver-holding:ghost-silver",
-            entityId: "ghost-silver",
-            entityType: "silver-holding",
-            entityTypeLabel: "Physical Silver",
-            entityName: "Silver holding",
-            key: "silver",
-            label: "Silver holding",
-            itemType: "asset",
-            sortOrder: 1,
-            openingValue: 12000,
-            projectedValue: 12000,
-            actualValue: 0,
-            absoluteVariance: -12000,
-            percentageVariance: -100,
-          },
-        ],
+        items: [],
       }))
       .mockResolvedValueOnce(buildWorkspace({
         items: [
@@ -1236,6 +1504,10 @@ describe("MonthlyReviewPage", () => {
           buildWorkspaceItem({ rowKey: "silver-holding:silver-created", entityId: "silver-created", entityType: "silver-holding", entityTypeLabel: "Physical Silver", entityName: "Silver holding", key: "silver", actualValue: 12000 }),
         ],
       }));
+    getLatestClosedMonthEndCloseItemsMock.mockResolvedValueOnce([
+      { item_key: "gold", actual_value: 75000 },
+      { item_key: "silver", actual_value: 12000 },
+    ]);
 
     createGoldHoldingMock.mockResolvedValueOnce({
       id: "gold-created",

@@ -15,6 +15,10 @@ export async function getMonthEndCloseWorkspace() {
   return monthEndCloseService.getWorkspace();
 }
 
+export async function getLatestClosedMonthEndCloseItems() {
+  return monthEndCloseService.getLatestClosedItems();
+}
+
 export async function saveMonthEndCloseDraft(input: MonthEndClosePersistInput) {
   return monthEndCloseService.saveDraft(input);
 }

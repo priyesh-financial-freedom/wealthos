@@ -915,6 +915,17 @@ export class MonthEndCloseService {
     };
   }
 
+  async getLatestClosedItems(): Promise<MonthEndCloseItem[]> {
+    const userId = await this.repository.getAuthenticatedUserId();
+    const latestClosed = await this.repository.getLatestClosedMonthEndClose(userId);
+
+    if (!latestClosed) {
+      return [];
+    }
+
+    return this.repository.getCloseItems(latestClosed.id);
+  }
+
   async saveDraft(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {
     return this.persist(input, "draft");
   }

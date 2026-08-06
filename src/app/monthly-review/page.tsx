@@ -30,7 +30,7 @@ import { cashFlowManagementService } from "@/services/cashFlowManagement";
 import { compensationService, type CompensationSummary } from "@/services/compensation";
 import { getInvestments, updateInvestment } from "@/services/investments";
 import { getLiabilities, updateLiability } from "@/services/liabilities";
-import { closeMonthEndClose, getMonthEndCloseWorkspace, reopenMonth, saveMonthEndCloseDraft } from "@/services/monthEndClose";
+import { closeMonthEndClose, getLatestClosedMonthEndCloseItems, getMonthEndCloseWorkspace, reopenMonth, saveMonthEndCloseDraft } from "@/services/monthEndClose";
 import { calculateMonthEndCloseVarianceSummary } from "@/services/monthEndClose/MonthEndCloseService";
 import { buildInvestmentValueMap } from "./investmentValueMap";
 import { monthlyReviewComparisonService, projectionInputService, type ProjectionComparisonRow } from "@/services/projection";
@@ -44,7 +44,7 @@ import type { BankAccount } from "@/types/bankAccount";
 import type { GoldHolding } from "@/types/goldHolding";
 import type { Investment } from "@/types/investment";
 import type { Liability } from "@/types/liability";
-import type { MonthEndCloseItemKey, MonthEndCloseWorkspace } from "@/types/monthEndClose";
+import { MONTH_END_CLOSE_ITEM_DEFINITIONS, type MonthEndCloseEditorItem, type MonthEndCloseItem, type MonthEndCloseItemKey, type MonthEndClosePersistInput, type MonthEndCloseWorkspace } from "@/types/monthEndClose";
 import type { ProjectionScenario } from "@/types/projection";
 import type { RealEstateProperty } from "@/types/realEstateProperty";
 import type { RetirementAccount } from "@/types/retirementAccount";
@@ -484,6 +484,141 @@ function sumWorkspaceOpeningRowsByPredicate(items: MonthEndCloseWorkspace["items
     .reduce((sum, item) => sum + Number(item.openingValue ?? 0), 0);
 }
 
+function retirementItemKey(accountType: RetirementAccount["account_type"]): Extract<MonthEndCloseItemKey, "epf" | "ppf" | "nps"> {
+  return accountType === "EPF" ? "epf" : accountType === "PPF" ? "ppf" : "nps";
+}
+
+function retirementEntityName(account: RetirementAccount) {
+  return `${account.owner} • ${account.institution}`;
+}
+
+function getDefinitionSortOrder(key: MonthEndCloseItemKey) {
+  return MONTH_END_CLOSE_ITEM_DEFINITIONS.find((definition) => definition.key === key)?.sortOrder ?? 0;
+}
+
+function sumPersistedItemsByKey(items: MonthEndCloseItem[], key: MonthEndCloseItemKey) {
+  return items
+    .filter((item) => item.item_key === key)
+    .reduce((sum, item) => sum + Number(item.actual_value ?? 0), 0);
+}
+
+function buildRetirementExpectedState(accounts: RetirementAccount[], values: Record<string, string>) {
+  const byEntityId = new Map<string, { key: Extract<MonthEndCloseItemKey, "epf" | "ppf" | "nps">; actualValue: number }>();
+  const totalsByKey = { epf: 0, ppf: 0, nps: 0 };
+
+  for (const account of accounts) {
+    const key = retirementItemKey(account.account_type);
+    const actualValue = toNumber(values[account.id] ?? String(account.current_balance ?? 0));
+    byEntityId.set(account.id, { key, actualValue });
+    totalsByKey[key] += actualValue;
+  }
+
+  return { byEntityId, totalsByKey };
+}
+
+function collectRetirementActuals(items: MonthEndCloseEditorItem[]) {
+  const byEntityId = new Map<string, { key: Extract<MonthEndCloseItemKey, "epf" | "ppf" | "nps">; actualValue: number }>();
+  const totalsByKey = { epf: 0, ppf: 0, nps: 0 };
+
+  for (const item of items) {
+    if (item.entityType !== "retirement-account") {
+      continue;
+    }
+
+    if (item.key !== "epf" && item.key !== "ppf" && item.key !== "nps") {
+      continue;
+    }
+
+    const actualValue = Number(item.actualValue ?? 0);
+    byEntityId.set(item.entityId, { key: item.key, actualValue });
+    totalsByKey[item.key] += actualValue;
+  }
+
+  return { byEntityId, totalsByKey };
+}
+
+function buildRetirementDraftItems(params: {
+  workspace: MonthEndCloseWorkspace;
+  retirementAccounts: RetirementAccount[];
+  retirementValues: Record<string, string>;
+}): MonthEndClosePersistInput["items"] {
+  const existingRetirementRows = new Map(
+    params.workspace.items
+      .filter((item) => item.entityType === "retirement-account")
+      .map((item) => [item.entityId, item] as const),
+  );
+
+  const nonRetirementRows = params.workspace.items
+    .filter((item) => item.entityType !== "retirement-account")
+    .map((item) => ({
+      entityId: item.entityId,
+      entityType: item.entityType,
+      entityName: item.entityName,
+      key: item.key,
+      label: item.label,
+      itemType: item.itemType,
+      sortOrder: item.sortOrder,
+      openingValue: item.openingValue,
+      projectedValue: item.projectedValue,
+      actualValue: item.actualValue,
+    }));
+
+  const retirementRows = params.retirementAccounts.map((account, index) => {
+    const existingRow = existingRetirementRows.get(account.id);
+    const key = retirementItemKey(account.account_type);
+    const entityName = retirementEntityName(account);
+    const actualValue = toNumber(params.retirementValues[account.id] ?? String(account.current_balance ?? 0));
+
+    if (existingRow) {
+      return {
+        entityId: existingRow.entityId,
+        entityType: existingRow.entityType,
+        entityName,
+        key,
+        label: entityName,
+        itemType: existingRow.itemType,
+        sortOrder: existingRow.sortOrder,
+        openingValue: existingRow.openingValue,
+        projectedValue: existingRow.projectedValue,
+        actualValue,
+      };
+    }
+
+    return {
+      entityId: account.id,
+      entityType: "retirement-account",
+      entityName,
+      key,
+      label: entityName,
+      itemType: "asset",
+      sortOrder: getDefinitionSortOrder(key) * 1000 + index,
+      openingValue: 0,
+      projectedValue: 0,
+      actualValue,
+    };
+  });
+
+  return [...nonRetirementRows, ...retirementRows];
+}
+
+function verifyRetirementWorkspaceSync(params: {
+  expected: ReturnType<typeof buildRetirementExpectedState>;
+  items: MonthEndCloseWorkspace["items"];
+}) {
+  const actual = collectRetirementActuals(params.items);
+
+  for (const [entityId, expectedRow] of params.expected.byEntityId.entries()) {
+    const actualRow = actual.byEntityId.get(entityId);
+    if (!actualRow || actualRow.key !== expectedRow.key || Math.abs(actualRow.actualValue - expectedRow.actualValue) >= 0.01) {
+      return false;
+    }
+  }
+
+  return Math.abs(actual.totalsByKey.epf - params.expected.totalsByKey.epf) < 0.01
+    && Math.abs(actual.totalsByKey.ppf - params.expected.totalsByKey.ppf) < 0.01
+    && Math.abs(actual.totalsByKey.nps - params.expected.totalsByKey.nps) < 0.01;
+}
+
 export default function MonthlyReviewPage() {
   const [workspace, setWorkspace] = useState<MonthEndCloseWorkspace | null>(null);
   const [compensationSummary, setCompensationSummary] = useState<CompensationSummary | null>(null);
@@ -492,6 +627,7 @@ export default function MonthlyReviewPage() {
   const [retirementAccounts, setRetirementAccounts] = useState<RetirementAccount[]>([]);
   const [goldHoldings, setGoldHoldings] = useState<GoldHolding[]>([]);
   const [silverHoldings, setSilverHoldings] = useState<SilverHolding[]>([]);
+  const [latestClosedItems, setLatestClosedItems] = useState<MonthEndCloseItem[]>([]);
   const [realEstateProperties, setRealEstateProperties] = useState<RealEstateProperty[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
@@ -554,6 +690,7 @@ export default function MonthlyReviewPage() {
     retirementRows: RetirementAccount[];
     goldRows: GoldHolding[];
     silverRows: SilverHolding[];
+    latestClosedItems: MonthEndCloseItem[];
     propertyRows: RealEstateProperty[];
     assetRows: Asset[];
     liabilityRows: Liability[];
@@ -566,6 +703,7 @@ export default function MonthlyReviewPage() {
     setRetirementAccounts(params.retirementRows);
     setGoldHoldings(params.goldRows);
     setSilverHoldings(params.silverRows);
+    setLatestClosedItems(params.latestClosedItems);
     setRealEstateProperties(params.propertyRows);
     setAssets(params.assetRows);
     setLiabilities(params.liabilityRows);
@@ -650,7 +788,7 @@ export default function MonthlyReviewPage() {
       setLoading(true);
       setError(null);
 
-      const [monthWorkspace, summary, bankAccountRows, investmentRows, retirementRows, goldRows, silverRows, propertyRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
+      const [monthWorkspace, summary, bankAccountRows, investmentRows, retirementRows, goldRows, silverRows, latestClosedRows, propertyRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
         getMonthEndCloseWorkspace(),
         compensationService.getSummary().catch(() => null),
         getBankAccounts(),
@@ -658,6 +796,7 @@ export default function MonthlyReviewPage() {
         getRetirementAccounts(),
         getGoldHoldings(),
         getSilverHoldings(),
+        getLatestClosedMonthEndCloseItems(),
         getRealEstateProperties(),
         getAssets(),
         getLiabilities(),
@@ -672,6 +811,7 @@ export default function MonthlyReviewPage() {
         retirementRows,
         goldRows,
         silverRows,
+        latestClosedItems: latestClosedRows,
         propertyRows,
         assetRows,
         liabilityRows,
@@ -698,7 +838,7 @@ export default function MonthlyReviewPage() {
         setLoading(true);
         setError(null);
 
-        const [monthWorkspace, summary, bankAccountRows, investmentRows, retirementRows, goldRows, silverRows, propertyRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
+        const [monthWorkspace, summary, bankAccountRows, investmentRows, retirementRows, goldRows, silverRows, latestClosedRows, propertyRows, assetRows, liabilityRows, cashSnapshot] = await Promise.all([
           getMonthEndCloseWorkspace(),
           compensationService.getSummary().catch(() => null),
           getBankAccounts(),
@@ -706,6 +846,7 @@ export default function MonthlyReviewPage() {
           getRetirementAccounts(),
           getGoldHoldings(),
           getSilverHoldings(),
+          getLatestClosedMonthEndCloseItems(),
           getRealEstateProperties(),
           getAssets(),
           getLiabilities(),
@@ -724,6 +865,7 @@ export default function MonthlyReviewPage() {
           retirementRows,
           goldRows,
           silverRows,
+          latestClosedItems: latestClosedRows,
           propertyRows,
           assetRows,
           liabilityRows,
@@ -1296,20 +1438,12 @@ export default function MonthlyReviewPage() {
   }, [preferredOwner]);
 
   const priorClosedGoldValue = useMemo(() => {
-    if (!workspace) {
-      return 0;
-    }
-
-    return sumWorkspaceOpeningRowsByPredicate(workspace.items, (item) => item.key === "gold");
-  }, [workspace]);
+    return sumPersistedItemsByKey(latestClosedItems, "gold");
+  }, [latestClosedItems]);
 
   const priorClosedSilverValue = useMemo(() => {
-    if (!workspace) {
-      return 0;
-    }
-
-    return sumWorkspaceOpeningRowsByPredicate(workspace.items, (item) => item.key === "silver");
-  }, [workspace]);
+    return sumPersistedItemsByKey(latestClosedItems, "silver");
+  }, [latestClosedItems]);
 
   const financialAssetInvestments = useMemo(() => {
     return investments.filter((item) => !isCanonicalExcludedInvestment({
@@ -1455,12 +1589,13 @@ export default function MonthlyReviewPage() {
     try {
       setSavingStep("retirement");
       setError(null);
+      setNotice(null);
 
       if (!workspace) {
         throw new Error("Monthly review workspace is unavailable.");
       }
 
-      const updates = retirementAccounts
+      const allRetirementRows = retirementAccounts
         .map((item) => {
           const nextValue = toNumber(retirementValues[item.id] ?? String(item.current_balance ?? 0));
           return {
@@ -1469,8 +1604,14 @@ export default function MonthlyReviewPage() {
             nextValue,
             changed: Math.abs(nextValue - Number(item.current_balance ?? 0)) >= 0.01,
           };
-        })
-        .filter((item) => item.changed);
+        });
+      const updates = allRetirementRows.filter((item) => item.changed);
+      const retirementDraftItems = buildRetirementDraftItems({
+        workspace,
+        retirementAccounts,
+        retirementValues,
+      });
+      const expectedRetirementState = buildRetirementExpectedState(retirementAccounts, retirementValues);
 
       logMonthlyReviewSaveAudit({
         action: "save-retirement",
@@ -1488,51 +1629,54 @@ export default function MonthlyReviewPage() {
         },
       });
 
+      console.groupCollapsed("[MonthlyReviewAudit] retirement_draft_payload");
+      console.table(
+        retirementDraftItems
+          .filter((item) => item.entityType === "retirement-account")
+          .map((item) => ({
+            entity_id: item.entityId,
+            item_key: item.key,
+            opening_value: item.openingValue,
+            projected_value: item.projectedValue,
+            actual_value: item.actualValue,
+          })),
+      );
+      console.groupEnd();
+
       await Promise.all(updates.map((item) => updateRetirementAccount({ id: item.id, account_type: item.accountType, current_balance: item.nextValue })));
-
-      const retirementOverrideMap = new Map<string, number>(updates.map((item) => [item.id, item.nextValue]));
-      const updatedItems = workspace.items.map((item) => {
-        if (item.entityType !== "retirement-account") {
-          return item;
-        }
-
-        const override = retirementOverrideMap.get(item.entityId);
-        if (override == null) {
-          return item;
-        }
-
-        return {
-          ...item,
-          actualValue: override,
-          absoluteVariance: override - item.projectedValue,
-          percentageVariance: item.projectedValue === 0 ? (override === 0 ? 0 : null) : ((override - item.projectedValue) / Math.abs(item.projectedValue)) * 100,
-        };
-      });
 
       await saveMonthEndCloseDraft({
         closeId: workspace.close?.id ?? null,
         closeMonth: workspace.month.month,
         closeYear: workspace.month.year,
-        items: updatedItems.map((item) => ({
-          entityId: item.entityId,
-          entityType: item.entityType,
-          entityName: item.entityName,
-          key: item.key,
-          label: item.label,
-          itemType: item.itemType,
-          sortOrder: item.sortOrder,
-          openingValue: item.openingValue,
-          projectedValue: item.projectedValue,
-          actualValue: item.actualValue,
-        })),
+        items: retirementDraftItems,
       });
 
+      const reloadedWorkspace = await getMonthEndCloseWorkspace();
+      const reloadedRetirementActuals = collectRetirementActuals(reloadedWorkspace.items);
+
+      console.groupCollapsed("[MonthlyReviewAudit] retirement_reload_verification");
+      console.table(
+        Array.from(reloadedRetirementActuals.byEntityId.entries()).map(([entityId, row]) => ({
+          entity_id: entityId,
+          item_key: row.key,
+          actual_value: row.actualValue,
+        })),
+      );
+      console.info("[MonthlyReviewAudit] retirement_reload_totals", reloadedRetirementActuals.totalsByKey);
+      console.groupEnd();
+
+      if (!verifyRetirementWorkspaceSync({ expected: expectedRetirementState, items: reloadedWorkspace.items })) {
+        throw new Error("Retirement balances could not be synced to month-end review.");
+      }
+
       markStepComplete("retirement");
-      setNotice("Retirement balances synced to month-end review.");
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
+      setNotice("Retirement balances synced to month-end review.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save retirement balances");
+      console.error("[MonthlyReviewAudit] retirement_sync_failed", saveError);
+      setError("Retirement balances could not be synced to month-end review.");
     } finally {
       setSavingStep(null);
     }
