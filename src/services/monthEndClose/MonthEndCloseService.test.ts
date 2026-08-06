@@ -1363,3 +1363,377 @@ describe("MonthEndCloseService closeMonth", () => {
     ).resolves.toBeDefined();
   });
 });
+
+describe("MonthEndCloseService rebuildDraftCloseItemsFromCanonicalSources", () => {
+  function toPersistedItemsFromUpsertRows(
+    closeId: string,
+    rows: Array<{
+      entity_id: string;
+      entity_type: string;
+      entity_name: string;
+      item_key: MonthEndCloseItem["item_key"];
+      item_label: string;
+      item_type: MonthEndCloseItem["item_type"];
+      sort_order: number;
+      opening_value: number;
+      projected_value: number;
+      actual_value: number;
+      absolute_variance: number;
+      percentage_variance: number | null;
+    }>,
+  ): MonthEndCloseItem[] {
+    return rows.map((row, index) =>
+      buildCloseItem({
+        id: `rebuilt-${index + 1}`,
+        close_id: closeId,
+        entity_id: row.entity_id,
+        entity_type: row.entity_type,
+        entity_name: row.entity_name,
+        item_key: row.item_key,
+        item_label: row.item_label,
+        item_type: row.item_type,
+        sort_order: row.sort_order,
+        opening_value: row.opening_value,
+        projected_value: row.projected_value,
+        actual_value: row.actual_value,
+        absolute_variance: row.absolute_variance,
+        percentage_variance: row.percentage_variance,
+      }),
+    );
+  }
+
+  it("rebuilding draft removes duplicate bank account rows", async () => {
+    const draft = buildClose({ id: "draft-aug-dup-banks", close_year: 2026, close_month: 8, status: "draft" });
+    let persistedItems: MonthEndCloseItem[] = [
+      buildCloseItem({ id: "old-bank", close_id: draft.id, entity_id: "old-bank-id", entity_type: "bank-account", entity_name: "Primary • Bank", item_key: "bank_accounts", actual_value: 500000 }),
+      buildCloseItem({ id: "new-bank", close_id: draft.id, entity_id: "new-bank-id", entity_type: "bank-account", entity_name: "Primary • Bank", item_key: "bank_accounts", actual_value: 500000 }),
+    ];
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getCloseItems: vi.fn(async () => persistedItems),
+      deleteCloseItemsByIds: vi.fn(async () => {
+        persistedItems = [];
+      }),
+      upsertCloseItems: vi.fn(async (rows: Array<any>) => {
+        persistedItems = toPersistedItemsFromUpsertRows(draft.id, rows);
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        bankAccounts: [
+          {
+            id: "new-bank-id",
+            user_id: "user-1",
+            account_name: "Primary",
+            account_type: "Savings",
+            bank: "Bank",
+            nickname: null,
+            account_number: "1234",
+            masked_account_number: "***1234",
+            current_balance: 500000,
+            ifsc: null,
+            currency: "INR",
+            opening_balance: 0,
+            interest_rate: 0,
+            owner: null,
+            include_in_net_worth: true,
+            include_in_cash_position: true,
+            nominee: null,
+            joint_holder: null,
+            status: "active",
+            notes: null,
+            documents_placeholder: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    await service.rebuildDraftCloseItemsFromCanonicalSources(draft.id);
+
+    const bankRows = persistedItems.filter((item) => item.item_key === "bank_accounts");
+    expect(bankRows.length).toBe(1);
+    expect(bankRows[0]?.entity_id).toBe("new-bank-id");
+  });
+
+  it("rebuilding draft removes duplicate EPF/PPF/NPS rows and uses dedicated retirement accounts", async () => {
+    const draft = buildClose({ id: "draft-aug-ret", close_year: 2026, close_month: 8, status: "draft" });
+    let persistedItems: MonthEndCloseItem[] = [
+      buildCloseItem({ id: "epf-old", close_id: draft.id, entity_id: "epf-old", entity_type: "investment", entity_name: "EPF Legacy", item_key: "epf", actual_value: 18800000 }),
+      buildCloseItem({ id: "epf-new", close_id: draft.id, entity_id: "epf-new", entity_type: "retirement-account", entity_name: "EPF New", item_key: "epf", actual_value: 18800000 }),
+      buildCloseItem({ id: "ppf-old", close_id: draft.id, entity_id: "ppf-old", entity_type: "investment", entity_name: "PPF Legacy", item_key: "ppf", actual_value: 2023000 }),
+      buildCloseItem({ id: "nps-old", close_id: draft.id, entity_id: "nps-old", entity_type: "investment", entity_name: "NPS Legacy", item_key: "nps", actual_value: 525000 }),
+    ];
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getCloseItems: vi.fn(async () => persistedItems),
+      deleteCloseItemsByIds: vi.fn(async () => {
+        persistedItems = [];
+      }),
+      upsertCloseItems: vi.fn(async (rows: Array<any>) => {
+        persistedItems = toPersistedItemsFromUpsertRows(draft.id, rows);
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        investments: [
+          buildInvestment({ id: "inv-epf", category: "EPF", name: "EPF Investment", currentValue: 1 }),
+          buildInvestment({ id: "inv-ppf", category: "PPF", name: "PPF Investment", currentValue: 1 }),
+          buildInvestment({ id: "inv-nps", category: "NPS", name: "NPS Investment", currentValue: 1 }),
+        ],
+        retirementAccounts: [
+          { id: "epf-live", user_id: "user-1", account_type: "EPF", owner: "Self", institution: "EPFO", current_balance: 18800000, account_number: null, opening_date: null, interest_rate: null, nominee: null, notes: null, contribution_frequency: "Monthly", contribution_amount: 0, contribution_day: null, contribution_month: null, employer: null, uan: null, employee_contribution: null, employer_contribution: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+          { id: "ppf-live", user_id: "user-1", account_type: "PPF", owner: "Self", institution: "SBI", current_balance: 2023000, account_number: null, opening_date: null, interest_rate: null, nominee: null, notes: null, contribution_frequency: "Monthly", contribution_amount: 0, contribution_day: null, contribution_month: null, maturity_date: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+          { id: "nps-live", user_id: "user-1", account_type: "NPS", owner: "Self", institution: "NPS", current_balance: 525000, account_number: null, opening_date: null, interest_rate: null, nominee: null, notes: null, contribution_frequency: "Monthly", contribution_amount: 0, contribution_day: null, contribution_month: null, pran: null, pop: null, equity_percent: null, corporate_debt_percent: null, government_securities_percent: null, alternative_assets_percent: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+        ],
+      }),
+    });
+
+    await service.rebuildDraftCloseItemsFromCanonicalSources(draft.id);
+
+    const epfRows = persistedItems.filter((item) => item.item_key === "epf");
+    const ppfRows = persistedItems.filter((item) => item.item_key === "ppf");
+    const npsRows = persistedItems.filter((item) => item.item_key === "nps");
+
+    expect(epfRows.length).toBe(1);
+    expect(ppfRows.length).toBe(1);
+    expect(npsRows.length).toBe(1);
+    expect(epfRows[0]?.entity_type).toBe("retirement-account");
+    expect(ppfRows[0]?.entity_type).toBe("retirement-account");
+    expect(npsRows[0]?.entity_type).toBe("retirement-account");
+  });
+
+  it("rebuilding draft applies real estate canonical precedence", async () => {
+    const draft = buildClose({ id: "draft-aug-re", close_year: 2026, close_month: 8, status: "draft" });
+    let persistedItems: MonthEndCloseItem[] = [
+      buildCloseItem({ id: "legacy-re", close_id: draft.id, entity_id: "asset-re", entity_type: "asset", entity_name: "Legacy RE", item_key: "real_estate", actual_value: 31000000 }),
+      buildCloseItem({ id: "new-re", close_id: draft.id, entity_id: "prop-re", entity_type: "real-estate-property", entity_name: "Current RE", item_key: "real_estate", actual_value: 31000000 }),
+    ];
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getCloseItems: vi.fn(async () => persistedItems),
+      deleteCloseItemsByIds: vi.fn(async () => {
+        persistedItems = [];
+      }),
+      upsertCloseItems: vi.fn(async (rows: Array<any>) => {
+        persistedItems = toPersistedItemsFromUpsertRows(draft.id, rows);
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        assets: [
+          { id: "asset-re", user_id: "user-1", asset_type: "real_estate", asset_name: "Legacy RE", institution: null, current_value: 31000000, purchase_value: null, purchase_date: null, owner: null, notes: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+        ],
+        realEstateProperties: [
+          { id: "prop-re", user_id: "user-1", property_name: "Current RE", property_type: "Apartment", owner: "Self", purchase_date: null, purchase_price: 0, current_market_value: 31000000, address: null, city: "Mumbai", state: "MH", pin_code: null, occupancy_status: "self_occupied", monthly_rent: null, linked_home_loan_id: null, notes: null, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-01T00:00:00.000Z" },
+        ],
+      }),
+    });
+
+    await service.rebuildDraftCloseItemsFromCanonicalSources(draft.id);
+
+    const realEstateRows = persistedItems.filter((item) => item.item_key === "real_estate");
+    expect(realEstateRows.length).toBe(1);
+    expect(realEstateRows[0]?.entity_type).toBe("real-estate-property");
+  });
+
+  it("rebuilding draft applies liability canonical precedence", async () => {
+    const draft = buildClose({ id: "draft-aug-liability", close_year: 2026, close_month: 8, status: "draft" });
+    let persistedItems: MonthEndCloseItem[] = [
+      buildCloseItem({ id: "home-old", close_id: draft.id, entity_id: "loan-dup-1", entity_type: "liability", entity_name: "Home Loan Dup 1", item_key: "home_loans", actual_value: 9175000 }),
+      buildCloseItem({ id: "home-old-2", close_id: draft.id, entity_id: "loan-dup-2", entity_type: "liability", entity_name: "Home Loan Dup 2", item_key: "home_loans", actual_value: 9175000 }),
+    ];
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getCloseItems: vi.fn(async () => persistedItems),
+      deleteCloseItemsByIds: vi.fn(async () => {
+        persistedItems = [];
+      }),
+      upsertCloseItems: vi.fn(async (rows: Array<any>) => {
+        persistedItems = toPersistedItemsFromUpsertRows(draft.id, rows);
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        liabilities: [
+          {
+            id: "loan-live-home",
+            user_id: "user-1",
+            liability_type: "Home Loan",
+            lender: "Bank",
+            account_name: "Home Loan",
+            outstanding_amount: 9175000,
+            original_amount: null,
+            interest_rate: null,
+            emi: null,
+            start_date: null,
+            end_date: null,
+            due_day: null,
+            due_date: null,
+            tenure_months: null,
+            credit_limit: null,
+            sanction_limit: null,
+            owner: null,
+            primary_borrower: null,
+            co_borrower: null,
+            prepayment_allowed: null,
+            prepayment_done_till_date: null,
+            future_prepayment_plan: null,
+            estimated_interest_saved: null,
+            revised_closure_date: null,
+            review_date: null,
+            status: "active",
+            notes: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    await service.rebuildDraftCloseItemsFromCanonicalSources(draft.id);
+
+    const homeLoanRows = persistedItems.filter((item) => item.item_key === "home_loans");
+    expect(homeLoanRows.length).toBe(1);
+    expect(homeLoanRows[0]?.entity_id).toBe("loan-live-home");
+  });
+
+  it("refuses rebuild for closed close", async () => {
+    const closed = buildClose({ id: "closed-aug", close_year: 2026, close_month: 8, status: "closed", closed_at: "2026-08-31T00:00:00.000Z" });
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => closed),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => undefined),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => buildEmptyBalanceSheetData(),
+    });
+
+    await expect(service.rebuildDraftCloseItemsFromCanonicalSources(closed.id)).rejects.toThrow(
+      "Only draft month-end closes can be rebuilt from canonical sources.",
+    );
+    expect(repository.deleteCloseItemsByIds).not.toHaveBeenCalled();
+    expect(repository.upsertCloseItems).not.toHaveBeenCalled();
+  });
+
+  it("returns net worth consistent with canonical assets minus liabilities after rebuild", async () => {
+    const draft = buildClose({ id: "draft-aug-networth", close_year: 2026, close_month: 8, status: "draft" });
+    let persistedItems: MonthEndCloseItem[] = [
+      buildCloseItem({ id: "dup-1", close_id: draft.id, entity_id: "dup", entity_type: "bank-account", item_key: "bank_accounts", actual_value: 1000 }),
+      buildCloseItem({ id: "dup-2", close_id: draft.id, entity_id: "dup", entity_type: "bank-account", item_key: "bank_accounts", actual_value: 1000 }),
+    ];
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getNearestPriorClosedMonthEndClose: vi.fn(async () => null),
+      getCloseItems: vi.fn(async () => persistedItems),
+      deleteCloseItemsByIds: vi.fn(async () => {
+        persistedItems = [];
+      }),
+      upsertCloseItems: vi.fn(async (rows: Array<any>) => {
+        persistedItems = toPersistedItemsFromUpsertRows(draft.id, rows);
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        bankAccounts: [
+          {
+            id: "bank-live",
+            user_id: "user-1",
+            account_name: "Primary",
+            account_type: "Savings",
+            bank: "Bank",
+            nickname: null,
+            account_number: "1234",
+            masked_account_number: "***1234",
+            current_balance: 500000,
+            ifsc: null,
+            currency: "INR",
+            opening_balance: 0,
+            interest_rate: 0,
+            owner: null,
+            include_in_net_worth: true,
+            include_in_cash_position: true,
+            nominee: null,
+            joint_holder: null,
+            status: "active",
+            notes: null,
+            documents_placeholder: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+        liabilities: [
+          {
+            id: "loan-live",
+            user_id: "user-1",
+            liability_type: "Home Loan",
+            lender: "Bank",
+            account_name: "Home Loan",
+            outstanding_amount: 9175000,
+            original_amount: null,
+            interest_rate: null,
+            emi: null,
+            start_date: null,
+            end_date: null,
+            due_day: null,
+            due_date: null,
+            tenure_months: null,
+            credit_limit: null,
+            sanction_limit: null,
+            owner: null,
+            primary_borrower: null,
+            co_borrower: null,
+            prepayment_allowed: null,
+            prepayment_done_till_date: null,
+            future_prepayment_plan: null,
+            estimated_interest_saved: null,
+            revised_closure_date: null,
+            review_date: null,
+            status: "active",
+            notes: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const result = await service.rebuildDraftCloseItemsFromCanonicalSources(draft.id);
+    expect(result.afterTotals.netWorth).toBe(result.afterTotals.totalAssets - result.afterTotals.totalLiabilities);
+  });
+});

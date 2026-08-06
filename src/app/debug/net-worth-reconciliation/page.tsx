@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { formatCurrency } from "@/lib/formatters";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { RebuildDraftAction } from "./RebuildDraftAction";
 
 type ItemKey =
   | "bank_accounts"
@@ -881,8 +882,10 @@ export default async function NetWorthReconciliationPage() {
         <PageHeader
           title="Net Worth Reconciliation"
           description="Read-only item-wise reconciliation across Dashboard/Balance Sheet, Monthly Review workspace, and Rolling Projection for July/August diagnostics."
-          summary="No write operations are performed by this page."
+          summary="Read-only diagnostics with an explicit incident-scoped repair action for the August draft close."
         />
+
+        <RebuildDraftAction />
 
         <DashboardCard>
           <h2 className="text-lg font-semibold text-slate-900">Scope and Session</h2>

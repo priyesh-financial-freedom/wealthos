@@ -66,6 +66,17 @@ interface MonthEndCloseServiceDependencies {
   balanceSheetLoader?: () => Promise<BalanceSheetData>;
 }
 
+export interface RebuildDraftCloseItemsResult {
+  closeId: string;
+  closeYear: number;
+  closeMonth: number;
+  status: "draft";
+  beforeItemCount: number;
+  afterItemCount: number;
+  beforeTotals: MonthEndCloseKpiSummary;
+  afterTotals: MonthEndCloseKpiSummary;
+}
+
 const ITEM_DEFINITION_MAP = new Map(MONTH_END_CLOSE_ITEM_DEFINITIONS.map((item) => [item.key, item]));
 const MUTUAL_FUND_CATEGORIES = new Set<InvestmentCategory>(["Mutual Funds"]);
 const STOCK_CATEGORIES = new Set<InvestmentCategory>(["Stocks", "ETFs", "Crypto", "Cash Equivalents"]);
@@ -939,6 +950,74 @@ export class MonthEndCloseService {
     }
 
     return this.repository.getCloseItems(latestClosed.id);
+  }
+
+  async rebuildDraftCloseItemsFromCanonicalSources(closeId: string): Promise<RebuildDraftCloseItemsResult> {
+    const userId = await this.repository.getAuthenticatedUserId();
+    const closeRecord = await this.repository.getCloseById(userId, closeId);
+
+    if (!closeRecord) {
+      throw new Error("Month-end close record not found.");
+    }
+
+    if (closeRecord.status !== "draft") {
+      throw new Error("Only draft month-end closes can be rebuilt from canonical sources.");
+    }
+
+    const beforeItems = await this.repository.getCloseItems(closeRecord.id);
+    const beforeTotals = summarizePersistedItems(beforeItems, "actual_value");
+
+    const nearestPriorClosed = await this.repository.getNearestPriorClosedMonthEndClose(
+      userId,
+      closeRecord.close_year,
+      closeRecord.close_month,
+    );
+
+    const [priorClosedItems, balanceSheetData, projectedBucketTotals] = await Promise.all([
+      nearestPriorClosed ? this.repository.getCloseItems(nearestPriorClosed.id) : Promise.resolve([]),
+      this.loadBalanceSheetData(),
+      getProjectedBucketTotals(createMonthReference(closeRecord.close_year, closeRecord.close_month)),
+    ]);
+
+    const canonicalItems = buildWorkspaceItems({
+      currentSeeds: buildCurrentEntitySeeds(balanceSheetData),
+      latestClosedItems: priorClosedItems,
+      draftItems: [],
+      projectedBucketTotals,
+    });
+
+    await this.repository.deleteCloseItemsByIds(beforeItems.map((row) => row.id));
+    await this.repository.upsertCloseItems(
+      toMonthEndCloseItemRows({
+        closeId: closeRecord.id,
+        userId,
+        items: canonicalItems,
+      }),
+    );
+
+    const afterItems = await this.repository.getCloseItems(closeRecord.id);
+    const afterTotals = summarizePersistedItems(afterItems, "actual_value");
+
+    console.info("[MonthEndCloseService.rebuildDraftCloseItemsFromCanonicalSources]", {
+      closeId: closeRecord.id,
+      closeYear: closeRecord.close_year,
+      closeMonth: closeRecord.close_month,
+      beforeItemCount: beforeItems.length,
+      afterItemCount: afterItems.length,
+      beforeTotals: beforeTotals.totalsByKey,
+      afterTotals: afterTotals.totalsByKey,
+    });
+
+    return {
+      closeId: closeRecord.id,
+      closeYear: closeRecord.close_year,
+      closeMonth: closeRecord.close_month,
+      status: "draft",
+      beforeItemCount: beforeItems.length,
+      afterItemCount: afterItems.length,
+      beforeTotals,
+      afterTotals,
+    };
   }
 
   async saveDraft(input: MonthEndClosePersistInput): Promise<MonthEndCloseWorkspace> {

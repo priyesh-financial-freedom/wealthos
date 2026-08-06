@@ -27,6 +27,10 @@ export async function closeMonthEndClose(input: MonthEndClosePersistInput) {
   return monthEndCloseService.closeMonth(input);
 }
 
+export async function rebuildDraftCloseItemsFromCanonicalSources(closeId: string) {
+  return monthEndCloseService.rebuildDraftCloseItemsFromCanonicalSources(closeId);
+}
+
 export async function reopenMonth(params: { closeId: string; reason: string }) {
   if (!supabase) {
     throw new Error("Supabase client is not configured.");
