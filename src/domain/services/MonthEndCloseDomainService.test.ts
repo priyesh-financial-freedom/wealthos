@@ -409,6 +409,91 @@ describe("MonthEndCloseDomainService", () => {
     expect(auditTrail[1].toStatus).toBe(FinancialPeriodStatus.OPEN);
   });
 
+  it("allows reopened latest month to be edited and closed again", async () => {
+    const repository = new InMemoryMonthEndCloseRepository();
+    const service = new MonthEndCloseDomainService(repository);
+
+    const initiallyClosed = await service.closeMonth({
+      userId: "user-1",
+      closeMonth: 11,
+      closeYear: 2026,
+      items: [
+        {
+          entityId: "bank-1",
+          entityType: "bank-account",
+          entityName: "Cash",
+          itemKey: "bank_accounts",
+          itemLabel: "Cash",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 100,
+        },
+      ],
+    });
+
+    await service.transitionPeriodStatus({
+      userId: "user-1",
+      closeId: initiallyClosed.close.id,
+      toStatus: FinancialPeriodStatus.OPEN,
+      reason: "Bank statement revised after close.",
+    });
+
+    const revisedDraft = await service.saveDraft({
+      userId: "user-1",
+      closeId: initiallyClosed.close.id,
+      closeMonth: 11,
+      closeYear: 2026,
+      items: [
+        {
+          entityId: "bank-1",
+          entityType: "bank-account",
+          entityName: "Cash",
+          itemKey: "bank_accounts",
+          itemLabel: "Cash",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 115,
+        },
+      ],
+    });
+
+    expect(revisedDraft.close.status).toBe("draft");
+    expect(revisedDraft.items[0].actualValue).toBe(115);
+
+    const reclosed = await service.closeMonth({
+      userId: "user-1",
+      closeId: initiallyClosed.close.id,
+      closeMonth: 11,
+      closeYear: 2026,
+      items: [
+        {
+          entityId: "bank-1",
+          entityType: "bank-account",
+          entityName: "Cash",
+          itemKey: "bank_accounts",
+          itemLabel: "Cash",
+          itemType: "asset",
+          sortOrder: 1,
+          openingValue: 100,
+          projectedValue: 100,
+          actualValue: 115,
+        },
+      ],
+    });
+
+    expect(reclosed.close.status).toBe("closed");
+    const auditTrail = await service.listTransitionAudit("user-1", initiallyClosed.close.id);
+    expect(auditTrail.map((entry) => entry.toStatus)).toEqual([
+      FinancialPeriodStatus.CLOSED,
+      FinancialPeriodStatus.OPEN,
+      FinancialPeriodStatus.CLOSED,
+    ]);
+  });
+
   it("rejects invalid OPEN -> OPEN transition", async () => {
     const repository = new InMemoryMonthEndCloseRepository();
     const service = new MonthEndCloseDomainService(repository);

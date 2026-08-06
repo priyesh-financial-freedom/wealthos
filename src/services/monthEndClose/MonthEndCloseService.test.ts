@@ -1111,3 +1111,255 @@ describe("MonthEndCloseService getWorkspace", () => {
     expect(workspace.dashboard.totalAssets).toBe(450);
   });
 });
+
+describe("MonthEndCloseService closeMonth", () => {
+  it("upserts draft items before marking the close as closed", async () => {
+    const draft = buildClose({
+      id: "draft-aug",
+      status: "draft",
+      close_month: 8,
+      close_year: 2026,
+    });
+
+    const executionOrder: string[] = [];
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getDraftForMonth: vi.fn(async () => draft),
+      getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getLatestVersionForMonth: vi.fn(async () => draft),
+      createMonthEndClose: vi.fn(async () => draft),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => {
+        executionOrder.push("upsert");
+      }),
+      updateMonthEndCloseStatus: vi.fn(async () => {
+        executionOrder.push("close");
+        return buildClose({
+          ...draft,
+          status: "closed",
+          closed_at: "2026-08-31T00:00:00.000Z",
+        });
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        bankAccounts: [
+          {
+            id: "bank-1",
+            user_id: "user-1",
+            account_name: "Primary",
+            account_type: "Savings",
+            bank: "HDFC",
+            nickname: null,
+            account_number: "1234",
+            masked_account_number: "***1234",
+            current_balance: 1250,
+            ifsc: null,
+            currency: "INR",
+            opening_balance: 0,
+            interest_rate: 0,
+            owner: null,
+            include_in_net_worth: true,
+            include_in_cash_position: true,
+            nominee: null,
+            joint_holder: null,
+            status: "active",
+            notes: null,
+            documents_placeholder: null,
+            created_at: "2026-08-01T00:00:00.000Z",
+            updated_at: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    vi.spyOn(service, "getWorkspace").mockResolvedValue({
+      close: draft,
+      latestClose: null,
+      month: { month: 8, year: 2026, monthKey: "2026-08", label: "August 2026" },
+      status: "closed",
+      items: [],
+      dashboard: {
+        currentClosedMonth: null,
+        pendingMonth: { month: 8, year: 2026, monthKey: "2026-08", label: "August 2026" },
+        totalAssets: 0,
+        totalLiabilities: 0,
+        netWorth: 0,
+        monthOverMonthChange: null,
+        projectionVariance: 0,
+        largestPositiveVariance: null,
+        largestNegativeVariance: null,
+      },
+    });
+
+    await service.closeMonth({
+      closeId: draft.id,
+      closeMonth: 8,
+      closeYear: 2026,
+      items: [
+        {
+          entityId: "bank-1",
+          entityType: "bank-account",
+          entityName: "Primary • HDFC",
+          key: "bank_accounts",
+          label: "Primary • HDFC",
+          itemType: "asset",
+          sortOrder: 1000,
+          openingValue: 1200,
+          projectedValue: 1300,
+          actualValue: 1250,
+        },
+      ],
+    });
+
+    expect(repository.upsertCloseItems).toHaveBeenCalledTimes(1);
+    expect(repository.updateMonthEndCloseStatus).toHaveBeenCalledTimes(1);
+    expect(executionOrder).toEqual(["upsert", "close"]);
+  });
+
+  it("blocks close when closeId points to an already closed record", async () => {
+    const closed = buildClose({
+      id: "closed-aug",
+      status: "closed",
+      close_month: 8,
+      close_year: 2026,
+      closed_at: "2026-08-31T00:00:00.000Z",
+    });
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => closed),
+      getDraftForMonth: vi.fn(async () => null),
+      getLatestClosedMonthEndClose: vi.fn(async () => closed),
+      getLatestVersionForMonth: vi.fn(async () => closed),
+      createMonthEndClose: vi.fn(async () => closed),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => undefined),
+      updateMonthEndCloseStatus: vi.fn(async () => closed),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => buildEmptyBalanceSheetData(),
+    });
+
+    await expect(
+      service.closeMonth({
+        closeId: closed.id,
+        closeMonth: 8,
+        closeYear: 2026,
+        items: [],
+      }),
+    ).rejects.toThrow("This month is already closed. Reopen it before making corrections or closing again.");
+
+    expect(repository.upsertCloseItems).not.toHaveBeenCalled();
+    expect(repository.updateMonthEndCloseStatus).not.toHaveBeenCalled();
+  });
+
+  it("does not surface immutable item error when closing a valid draft", async () => {
+    const draft = buildClose({ id: "draft-sep", status: "draft", close_month: 9, close_year: 2026 });
+    let isClosed = false;
+
+    const repository = {
+      getAuthenticatedUserId: vi.fn(async () => "user-1"),
+      getCloseById: vi.fn(async () => draft),
+      getDraftForMonth: vi.fn(async () => draft),
+      getLatestClosedMonthEndClose: vi.fn(async () => null),
+      getLatestVersionForMonth: vi.fn(async () => draft),
+      createMonthEndClose: vi.fn(async () => draft),
+      getCloseItems: vi.fn(async () => []),
+      deleteCloseItemsByIds: vi.fn(async () => undefined),
+      upsertCloseItems: vi.fn(async () => {
+        if (isClosed) {
+          throw new Error("Closed month-end items are immutable. Create a new version instead.");
+        }
+      }),
+      updateMonthEndCloseStatus: vi.fn(async () => {
+        isClosed = true;
+        return buildClose({ ...draft, status: "closed", closed_at: "2026-09-30T00:00:00.000Z" });
+      }),
+    };
+
+    const service = new MonthEndCloseService({
+      repository: repository as never,
+      balanceSheetLoader: async () => ({
+        ...buildEmptyBalanceSheetData(),
+        bankAccounts: [
+          {
+            id: "bank-9",
+            user_id: "user-1",
+            account_name: "Primary",
+            account_type: "Savings",
+            bank: "HDFC",
+            nickname: null,
+            account_number: "9999",
+            masked_account_number: "***9999",
+            current_balance: 900,
+            ifsc: null,
+            currency: "INR",
+            opening_balance: 0,
+            interest_rate: 0,
+            owner: null,
+            include_in_net_worth: true,
+            include_in_cash_position: true,
+            nominee: null,
+            joint_holder: null,
+            status: "active",
+            notes: null,
+            documents_placeholder: null,
+            created_at: "2026-09-01T00:00:00.000Z",
+            updated_at: "2026-09-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    vi.spyOn(service, "getWorkspace").mockResolvedValue({
+      close: draft,
+      latestClose: null,
+      month: { month: 9, year: 2026, monthKey: "2026-09", label: "September 2026" },
+      status: "closed",
+      items: [],
+      dashboard: {
+        currentClosedMonth: null,
+        pendingMonth: { month: 9, year: 2026, monthKey: "2026-09", label: "September 2026" },
+        totalAssets: 0,
+        totalLiabilities: 0,
+        netWorth: 0,
+        monthOverMonthChange: null,
+        projectionVariance: 0,
+        largestPositiveVariance: null,
+        largestNegativeVariance: null,
+      },
+    });
+
+    await expect(
+      service.closeMonth({
+        closeId: draft.id,
+        closeMonth: 9,
+        closeYear: 2026,
+        items: [
+          {
+            entityId: "bank-9",
+            entityType: "bank-account",
+            entityName: "Primary • HDFC",
+            key: "bank_accounts",
+            label: "Primary • HDFC",
+            itemType: "asset",
+            sortOrder: 1000,
+            openingValue: 900,
+            projectedValue: 900,
+            actualValue: 900,
+          },
+        ],
+      }),
+    ).resolves.toBeDefined();
+  });
+});

@@ -533,6 +533,43 @@ describe("MonthlyReviewPage", () => {
     });
   });
 
+  it("shows guidance and blocks close when refreshed workspace is already closed", async () => {
+    const initialWorkspace = buildWorkspace();
+    const staleClosedWorkspace = buildWorkspace({
+      status: "closed",
+      close: {
+        ...buildWorkspace().close!,
+        id: "closed-aug",
+        status: "closed",
+        closed_at: "2026-08-31T00:00:00.000Z",
+      },
+    });
+
+    getMonthEndCloseWorkspaceMock.mockResolvedValue(initialWorkspace);
+
+    render(<MonthlyReviewPage />);
+
+    await screen.findByText("Projection Comparison");
+    fireEvent.click(screen.getByText("Mark Reviewed"));
+    fireEvent.click(screen.getByText("Save Financial Asset Updates"));
+    await waitFor(() => expect(screen.getByText("Financial asset balances captured for month-end reconciliation.")).toBeTruthy());
+    fireEvent.click(screen.getByText("Save Retirement Updates"));
+    await waitFor(() => expect(screen.getByText("Retirement balances synced to month-end review.")).toBeTruthy());
+    fireEvent.click(screen.getByText("Save Non-Financial Asset Updates"));
+    await waitFor(() => expect(screen.getByText("Non-financial asset values updated successfully.")).toBeTruthy());
+    fireEvent.click(screen.getByText("Save Liability Updates"));
+    await waitFor(() => expect(screen.getByText("Liability balances reviewed successfully.")).toBeTruthy());
+    fireEvent.click(screen.getByText("Mark Summary Reviewed"));
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    // Simulate stale workspace refresh right before close action.
+    getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(staleClosedWorkspace);
+    fireEvent.click(screen.getByText("Close Month"));
+
+    expect((await screen.findAllByText("This month is already closed. Reopen it before making corrections or closing again.")).length).toBeGreaterThan(0);
+    expect(closeMonthEndCloseMock).not.toHaveBeenCalled();
+  });
+
   it("shows N/A month-over-month when no prior closed baseline is available", async () => {
     getMonthEndCloseWorkspaceMock.mockResolvedValueOnce(buildWorkspace({
       latestClose: null,

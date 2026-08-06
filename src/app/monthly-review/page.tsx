@@ -91,6 +91,10 @@ interface NetWorthBreakdownRow {
   note?: string;
 }
 
+const IMMUTABLE_CLOSE_MESSAGE = "Closed month-end closes are immutable. Create a new version instead.";
+const IMMUTABLE_ITEMS_MESSAGE = "Closed month-end items are immutable. Create a new version instead.";
+const IMMUTABLE_CLOSE_GUIDANCE = "This month is already closed. Reopen it before making corrections or closing again.";
+
 type MonthEndCloseDraftRow = Pick<
   MonthEndCloseEditorItem,
   "key"
@@ -634,6 +638,15 @@ function verifyRetirementWorkspaceSync(params: {
   return Math.abs(actual.totalsByKey.epf - params.expected.totalsByKey.epf) < 0.01
     && Math.abs(actual.totalsByKey.ppf - params.expected.totalsByKey.ppf) < 0.01
     && Math.abs(actual.totalsByKey.nps - params.expected.totalsByKey.nps) < 0.01;
+}
+
+function normalizeCloseErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : null;
+  if (message === IMMUTABLE_CLOSE_MESSAGE || message === IMMUTABLE_ITEMS_MESSAGE || message === IMMUTABLE_CLOSE_GUIDANCE) {
+    return IMMUTABLE_CLOSE_GUIDANCE;
+  }
+
+  return message ?? "Unable to close month";
 }
 
 export default function MonthlyReviewPage() {
@@ -2011,6 +2024,10 @@ export default function MonthlyReviewPage() {
       setError(null);
 
       const latestWorkspace = await getMonthEndCloseWorkspace();
+      if (latestWorkspace.status === "closed" || latestWorkspace.close?.status === "closed") {
+        throw new Error(IMMUTABLE_CLOSE_GUIDANCE);
+      }
+
       const closedLabel = latestWorkspace.month.label;
 
       await closeMonthEndClose({
@@ -2059,7 +2076,7 @@ export default function MonthlyReviewPage() {
       window.dispatchEvent(new Event("wealthos:finance-data-updated"));
       await loadWorkspaceData();
     } catch (closeError) {
-      setError(closeError instanceof Error ? closeError.message : "Unable to close month");
+      setError(normalizeCloseErrorMessage(closeError));
     } finally {
       setClosingMonth(false);
     }

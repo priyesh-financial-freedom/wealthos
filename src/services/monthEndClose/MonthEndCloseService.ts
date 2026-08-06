@@ -76,6 +76,21 @@ const EPF_CATEGORIES = new Set<InvestmentCategory>(["EPF"]);
 const PPF_CATEGORIES = new Set<InvestmentCategory>(["PPF"]);
 const NPS_CATEGORIES = new Set<InvestmentCategory>(["NPS"]);
 const OTHER_INVESTMENT_CATEGORIES = new Set<InvestmentCategory>(["ESOPs", "Startup Investments", "Other Investments"]);
+const IMMUTABLE_CLOSE_ERROR = "Closed month-end closes are immutable. Create a new version instead.";
+const IMMUTABLE_ITEM_ERROR = "Closed month-end items are immutable. Create a new version instead.";
+const CLOSED_MONTH_GUIDANCE = "This month is already closed. Reopen it before making corrections or closing again.";
+
+function normalizeCloseMutationError(error: unknown): Error {
+  if (!(error instanceof Error)) {
+    return new Error("Unable to persist month-end close workspace.");
+  }
+
+  if (error.message === IMMUTABLE_CLOSE_ERROR || error.message === IMMUTABLE_ITEM_ERROR) {
+    return new Error(CLOSED_MONTH_GUIDANCE);
+  }
+
+  return error;
+}
 
 function emptyValueMap(): ValueMap {
   return MONTH_END_CLOSE_ITEM_DEFINITIONS.reduce((acc, item) => {
@@ -964,98 +979,111 @@ export class MonthEndCloseService {
   }
 
   private async persist(input: MonthEndClosePersistInput, status: "draft" | "closed") {
-    const userId = await this.repository.getAuthenticatedUserId();
-    const existingDraft = input.closeId
-      ? await this.repository.getCloseById(userId, input.closeId)
-      : await this.repository.getDraftForMonth(userId, input.closeYear, input.closeMonth);
-    const latestClosedForAudit = await this.repository.getLatestClosedMonthEndClose(userId);
-    const latestVersionForMonth = await this.repository.getLatestVersionForMonth(userId, input.closeYear, input.closeMonth);
+    try {
+      const userId = await this.repository.getAuthenticatedUserId();
+      const existingDraft = input.closeId
+        ? await this.repository.getCloseById(userId, input.closeId)
+        : await this.repository.getDraftForMonth(userId, input.closeYear, input.closeMonth);
+      const latestClosedForAudit = await this.repository.getLatestClosedMonthEndClose(userId);
+      const latestVersionForMonth = await this.repository.getLatestVersionForMonth(userId, input.closeYear, input.closeMonth);
 
-    console.groupCollapsed(`[MonthEndClosePersistAudit] status=${status}`);
-    console.table({
-      input_close_id: input.closeId ?? null,
-      input_close_year: input.closeYear,
-      input_close_month: input.closeMonth,
-      input_status: status,
-      existing_close_id: existingDraft?.id ?? null,
-      existing_status: existingDraft?.status ?? null,
-      existing_close_year: existingDraft?.close_year ?? null,
-      existing_close_month: existingDraft?.close_month ?? null,
-      existing_version: existingDraft?.version_number ?? null,
-      latest_closed_close_id: latestClosedForAudit?.id ?? null,
-      latest_closed_status: latestClosedForAudit?.status ?? null,
-      latest_closed_close_year: latestClosedForAudit?.close_year ?? null,
-      latest_closed_close_month: latestClosedForAudit?.close_month ?? null,
-      latest_closed_version: latestClosedForAudit?.version_number ?? null,
-      latest_month_version_close_id: latestVersionForMonth?.id ?? null,
-      latest_month_version_status: latestVersionForMonth?.status ?? null,
-      latest_month_version_close_year: latestVersionForMonth?.close_year ?? null,
-      latest_month_version_close_month: latestVersionForMonth?.close_month ?? null,
-      latest_month_version_version: latestVersionForMonth?.version_number ?? null,
-    });
+      console.groupCollapsed(`[MonthEndClosePersistAudit] status=${status}`);
+      console.table({
+        input_close_id: input.closeId ?? null,
+        input_close_year: input.closeYear,
+        input_close_month: input.closeMonth,
+        input_status: status,
+        existing_close_id: existingDraft?.id ?? null,
+        existing_status: existingDraft?.status ?? null,
+        existing_close_year: existingDraft?.close_year ?? null,
+        existing_close_month: existingDraft?.close_month ?? null,
+        existing_version: existingDraft?.version_number ?? null,
+        latest_closed_close_id: latestClosedForAudit?.id ?? null,
+        latest_closed_status: latestClosedForAudit?.status ?? null,
+        latest_closed_close_year: latestClosedForAudit?.close_year ?? null,
+        latest_closed_close_month: latestClosedForAudit?.close_month ?? null,
+        latest_closed_version: latestClosedForAudit?.version_number ?? null,
+        latest_month_version_close_id: latestVersionForMonth?.id ?? null,
+        latest_month_version_status: latestVersionForMonth?.status ?? null,
+        latest_month_version_close_year: latestVersionForMonth?.close_year ?? null,
+        latest_month_version_close_month: latestVersionForMonth?.close_month ?? null,
+        latest_month_version_version: latestVersionForMonth?.version_number ?? null,
+      });
 
-    if (existingDraft?.status === "closed") {
-      console.groupEnd();
-      throw new Error("Closed month-end closes are immutable. Create a new version instead.");
-    }
+      if (existingDraft?.status === "closed") {
+        console.groupEnd();
+        throw new Error(CLOSED_MONTH_GUIDANCE);
+      }
 
-    let closeRecord: MonthEndClose;
+      let closeRecord: MonthEndClose;
 
-    if (!existingDraft) {
-      const versionNumber = (latestVersionForMonth?.version_number ?? 0) + 1;
-      const supersedesCloseId =
-        latestVersionForMonth?.status === "closed" ? latestVersionForMonth.id : latestVersionForMonth?.supersedes_close_id ?? null;
+      if (!existingDraft) {
+        const versionNumber = (latestVersionForMonth?.version_number ?? 0) + 1;
+        const supersedesCloseId =
+          latestVersionForMonth?.status === "closed" ? latestVersionForMonth.id : latestVersionForMonth?.supersedes_close_id ?? null;
 
-      closeRecord = await this.repository.createMonthEndClose({
+        closeRecord = await this.repository.createMonthEndClose({
+          userId,
+          closeMonth: input.closeMonth,
+          closeYear: input.closeYear,
+          versionNumber,
+          status: "draft",
+          supersedesCloseId,
+          closedAt: null,
+        });
+      } else {
+        closeRecord = existingDraft;
+      }
+
+      console.table({
+        persisted_close_id: closeRecord.id,
+        persisted_status: closeRecord.status,
+        persisted_close_year: closeRecord.close_year,
+        persisted_close_month: closeRecord.close_month,
+        persisted_version: closeRecord.version_number,
+      });
+
+      const reconciledItems = await this.buildReconciledPersistItems({
         userId,
-        closeMonth: input.closeMonth,
+        closeRecordId: closeRecord.id,
         closeYear: input.closeYear,
-        versionNumber,
-        status,
-        supersedesCloseId,
-        closedAt: status === "closed" ? new Date().toISOString() : null,
+        closeMonth: input.closeMonth,
+        incomingItems: input.items,
       });
-    } else {
-      closeRecord = await this.repository.updateMonthEndCloseStatus({
-        id: existingDraft.id,
+
+      const existingRows = await this.repository.getCloseItems(closeRecord.id);
+      const incomingKeys = new Set(reconciledItems.map((item) => entityRowKey(item.entityType, item.entityId)));
+      const rowsToDelete = existingRows.filter((item) => !incomingKeys.has(entityRowKey(item.entity_type, item.entity_id)));
+
+      await this.repository.deleteCloseItemsByIds(rowsToDelete.map((row) => row.id));
+
+      const itemRows = toMonthEndCloseItemRows({
+        closeId: closeRecord.id,
         userId,
-        status,
-        closedAt: status === "closed" ? new Date().toISOString() : null,
+        items: reconciledItems,
       });
+
+      await this.repository.upsertCloseItems(itemRows);
+
+      if (status === "closed") {
+        closeRecord = await this.repository.updateMonthEndCloseStatus({
+          id: closeRecord.id,
+          userId,
+          status: "closed",
+          closedAt: new Date().toISOString(),
+        });
+      }
+
+      console.table({
+        final_close_id: closeRecord.id,
+        final_status: closeRecord.status,
+      });
+      console.groupEnd();
+
+      return this.getWorkspace();
+    } catch (error) {
+      throw normalizeCloseMutationError(error);
     }
-
-    console.table({
-      persisted_close_id: closeRecord.id,
-      persisted_status: closeRecord.status,
-      persisted_close_year: closeRecord.close_year,
-      persisted_close_month: closeRecord.close_month,
-      persisted_version: closeRecord.version_number,
-    });
-    console.groupEnd();
-
-    const reconciledItems = await this.buildReconciledPersistItems({
-      userId,
-      closeRecordId: closeRecord.id,
-      closeYear: input.closeYear,
-      closeMonth: input.closeMonth,
-      incomingItems: input.items,
-    });
-
-    const existingRows = await this.repository.getCloseItems(closeRecord.id);
-    const incomingKeys = new Set(reconciledItems.map((item) => entityRowKey(item.entityType, item.entityId)));
-    const rowsToDelete = existingRows.filter((item) => !incomingKeys.has(entityRowKey(item.entity_type, item.entity_id)));
-
-    await this.repository.deleteCloseItemsByIds(rowsToDelete.map((row) => row.id));
-
-    const itemRows = toMonthEndCloseItemRows({
-      closeId: closeRecord.id,
-      userId,
-      items: reconciledItems,
-    });
-
-    await this.repository.upsertCloseItems(itemRows);
-
-    return this.getWorkspace();
   }
 }
 
